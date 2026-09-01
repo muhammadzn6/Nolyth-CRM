@@ -1,0 +1,191 @@
+/* Orbit CRM — design tokens inspired by premium dark logistics UI */
+
+:root,
+.light,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --radius: 0.625rem;
+
+  --background: oklch(0.965 0.008 120);
+  --foreground: oklch(0.2 0.01 285);
+  --surface: oklch(0.995 0.002 120);
+  --surface-foreground: var(--foreground);
+  --surface-secondary: oklch(0.955 0.01 120);
+  --surface-tertiary: oklch(0.935 0.012 120);
+  --overlay: oklch(0.995 0.002 120);
+  --overlay-foreground: var(--foreground);
+  --muted: oklch(0.52 0.015 285);
+  --default: oklch(0.94 0.006 120);
+  --default-foreground: var(--foreground);
+  --border: oklch(0.88 0.01 120);
+  --separator: oklch(0.91 0.008 120);
+
+  --accent: oklch(0.78 0.17 123);
+  --accent-foreground: oklch(0.18 0.02 120);
+  --accent-soft: color-mix(in oklab, var(--accent) 18%, transparent);
+  --accent-hover: color-mix(in oklab, var(--accent) 92%, var(--foreground) 8%);
+
+  --border-secondary: oklch(0.92 0.008 120);
+  --overlay-shadow: 0 24px 60px color-mix(in oklab, var(--foreground) 8%, transparent);
+  --success-soft: color-mix(in oklab, var(--success) 16%, transparent);
+  --warning-soft: color-mix(in oklab, var(--warning) 16%, transparent);
+  --danger-soft: color-mix(in oklab, var(--danger) 16%, transparent);
+
+  --field-background: oklch(0.98 0.004 120);
+  --field-foreground: var(--foreground);
+  --field-border: transparent;
+
+  --success: oklch(0.62 0.14 150);
+  --warning: oklch(0.72 0.14 75);
+  --danger: oklch(0.58 0.2 25);
+
+  --shell-frame: var(--background);
+  --shell-canvas: var(--background);
+
+  --border-width: 0px;
+  --field-border-width: 0px;
+}
+
+.dark,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: oklch(0.145 0.006 285);
+  --foreground: oklch(0.97 0.002 120);
+  --surface: oklch(0.205 0.006 285);
+  --surface-foreground: var(--foreground);
+  --surface-secondary: oklch(0.175 0.006 285);
+  --surface-tertiary: oklch(0.24 0.006 285);
+  --overlay: oklch(0.22 0.006 285);
+  --overlay-foreground: var(--foreground);
+  --muted: oklch(0.62 0.012 285);
+  --default: oklch(0.26 0.006 285);
+  --default-foreground: var(--foreground);
+  --border: oklch(0.28 0.006 285);
+  --separator: oklch(0.25 0.006 285);
+
+  --accent: oklch(0.93 0.18 123);
+  --accent-foreground: oklch(0.18 0.02 120);
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+  --accent-hover: color-mix(in oklab, var(--accent) 94%, white 6%);
+
+  --border-secondary: oklch(0.24 0.006 285);
+  --overlay-shadow: 0 24px 60px color-mix(in oklab, black 45%, transparent);
+  --success-soft: color-mix(in oklab, var(--success) 14%, transparent);
+  --warning-soft: color-mix(in oklab, var(--warning) 14%, transparent);
+  --danger-soft: color-mix(in oklab, var(--danger) 14%, transparent);
+
+  --field-background: oklch(0.22 0.006 285);
+  --field-foreground: var(--foreground);
+  --field-border: transparent;
+
+  --success: oklch(0.72 0.14 150);
+  --warning: oklch(0.8 0.13 75);
+  --danger: oklch(0.62 0.18 25);
+
+  --shell-frame: var(--background);
+  --shell-canvas: var(--background);
+
+  --border-width: 0px;
+  --field-border-width: 0px;
+
+  --heading-gradient-from: oklch(0.76 0.008 285);
+  --heading-gradient-to: oklch(1 0 0);
+}
+
+/* Legacy app tokens mapped to HeroUI semantics */
+:root,
+.light,
+.dark,
+[data-theme="light"],
+[data-theme="dark"] {
+  --color-canvas: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-secondary);
+  --color-border: var(--border);
+  --color-border-strong: color-mix(in oklab, var(--border) 70%, var(--foreground) 30%);
+  --color-text: var(--foreground);
+  --color-text-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: color-mix(in oklab, var(--accent) 88%, var(--foreground) 12%);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --shadow-panel: var(--overlay-shadow);
+  --sidebar-width-expanded: 248px;
+  --sidebar-width-collapsed: 76px;
+
+  --chart-applied: color-mix(in oklab, var(--accent) 55%, var(--muted) 45%);
+  --chart-in-process: var(--accent);
+  --chart-final-round: color-mix(in oklab, var(--accent) 75%, var(--foreground) 25%);
+  --chart-closed: var(--success);
+  --chart-dead: var(--danger);
+}
+
+@theme inline {
+  --color-shell-frame: var(--shell-frame);
+  --color-shell-canvas: var(--shell-canvas);
+}
+
+@layer components {
+  .orbit-sidebar-rail {
+    background: var(--surface);
+  }
+
+  .orbit-nav-active {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+
+  .orbit-nav-idle {
+    color: var(--muted);
+  }
+
+  .orbit-nav-idle:hover {
+    background: color-mix(in oklab, var(--default) 88%, var(--foreground) 12%);
+    color: var(--foreground);
+  }
+
+  .orbit-page-title {
+    font-family: var(--font-orbitron), var(--font-plex-sans), sans-serif;
+    font-size: clamp(1.375rem, 2vw, 1.75rem);
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    color: var(--foreground);
+  }
+
+  .orbit-heading {
+    font-family: var(--font-orbitron), var(--font-plex-sans), sans-serif;
+    font-size: clamp(1.375rem, 2vw, 1.75rem);
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    color: var(--foreground);
+  }
+
+  :is(.dark, [data-theme="dark"]) :is(.orbit-heading, .orbit-page-title) {
+    background-image: linear-gradient(
+      180deg,
+      var(--heading-gradient-from) 0%,
+      var(--heading-gradient-to) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .orbit-muted-label {
+    color: var(--muted);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+}
