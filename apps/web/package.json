@@ -1,0 +1,35 @@
+{
+  "name": "@orbit/web",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint --config ../../eslint.config.mjs .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@orbit/config": "workspace:*",
+    "@orbit/contracts": "workspace:*",
+    "@orbit/ui": "workspace:*",
+    "next": "16.3.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.35.0",
+    "jsdom": "^30.0.1",
+    "playwright": "^1.55.0",
+    "tailwindcss": "^4.3.3"
+  }
+}

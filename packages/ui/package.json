@@ -1,0 +1,27 @@
+{
+  "name": "@orbit/ui",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint --config ../../eslint.config.mjs .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "vitest run --config ../../vitest.config.mts --passWithNoTests"
+  },
+  "dependencies": {
+    "@orbit/config": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "eslint": "^9.35.0",
+    "react": "19.2.8",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "react": "19.2.8"
+  }
+}

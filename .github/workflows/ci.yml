@@ -1,0 +1,104 @@
+name: Foundation CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_BASE_URL: http://localhost:3100
+      DATABASE_URL: postgresql://orbit:orbit@localhost:5432/orbit_task3_test
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3101/api/v1
+      NEXT_PUBLIC_APP_BASE_URL: http://localhost:3100
+      ORBIT_SEED_ADMIN_PASSWORD: ci-only-orbit-admin-password
+      REDIS_URL: redis://localhost:6379
+      S3_ACCESS_KEY: orbit-ci
+      S3_BUCKET: orbit-ci
+      S3_ENDPOINT: http://localhost:9000
+      S3_SECRET_KEY: ci-only-object-storage-key
+      SESSION_SECRET: ci-only-session-secret
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: orbit_task3_test
+          POSTGRES_PASSWORD: orbit
+          POSTGRES_USER: orbit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orbit -d orbit_task3_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Check formatting integrity
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Strict typecheck
+        run: pnpm typecheck
+
+      - name: Validate Prisma schema
+        run: pnpm db:validate
+
+      - name: Run unit and integration tests
+        run: pnpm test
+
+      - name: Deploy migrations to clean database
+        run: pnpm db:migrate
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Run API and worker E2E checks
+        run: pnpm test:e2e:services
+
+      - name: Install Chromium
+        run: pnpm --filter @orbit/web exec playwright install --with-deps chromium
+
+      - name: Seed smoke-test administrator
+        run: pnpm db:seed
+
+      - name: Run browser smoke tests
+        run: pnpm test:e2e:smoke

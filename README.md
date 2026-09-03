@@ -1,74 +1,108 @@
-# Orbit CRM Phase 1
+# Orbit CRM foundation
 
-Phase 1 foundation for an internal Job Placement / Lead Management CRM built with Next.js App Router, MongoDB, Mongoose, Auth.js credentials authentication, and a centralized activity event model.
+Orbit is a TypeScript modular-monolith foundation for an internal job-placement CRM. The active workspace contains a Next.js web app, NestJS API, BullMQ worker, PostgreSQL/Prisma persistence, Redis, and S3-compatible local object storage.
 
-## Environment
+This repository is a runnable foundation, not the complete CRM described by the approved target-state design. See [Current scope](#current-scope) before treating a screen, schema, or API as product-complete.
 
-Copy `.env.example` to `.env.local` and set:
+## Prerequisites
 
-```bash
-MONGODB_URI=mongodb://127.0.0.1:27017/orbit
-AUTH_SECRET=replace-with-a-long-random-secret
-AUTH_URL=http://localhost:3000
-```
+- Node.js 20.9 or newer
+- pnpm 10.15.1 (the version pinned in `package.json`)
+- Docker with Docker Compose
 
-## Local development
+## Local setup
 
 ```bash
-npm install
-npm run seed
-npm run dev
+pnpm install --frozen-lockfile
+cp .env.example .env
+set -a
+source .env
+set +a
+docker compose up -d
+pnpm db:generate
+pnpm db:migrate
+export ORBIT_SEED_ADMIN_PASSWORD='choose-a-local-password'
+pnpm db:seed
+pnpm dev
 ```
 
-Open `http://localhost:3000/login`.
+Open `http://localhost:3100/login` and sign in as `admin@orbit.local` with the password supplied to `ORBIT_SEED_ADMIN_PASSWORD`. The seed rotates that local admin password every time it runs; no shared password is committed.
 
-## Demo credentials
+After the first admin is seeded, all normal user provisioning is admin-invitation based:
 
-Created by `npm run seed`:
+1. Sign in as `admin@orbit.local`.
+2. Open `http://localhost:3100/admin/users`.
+3. Create a teammate with a display name, work email, role (`ADMIN`, `BD`, or `CLOSER`), and timezone.
+4. Copy the one-time invitation URL shown after creation and send it out of band.
+5. The teammate opens `/invite/<token>`, chooses their own password, and then signs in.
+6. Administrators can return to `/admin/users` to change roles/timezones, deactivate or reactivate accounts, and revoke a user’s active sessions.
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | `admin@orbit.local` | `Admin12345!` |
-| BD (Eyong) | `siddiqah@orbit.local` | `Orbit12345!` |
-| Closer (Eyong) | `ali@orbit.local` | `Orbit12345!` |
-| BD (Olabi Toufic) | `shagufta@orbit.local` | `Orbit12345!` |
-| Closer (Olabi Toufic) | `emaz@orbit.local` | `Orbit12345!` |
+Invitation tokens are shown only once, expire, are single-use, and are stored only as hashes. The seed remains only the bootstrap path for the first local administrator.
 
-### Profiles
+The local endpoints are:
 
-1. **Eyong** — BD: Siddiqah, Closer: Ali
-2. **Olabi Toufic** — BD: Shagufta, Closer: Emaz Ashraf
+| Boundary | Address |
+|---|---|
+| Web | `http://localhost:3100` |
+| API | `http://localhost:3101/api/v1` |
+| API liveness | `http://localhost:3101/health/live` |
+| API readiness | `http://localhost:3101/health/ready` |
+| PostgreSQL | `localhost:55432` |
+| Redis | `localhost:6379` |
+| MinIO API / console | `localhost:9000` / `localhost:9001` |
 
-## Scripts
+## Common scripts
 
 ```bash
-npm run dev
-npm run build
-npm run start
-npm run lint
-npm run typecheck
-npm run test
-npm run seed
+pnpm dev                 # web, API, and worker together
+pnpm dev:web             # Next.js only
+pnpm dev:api             # NestJS API only
+pnpm dev:worker          # BullMQ worker only
+pnpm build               # workspace compilation and Next.js production build
+pnpm format:check        # whitespace and conflict-marker integrity
+pnpm lint
+pnpm typecheck
+pnpm test                # includes the guarded PostgreSQL persistence suite
+pnpm test:e2e:services   # API and worker E2E checks
+pnpm test:e2e:smoke      # Playwright foundation and user-management smoke
+pnpm test:e2e            # services first, then browser smoke
+pnpm db:generate
+pnpm db:validate
+pnpm db:migrate
+pnpm db:seed
 ```
 
-## Phase 1 scope
+Server processes read variables from their process environment. Run the `set -a` / `source .env` sequence in each new shell before starting the API, worker, migrations, seed, or smoke suite. Next.js also reads its environment files, but the other runtimes do not implicitly load them.
 
-Included:
+## Verification
 
-- project foundation
-- MongoDB and Mongoose setup
-- Auth.js login
-- role-based authorization
-- user, profile, lead, interview round, and activity models
-- service layer and Route Handlers
-- centralized audit architecture
-- base authenticated shell and shared UI primitives
-- seed data and business-rule tests
+The full local verification order and disposable-database guard are documented in [Foundation verification](docs/verification/foundation.md). `pnpm test` owns the destructive persistence suite and requires the disposable `orbit_task3_test` database. `pnpm test:e2e` does not run that suite: it runs API/worker checks first, then starts all three runtime processes on isolated ports `3100` and `3101` for the Playwright login, liveness, seeded-authenticated-shell, and admin user-management smoke. Do not point the smoke at ports `3000` or `3001`; those are the default developer ports and may already be serving unrelated local processes.
 
-Intentionally deferred:
+CI performs a frozen install, Prisma generation/validation, whitespace integrity, lint, strict type checking, unit and live PostgreSQL integration tests, migrations, workspace build, API/worker E2E checks, seed, and the Chromium foundation smoke. The destructive database suite and browser smoke are separate workflow steps, and CI uses only disposable credentials and data.
 
-- detailed lead spreadsheet workspace
-- Kanban board
-- advanced search UI
-- analytics dashboard
-- interview workflow screens
+## Architecture and operations
+
+- [Foundation architecture](docs/architecture/foundation.md)
+- [Local-development runbook](docs/runbooks/local-development.md)
+- [Foundation security boundary](docs/security/foundation.md)
+- [Foundation verification](docs/verification/foundation.md)
+
+## Current scope
+
+Implemented now:
+
+- pnpm/Turborepo workspace with web, API, worker, and focused shared packages
+- validated server/browser configuration and local PostgreSQL, Redis, and MinIO services
+- initial Prisma schema, forward-only migrations, transaction helper, and guarded admin seed
+- shared Zod contracts and application errors
+- Argon2id login, hashed cookie sessions, logout, active-user checks, and basic role/profile authorization services
+- admin user management with hashed one-time invitations, invitation acceptance, role/activation updates, and session revocation
+- candidate records, multiple job-search profiles, BD assignments, Closer eligibility, lifecycle controls, and role-scoped profile workspace
+- request IDs, strict API validation/error handling, security headers, CORS, and live/ready health routes
+- responsive role-aware web shell and typed API client
+- transactional outbox service, BullMQ worker runtime, retries, lease recovery, dead-letter behavior, and local no-op provider ports
+- focused unit/API/integration tests and foundation CI/smoke coverage
+
+Remaining target-domain work is explicitly not implemented by this foundation: password reset/change and resend-invitation flows; companies, contacts, and lead operations; documents/files and malware scanning; interviews, availability, and scheduling; tasks and notifications; offers, placements, analytics, and exports; broader admin/archive workflows; OpenAPI generation; production provider adapters; observability; deployment images; security hardening; scale testing; backup/restore; and launch/UAT.
+
+Some prototype source still exists at the repository root. It is not part of the `apps/*` and `packages/*` runtime graph and must not be used as evidence that a target-domain feature is implemented.

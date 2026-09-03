@@ -1,0 +1,8 @@
+import Link from "next/link";
+import type { LeadSummary, OfferSummary } from "@orbit/contracts";
+import { Card, EmptyState } from "@orbit/ui";
+
+export function ClientPlacements({ placements }: { placements: Array<{ offer: OfferSummary; lead: LeadSummary }> }) {
+  if (!placements.length) return <EmptyState title="No placements yet" description="Accepted offers with a scheduled start date will appear here." />;
+  return <Card className="overflow-hidden p-0"><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-border bg-surface-subtle text-xs uppercase tracking-[0.12em] text-muted-foreground"><tr><th className="px-5 py-4">Opportunity</th><th className="px-5 py-4">Compensation</th><th className="px-5 py-4">Start date</th><th className="px-5 py-4">Status</th></tr></thead><tbody className="divide-y divide-border">{placements.map(({ offer, lead }) => <tr className="hover:bg-surface-subtle" key={offer.id}><td className="px-5 py-4"><Link className="font-semibold text-primary hover:underline" href={`/leads/${lead.id}/offers`}>{lead.jobTitle}</Link><p className="mt-1 text-xs text-muted-foreground">{lead.companyName ?? "Application"}</p></td><td className="px-5 py-4 font-semibold text-foreground">{offer.compensationCurrency} {offer.compensationAmount}<p className="mt-1 text-xs font-normal text-muted-foreground">{offer.employmentType}</p></td><td className="px-5 py-4 text-muted-foreground">{offer.startDate ?? "Started"}</td><td className="px-5 py-4"><span className="rounded-full bg-success-soft px-2.5 py-1 text-xs font-bold text-success">{offer.startedAt ? "STARTED" : "PLACED"}</span></td></tr>)}</tbody></table></div></Card>;
+}

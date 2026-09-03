@@ -1,0 +1,22 @@
+{
+  "name": "@orbit/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint --config ../../eslint.config.mjs .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "vitest run --config ../../vitest.config.mts --passWithNoTests"
+  },
+  "dependencies": {
+    "@orbit/config": "workspace:*",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "eslint": "^9.35.0"
+  }
+}
