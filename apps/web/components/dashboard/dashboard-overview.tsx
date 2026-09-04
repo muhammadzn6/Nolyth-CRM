@@ -24,7 +24,7 @@ function entityLabel(value: string): string {
 export function DashboardOverview({ actor, dashboard, recentActivity, calendarInterviews, error }: { actor: SessionUser; dashboard?: DashboardData; recentActivity?: ActivityEventSummary[]; calendarInterviews?: InterviewSummary[]; error?: string }) {
   const firstName = actor.displayName.split(" ")[0];
   const activityItems = recentActivity?.map((event) => [activityLabel(event.action), entityLabel(event.entityType), new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.occurredAt)), "info"] as const) ?? activities;
-  return <div className="mx-auto max-w-[1500px]">
+  return <div className="editorial-dashboard mx-auto max-w-[1500px]">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Operations</p><h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Today at a glance</h1><p className="mt-1.5 text-sm text-muted-foreground">Interviews, candidate work, and changes that need attention.</p></div><p className="w-fit text-xs font-medium text-muted-foreground">Updated just now · PKT</p></div>
     {error ? <p className="mt-4 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground" role="status">{error} Showing the last available workspace layout.</p> : null}
     <section aria-label="Primary calendar" className="mt-7"><CalendarWorkspace actor={actor} interviews={calendarInterviews ?? []} embedded /></section>

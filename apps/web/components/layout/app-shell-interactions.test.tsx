@@ -53,8 +53,8 @@ describe("AppShell interactions", () => {
       'button[aria-label="Collapse navigation"]',
     );
 
-    expect(sidebar?.className).toContain("w-[248px]");
-    expect(content?.className).toContain("lg:pl-[248px]");
+    expect(sidebar?.className).toContain("w-[224px]");
+    expect(content?.className).toContain("lg:pl-[224px]");
 
     act(() => collapse?.click());
 

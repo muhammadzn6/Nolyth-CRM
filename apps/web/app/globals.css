@@ -2,11 +2,11 @@
 @source "../../../packages/ui/src";
 
 :root {
-  --background: #f3f5f7;
+  --background: #f3f1ee;
   --foreground: #172338;
   --surface: #ffffff;
   --surface-subtle: #f7f8fa;
-  --muted-foreground: #687589;
+  --muted-foreground: #5f6878;
   --border: #dfe4ea;
   --border-strong: #cbd4df;
   --primary: #315dcc;
@@ -23,10 +23,10 @@
   --info: #2f6f9f;
   --info-soft: #e8f1f8;
   --focus: #4c73ea;
-  --sidebar: #142238;
-  --sidebar-foreground: #f8fafc;
-  --sidebar-muted: #aab4c8;
-  --sidebar-border: #263650;
+  --sidebar: #f8f8f7;
+  --sidebar-foreground: #172033;
+  --sidebar-muted: #5f6878;
+  --sidebar-border: #e5e4e1;
 }
 
 @theme inline {
@@ -61,7 +61,26 @@
 @layer base {
   * { border-color: var(--border); }
   html { color-scheme: light; }
-  body { margin: 0; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body { margin: 0; background: var(--background); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
   button, a, input { -webkit-tap-highlight-color: transparent; }
   ::selection { background: var(--primary-soft); color: var(--foreground); }
+}
+
+@layer components {
+  .editorial-dashboard section.rounded-2xl,
+  .editorial-dashboard section.rounded-lg,
+  .editorial-dashboard [aria-label="Calendar view"] {
+    border-radius: 1.5rem;
+    border-color: color-mix(in srgb, var(--border) 85%, white);
+    box-shadow: 0 12px 32px rgb(35 42 58 / 0.045);
+  }
+
+  .editorial-dashboard [aria-label="Workspace pulse"] > a,
+  .editorial-dashboard [aria-label="Closer workload summary"] > a {
+    min-height: 112px;
+    border-radius: 1.35rem;
+    border-color: color-mix(in srgb, var(--border) 82%, white);
+    padding: 1.15rem;
+    box-shadow: 0 8px 22px rgb(35 42 58 / 0.035);
+  }
 }

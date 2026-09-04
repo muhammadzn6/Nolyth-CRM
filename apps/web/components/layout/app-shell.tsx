@@ -34,9 +34,9 @@ export function AppShell({ actor, children }: { actor: SessionUser; children: Re
         onCollapsedChange={setSidebarCollapsed}
         role={actor.role}
       />
-      <div className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "lg:pl-[76px]" : "lg:pl-[248px]"}`}>
+      <div className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "lg:pl-[76px]" : "lg:pl-[224px]"}`}>
         <AppHeader actor={actor} />
-        <main className="px-4 py-6 md:px-7 lg:px-10 lg:py-8">{children}</main>
+        <main className="px-4 py-6 md:px-8 lg:px-12 lg:py-10">{children}</main>
       </div>
     </div>
   );
