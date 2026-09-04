@@ -1,16 +1,17 @@
 import { expect, test } from "@playwright/test";
 
+const adminPassword = process.env.ORBIT_SEED_ADMIN_PASSWORD ?? "ci-only-orbit-admin-password";
+
 async function signIn(page: import("@playwright/test").Page) {
   await page.goto("/login");
   await page.getByLabel("Work email").fill("admin@orbit.local");
-  await page.getByLabel("Password").fill(process.env.ORBIT_SEED_ADMIN_PASSWORD!);
+  await page.getByLabel("Password").fill(adminPassword);
   await page.getByRole("button", { name: "Sign in to Orbit" }).click();
   await expect(page).toHaveURL("/");
 }
 
 test.describe("admin MVP surfaces", () => {
   test.beforeEach(async ({ page }) => {
-    expect(process.env.ORBIT_SEED_ADMIN_PASSWORD).toBeTruthy();
     await signIn(page);
   });
 

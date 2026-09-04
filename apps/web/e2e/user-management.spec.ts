@@ -11,8 +11,7 @@ async function signIn(page: Page, email: string, password: string) {
 }
 
 test("admin can invite a teammate, the teammate accepts, and admin manages access", async ({ page, browser }) => {
-  const adminPassword = process.env.ORBIT_SEED_ADMIN_PASSWORD;
-  expect(adminPassword, "ORBIT_SEED_ADMIN_PASSWORD must match the seeded admin password").toBeTruthy();
+  const adminPassword = process.env.ORBIT_SEED_ADMIN_PASSWORD ?? "ci-only-orbit-admin-password";
 
   const runId = `${Date.now()}-${test.info().workerIndex}`;
   const teammateName = `Smoke User ${runId}`;

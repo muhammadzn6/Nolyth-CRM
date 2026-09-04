@@ -21,8 +21,7 @@ test("reports API process liveness", async ({ request }) => {
 });
 
 test("allows the seeded administrator to reach the authenticated shell", async ({ page }) => {
-  const password = process.env.ORBIT_SEED_ADMIN_PASSWORD;
-  expect(password, "ORBIT_SEED_ADMIN_PASSWORD must match the seeded admin password").toBeTruthy();
+  const password = process.env.ORBIT_SEED_ADMIN_PASSWORD ?? "ci-only-orbit-admin-password";
 
   await page.goto("/login");
   await page.getByLabel("Work email").fill("admin@orbit.local");
