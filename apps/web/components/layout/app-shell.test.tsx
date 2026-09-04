@@ -83,6 +83,7 @@ describe("AppShell", () => {
     expect(closer).not.toContain('href="/profiles"');
     expect(closer).toContain('href="/activity"');
     expect(closer).toContain('href="/settings"');
+    expect(closer).not.toContain('href="/calendar"');
     expect(closer).not.toContain(">Analytics<");
   });
 

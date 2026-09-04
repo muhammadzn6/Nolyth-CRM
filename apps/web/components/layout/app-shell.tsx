@@ -13,7 +13,6 @@ const navigation: Array<NavigationItem & { group: string; roles: SessionUser["ro
   { group: "Recruitment", href: "/leads", label: "Leads", icon: "leads", roles: ["ADMIN", "BD", "CLOSER"] },
   { group: "Recruitment", href: "/tasks", label: "Work queue", icon: "tasks", roles: ["ADMIN", "BD", "CLOSER"] },
   { group: "Employers", href: "/admin/clients", label: "Employer directory", icon: "profiles", roles: ["ADMIN"] },
-  { group: "Scheduling", href: "/calendar", label: "Interview calendar", icon: "calendar", roles: ["ADMIN", "BD", "CLOSER"] },
   { group: "Insights", href: "/analytics", label: "Analytics", icon: "analytics", roles: ["ADMIN", "BD"] },
   { group: "Insights", href: "/activity", label: "Activity", icon: "activity", roles: ["ADMIN", "BD", "CLOSER"] },
   { group: "Administration", href: "/admin/users", label: "Users", icon: "admin", roles: ["ADMIN"] },

@@ -40,9 +40,8 @@ test.describe("admin MVP surfaces", () => {
       ["/candidates", "Candidates"],
       ["/profiles", "Profiles"],
       ["/leads", "Leads"],
-      ["/tasks", "Tasks"],
+      ["/tasks", "Work queue"],
       ["/admin/clients", "Employers"],
-      ["/calendar", "Interview calendar"],
       ["/analytics", "Analytics"],
       ["/activity", "Activity"],
       ["/admin/users", "Users and invitations"],
@@ -64,7 +63,7 @@ test.describe("admin MVP surfaces", () => {
     expect(profileRoute).toBeTruthy();
     await page.goto(profileRoute!);
     const profileSections = page.getByLabel("Profile sections");
-    for (const tab of ["Leads", "Interviews", "Tasks", "Documents", "Activity", "Analytics"]) {
+    for (const tab of ["Leads", "Interviews", "Work queue", "Documents", "Activity", "Analytics"]) {
       await expect(profileSections.getByRole("link", { name: tab, exact: true })).toBeVisible();
     }
 

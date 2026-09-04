@@ -126,7 +126,6 @@ function Agenda({ meetings, externalMeetings }: { meetings: InterviewSummary[]; 
           <CardTitle>Today’s agenda</CardTitle>
           <CardDescription className="mt-1">Your scheduled interviews, in order.</CardDescription>
         </div>
-        <a className="text-xs font-semibold text-primary hover:text-primary-hover" href="/calendar">Open calendar</a>
       </header>
       {items.length === 0 ? <EmptyState>No meetings on your agenda today.</EmptyState> : (
         <ol className="mt-5 divide-y divide-border">
@@ -202,8 +201,8 @@ function AssignedApplications({ applications }: { applications: CloserDashboardD
 function FeedbackQueue({ meetings }: { meetings: InterviewSummary[] }) {
   return (
     <Card className="p-5 sm:p-6">
-      <header className="flex items-start justify-between gap-4"><div><CardTitle>Feedback to record</CardTitle><CardDescription className="mt-1">Close the loop on completed interviews.</CardDescription></div><a className="text-xs font-semibold text-primary hover:text-primary-hover" href="/calendar">View schedule</a></header>
-      {meetings.length === 0 ? <EmptyState>No feedback is waiting.</EmptyState> : <ol className="mt-5 space-y-3">{meetings.map((meeting) => <li className="rounded-xl border border-border p-4" key={meeting.id}><p className="text-sm font-semibold text-foreground">{interviewLabel(meeting)}</p><p className="mt-1 text-xs text-muted-foreground">{meeting.interviewer ?? "Interview feedback"} · ended {interviewDate(meeting)} · {meeting.timezone}</p><a className="mt-3 inline-flex text-xs font-semibold text-primary hover:text-primary-hover" href="/calendar">Record feedback</a></li>)}</ol>}
+      <header><CardTitle>Feedback to record</CardTitle><CardDescription className="mt-1">Close the loop on completed interviews.</CardDescription></header>
+      {meetings.length === 0 ? <EmptyState>No feedback is waiting.</EmptyState> : <ol className="mt-5 space-y-3">{meetings.map((meeting) => <li className="rounded-xl border border-border p-4" key={meeting.id}><p className="text-sm font-semibold text-foreground">{interviewLabel(meeting)}</p><p className="mt-1 text-xs text-muted-foreground">{meeting.interviewer ?? "Interview feedback"} · ended {interviewDate(meeting)} · {meeting.timezone}</p></li>)}</ol>}
     </Card>
   );
 }
@@ -212,7 +211,7 @@ function ActionQueue({ data }: { data: CloserDashboardData }) {
   return (
     <Card className="p-5 sm:p-6">
       <header className="flex items-start justify-between gap-4"><div><CardTitle>Work queue</CardTitle><CardDescription className="mt-1">The next actions and scheduling issues needing attention.</CardDescription></div><a className="text-xs font-semibold text-primary hover:text-primary-hover" href="/tasks">Open queue</a></header>
-      {data.openTasks.length === 0 && data.conflicts.length === 0 ? <EmptyState>Queue is clear.</EmptyState> : <div className="mt-5 space-y-3">{data.conflicts.map((meeting) => <a className="block rounded-xl border border-danger/30 bg-danger-soft p-4" href="/calendar" key={meeting.id}><p className="text-sm font-semibold text-danger">Reschedule required</p><p className="mt-1 text-xs text-foreground">{interviewLabel(meeting)} · {interviewTime(meeting)} · {meeting.timezone}</p></a>)}{data.openTasks.map((task) => <a className="block rounded-xl border border-border p-4 transition hover:border-border-strong hover:bg-surface-subtle" href="/tasks" key={task.id}><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-foreground">{task.title}</p><span className="shrink-0 text-xs font-semibold text-muted-foreground">{titleCase(task.priority)}</span></div><p className="mt-1 text-xs text-muted-foreground">Due {dashboardTimestamp(task.dueAt, data.timezone)}</p></a>)}</div>}
+      {data.openTasks.length === 0 && data.conflicts.length === 0 ? <EmptyState>Queue is clear.</EmptyState> : <div className="mt-5 space-y-3">{data.conflicts.map((meeting) => <a className="block rounded-xl border border-danger/30 bg-danger-soft p-4" href="/" key={meeting.id}><p className="text-sm font-semibold text-danger">Reschedule required</p><p className="mt-1 text-xs text-foreground">{interviewLabel(meeting)} · {interviewTime(meeting)} · {meeting.timezone}</p></a>)}{data.openTasks.map((task) => <a className="block rounded-xl border border-border p-4 transition hover:border-border-strong hover:bg-surface-subtle" href="/tasks" key={task.id}><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-foreground">{task.title}</p><span className="shrink-0 text-xs font-semibold text-muted-foreground">{titleCase(task.priority)}</span></div><p className="mt-1 text-xs text-muted-foreground">Due {dashboardTimestamp(task.dueAt, data.timezone)}</p></a>)}</div>}
     </Card>
   );
 }
@@ -228,7 +227,7 @@ function Updates({ data }: { data: CloserDashboardData }) {
 
 function CalendarConnectionCard({ connection, timezone }: { connection: CalendarConnection; timezone: string }) {
   const state = calendarState(connection);
-  return <Card className="p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Candidate calendars</p><CardTitle className="mt-2">Google Calendar</CardTitle><p className={`mt-4 text-sm font-semibold ${state.tone}`}>{state.title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{state.description}</p>{connection.lastSyncedAt ? <p className="mt-3 text-xs text-muted-foreground">Last synced {dashboardTimestamp(connection.lastSyncedAt, timezone)}</p> : null}<a className="mt-4 inline-flex text-xs font-semibold text-primary hover:text-primary-hover" href="/calendar">Open interview schedule →</a></Card>;
+  return <Card className="p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Candidate calendars</p><CardTitle className="mt-2">Google Calendar</CardTitle><p className={`mt-4 text-sm font-semibold ${state.tone}`}>{state.title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{state.description}</p>{connection.lastSyncedAt ? <p className="mt-3 text-xs text-muted-foreground">Last synced {dashboardTimestamp(connection.lastSyncedAt, timezone)}</p> : null}</Card>;
 }
 
 export function CloserDashboard({ actor, data, calendarInterviews, error }: CloserDashboardProps) {
