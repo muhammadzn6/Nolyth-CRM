@@ -12,9 +12,9 @@ export type ButtonProps = ComponentProps<"button"> & {
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary text-primary-foreground shadow-sm hover:bg-primary-hover disabled:bg-primary/50",
+    "bg-primary text-primary-foreground shadow-[0_6px_14px_rgba(10,51,237,0.18)] hover:bg-primary-hover disabled:bg-primary/50",
   secondary:
-    "border border-border bg-surface text-foreground shadow-xs hover:bg-surface-subtle",
+    "border border-border bg-surface text-foreground shadow-[0_1px_2px_rgba(16,35,56,0.04)] hover:border-border-strong hover:bg-surface-subtle",
   ghost: "text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
   danger: "bg-danger text-white shadow-sm hover:bg-danger/90",
 };

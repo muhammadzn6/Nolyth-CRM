@@ -36,7 +36,7 @@ export function AppShell({ actor, children }: { actor: SessionUser; children: Re
       />
       <div className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "lg:pl-[76px]" : "lg:pl-[248px]"}`}>
         <AppHeader actor={actor} />
-        <main className="px-4 py-6 md:px-7 lg:px-10 lg:py-8">{children}</main>
+        <main className="px-4 py-6 md:px-7 lg:px-10 lg:py-9">{children}</main>
       </div>
     </div>
   );

@@ -95,7 +95,7 @@ export function AppHeader({ actor }: { actor: SessionUser }) {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/70 bg-background/90 px-4 backdrop-blur md:px-6 lg:px-10">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/70 bg-surface/90 px-4 backdrop-blur md:px-6 lg:px-10">
       <div className="w-10 shrink-0 lg:hidden" />
       <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
         <span>Workspace</span><span aria-hidden="true">/</span><span className="font-semibold capitalize text-foreground">{pageLabel}</span>

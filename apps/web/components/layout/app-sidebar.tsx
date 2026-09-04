@@ -64,10 +64,10 @@ export function AppSidebar({
       >
         <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-white text-sm font-black text-sidebar shadow-sm">O</span>
+          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-primary text-sm font-black text-white shadow-[0_5px_12px_rgba(10,51,237,0.2)]">O</span>
           {!collapsed ? (
             <div className="min-w-0">
-              <p className="text-sm font-bold tracking-wide text-white">ORBIT</p>
+              <p className="text-sm font-bold tracking-wide text-sidebar-foreground">ORBIT</p>
               <p className="truncate text-[10px] font-medium uppercase tracking-[0.18em] text-sidebar-muted">Placement CRM</p>
             </div>
           ) : null}
@@ -91,7 +91,7 @@ export function AppSidebar({
               return (
             <Link
               aria-current={active ? "page" : undefined}
-              className={`flex h-10 items-center gap-3 rounded-md border-l-2 px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${active ? "border-primary bg-white/10 text-white" : "border-transparent text-sidebar-muted hover:bg-white/8 hover:text-white"}`}
+              className={`flex h-10 items-center gap-3 rounded-xl border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${active ? "border-primary/15 bg-primary-soft font-semibold text-primary" : "border-transparent text-sidebar-muted hover:bg-surface-subtle hover:text-sidebar-foreground"}`}
               href={item.href}
               onClick={() => setMobileOpen(false)}
               title={collapsed ? item.label : undefined}
@@ -107,9 +107,9 @@ export function AppSidebar({
 
         <div className="border-t border-sidebar-border p-3">
           {!collapsed ? (
-            <div className="mb-3 rounded-xl bg-white/[0.06] px-3 py-2.5">
+            <div className="mb-3 rounded-xl border border-sidebar-border bg-surface-subtle px-3 py-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sidebar-muted">Workspace</p>
-              <p className="mt-1 text-xs font-medium text-white">{role === "ADMIN" ? "Platform operations" : role === "BD" ? "Placement operations" : "Interview workspace"}</p>
+              <p className="mt-1 text-xs font-medium text-sidebar-foreground">{role === "ADMIN" ? "Platform operations" : role === "BD" ? "Placement operations" : "Interview workspace"}</p>
             </div>
           ) : null}
           <Button
