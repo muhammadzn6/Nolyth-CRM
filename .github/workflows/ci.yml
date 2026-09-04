@@ -100,5 +100,8 @@ jobs:
       - name: Seed smoke-test administrator
         run: pnpm db:seed
 
+      - name: Seed demo workspace
+        run: pnpm db:seed:demo
+
       - name: Run browser smoke tests
         run: pnpm test:e2e:smoke

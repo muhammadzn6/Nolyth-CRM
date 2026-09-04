@@ -20,6 +20,7 @@
     "db:validate": "packages/database/node_modules/.bin/prisma validate --schema packages/database/prisma/schema.prisma",
     "db:migrate": "packages/database/node_modules/.bin/prisma migrate deploy --schema packages/database/prisma/schema.prisma",
     "db:seed": "packages/database/node_modules/.bin/tsx packages/database/prisma/seed.ts",
+    "db:seed:demo": "packages/database/node_modules/.bin/tsx packages/database/prisma/seed-demo.ts",
     "api:generate": "node scripts/generate-api-client.mjs"
   },
   "devDependencies": {
