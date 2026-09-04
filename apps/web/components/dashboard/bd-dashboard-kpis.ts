@@ -9,6 +9,16 @@ export type BdDashboardKpi = {
   tone: "default" | "info" | "warning" | "success";
 };
 
+export function buildBdSecondarySignals(input: { applications: Array<{ status: string }>; scheduledInterviews: number; interviewsToSchedule: number; averageResponseTimeHours: number | null }) {
+  return {
+    scheduledInterviews: input.scheduledInterviews,
+    interviewsToSchedule: input.interviewsToSchedule,
+    offers: input.applications.filter((application) => application.status === "OFFER_RECEIVED").length,
+    closed: input.applications.filter((application) => application.status === "CLOSED").length,
+    averageResponseTimeHours: input.averageResponseTimeHours,
+  };
+}
+
 export function buildBdDashboardKpis(input: { applications: ApplicationSignal[]; openFollowUps: number; interviewsToSchedule: number; now?: Date; dailyTarget?: number }): BdDashboardKpi[] {
   const target = input.dailyTarget ?? 70;
   const date = new Intl.DateTimeFormat("en-CA").format(input.now ?? new Date());

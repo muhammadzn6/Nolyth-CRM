@@ -85,8 +85,7 @@ test.describe("BD recruiter workflows", () => {
     const createResponse = page.waitForResponse((response) => response.request().method() === "POST" && response.url().includes("/interview-rounds"));
     await scheduleForm.getByRole("button", { name: "Schedule interview" }).click();
     const response = await createResponse;
-    const responseBody = await response.text();
-    expect(response.ok(), responseBody).toBe(true);
+    expect(response.ok(), `Interview creation returned HTTP ${response.status()}`).toBe(true);
     await page.waitForLoadState("load");
     await page.waitForTimeout(250);
     await page.goto(`/leads/${leadId}/interviews`);
