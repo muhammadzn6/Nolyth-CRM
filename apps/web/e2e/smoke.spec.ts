@@ -29,6 +29,6 @@ test("allows the seeded administrator to reach the authenticated shell", async (
   await page.getByRole("button", { name: "Sign in to Orbit" }).click();
 
   await expect(page).toHaveURL("/");
-  await expect(page.getByRole("heading", { name: "Today at a glance" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Good morning,/ })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Primary navigation" })).toContainText("Admin");
 });

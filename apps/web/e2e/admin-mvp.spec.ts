@@ -36,7 +36,7 @@ test.describe("admin MVP surfaces", () => {
 
   test("loads every admin navigation page", async ({ page }) => {
     const pages = [
-      ["/", "Today at a glance"],
+      ["/", /Good morning,/],
       ["/candidates", "Candidates"],
       ["/profiles", "Profiles"],
       ["/leads", "Leads"],

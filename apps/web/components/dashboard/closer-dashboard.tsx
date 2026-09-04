@@ -100,13 +100,13 @@ function EmptyState({ children }: { children: string }) {
 
 function CloserPulse({ data }: { data: CloserDashboardData }) {
   const items = [
-    ["Today", data.todayMeetings.length, "text-foreground"],
-    ["This week", data.assignedApplications.length, "text-foreground"],
-    ["Feedback due", data.needsFeedback.length, data.needsFeedback.length ? "text-warning-foreground" : "text-success"],
-    ["Conflicts", data.conflicts.length, data.conflicts.length ? "text-danger" : "text-success"],
+    ["Today", data.todayMeetings.length, "bg-primary-soft", "text-primary", "/calendar"],
+    ["This week", data.assignedApplications.length, "bg-info-soft", "text-info", "/leads"],
+    ["Feedback due", data.needsFeedback.length, "bg-warning-soft", "text-warning-foreground", "#feedback"],
+    ["Conflicts", data.conflicts.length, "bg-danger-soft", "text-danger", "#actions"],
   ] as const;
-  return <div aria-label="Closer workload summary" className="grid grid-cols-2 divide-x divide-y divide-border border-y border-border bg-surface sm:grid-cols-4 sm:divide-y-0">
-    {items.map(([label, value, tone]) => <div className="px-4 py-3 first:pl-0 sm:px-4" key={label}><p className="text-[11px] font-semibold text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold tracking-[-0.04em] ${tone}`}>{value}</p></div>)}
+  return <div aria-label="Closer workload summary" className="editorial-pulse-grid">
+    {items.map(([label, value, iconTone, valueTone, href]) => <a aria-label={`${label}: ${value}`} className="editorial-pulse-card" href={href} key={label}><span className={`editorial-pulse-icon ${iconTone} ${valueTone}`}>{label === "Conflicts" ? "!" : label === "Feedback due" ? "□" : "✓"}</span><span className="editorial-pulse-copy"><small>{label}</small><strong className={valueTone}>{value}</strong></span><span className="editorial-pulse-badge">{value > 0 ? "View" : "Clear"}</span></a>)}
   </div>;
 }
 
@@ -249,13 +249,13 @@ export function CloserDashboard({ actor, data, calendarInterviews, error }: Clos
 
   return (
     <div className="editorial-dashboard mx-auto max-w-[1500px]">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Closer workspace</p><h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Today’s schedule</h1><p className="mt-1.5 text-sm text-muted-foreground">Calls, preparation, and feedback assigned to you.</p></div><Button aria-label="Refresh dashboard" onClick={() => window.location.reload()} variant="secondary">Refresh</Button></header>
+      <div className="editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(new Date())}</span><span><strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "long" }).format(new Date())}</strong><small>Week {Math.ceil(new Date().getDate() / 7)} · {new Date().getFullYear()}</small></span><a className="editorial-add-button" href="/calendar">Open calendar <span aria-hidden="true">›</span></a><Button aria-label="Refresh dashboard" onClick={() => window.location.reload()} variant="secondary">Refresh</Button></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Closer command center</p><h1>Good morning, {firstName}</h1><p>Your calls, preparation, and feedback at a glance.</p></div></div>
       {error ? <p className="mt-4 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground" role="status">{error}</p> : null}
       <section className="mt-5"><CloserPulse data={dashboard} /></section>
       <section aria-label="Primary calendar" className="mt-5"><CalendarWorkspace actor={actor} interviews={calendarInterviews ?? dashboard.todayMeetings} externalMeetings={dashboard.externalMeetings} embedded /></section>
-      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.85fr)]"><NextMeetingBriefing meeting={dashboard.nextMeeting} /><ActionQueue data={dashboard} /></section>
+      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.85fr)]" id="actions"><NextMeetingBriefing meeting={dashboard.nextMeeting} /><ActionQueue data={dashboard} /></section>
       <section className="mt-5"><AssignedApplications applications={dashboard.assignedApplications} /></section>
-      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]"><FeedbackQueue meetings={dashboard.needsFeedback} /><CalendarConnectionCard connection={dashboard.calendarConnection} timezone={dashboard.timezone} /></section>
+      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]" id="feedback"><FeedbackQueue meetings={dashboard.needsFeedback} /><CalendarConnectionCard connection={dashboard.calendarConnection} timezone={dashboard.timezone} /></section>
       <section className="mt-5"><Updates data={dashboard} /></section>
     </div>
   );

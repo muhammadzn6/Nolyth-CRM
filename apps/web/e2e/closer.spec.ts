@@ -19,7 +19,7 @@ test.describe("Closer workspace", () => {
   });
 
   test("shows assigned interview work and role-scoped navigation", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: "Today’s schedule" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Good morning,/ })).toBeVisible();
     await expect(page.getByLabel("Assigned applications")).toContainText("Avery");
     await expect(page.getByRole("heading", { name: "Next meeting briefing" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Google Calendar" })).toBeVisible();
