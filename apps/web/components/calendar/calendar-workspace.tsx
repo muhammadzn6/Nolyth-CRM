@@ -70,7 +70,7 @@ function itemDates(item: CalendarItem): { startsAt: string; endsAt: string; time
 
 export function CalendarWorkspace({ actor, interviews, externalMeetings = [], embedded = false }: { actor: SessionUser; interviews: InterviewSummary[]; externalMeetings?: CloserDashboardExternalMeeting[]; embedded?: boolean }) {
   const firstInterview = interviews[0] ? new Date(interviews[0].startsAt) : new Date();
-  const [view, setView] = useState<View>("month");
+  const [view, setView] = useState<View>("week");
   const [anchor, setAnchor] = useState(firstInterview);
   const [status, setStatus] = useState("ALL");
   const [roundType, setRoundType] = useState("ALL");
