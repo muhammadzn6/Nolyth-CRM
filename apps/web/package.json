@@ -6,7 +6,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p ${PORT:-3100}",
     "build": "next build",
     "start": "next start",
     "lint": "eslint --config ../../eslint.config.mjs .",
