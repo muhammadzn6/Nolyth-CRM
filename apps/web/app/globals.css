@@ -2,11 +2,11 @@
 @source "../../../packages/ui/src";
 
 :root {
-  --background: #f1f2f4;
+  --background: #f3f1ee;
   --foreground: #172033;
   --surface: #ffffff;
   --surface-subtle: #f8f8f7;
-  --muted-foreground: #737b8c;
+  --muted-foreground: #5f6878;
   --border: #e3e2df;
   --border-strong: #cbc9c4;
   --primary: #0a33ed;
@@ -25,7 +25,7 @@
   --focus: #4c73ea;
   --sidebar: #f8f8f7;
   --sidebar-foreground: #102338;
-  --sidebar-muted: #748196;
+  --sidebar-muted: #5f6878;
   --sidebar-border: #e5e4e1;
 }
 
