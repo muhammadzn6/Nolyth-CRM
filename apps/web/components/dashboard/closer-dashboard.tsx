@@ -248,7 +248,7 @@ export function CloserDashboard({ actor, data, calendarInterviews, error }: Clos
   };
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="editorial-dashboard mx-auto max-w-[1500px]">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Closer workspace</p><h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Today’s schedule</h1><p className="mt-1.5 text-sm text-muted-foreground">Calls, preparation, and feedback assigned to you.</p></div><Button aria-label="Refresh dashboard" onClick={() => window.location.reload()} variant="secondary">Refresh</Button></header>
       {error ? <p className="mt-4 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground" role="status">{error}</p> : null}
       <section className="mt-5"><CloserPulse data={dashboard} /></section>
