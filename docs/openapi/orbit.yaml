@@ -1,0 +1,64 @@
+openapi: 3.1.0
+info:
+  title: Orbit Placement CRM API
+  version: 0.1.0
+  description: Authenticated API for Orbit recruitment and placement operations.
+servers:
+  - url: http://localhost:3101/api/v1
+security:
+  - sessionCookie: []
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: orbit_session
+  schemas:
+    Error:
+      type: object
+      required: [success, error]
+      properties:
+        success: { type: boolean, const: false }
+        error: { type: object, required: [code, message], properties: { code: { type: string }, message: { type: string }, details: {} } }
+    BulkImportRequest:
+      type: object
+      required: [csv]
+      properties:
+        csv: { type: string, minLength: 1, maxLength: 5242880 }
+    BulkImportResult:
+      type: object
+      required: [imported, failed, errors]
+      properties:
+        imported: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        errors: { type: array, items: { type: object, required: [row, message], properties: { row: { type: integer, minimum: 1 }, message: { type: string } } } }
+  parameters:
+    id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    leadId: { name: leadId, in: path, required: true, schema: { type: string, format: uuid } }
+    companyId: { name: companyId, in: path, required: true, schema: { type: string, format: uuid } }
+paths:
+  /auth/login: { post: { security: [], summary: Sign in, responses: { '200': { description: Authenticated user }, '401': { description: Invalid credentials, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } } } } }
+  /auth/logout: { post: { summary: Sign out, responses: { '204': { description: Signed out } } } }
+  /auth/me: { get: { summary: Get current user, responses: { '200': { description: Current user } } } }
+  /auth/change-password: { post: { summary: Change password, responses: { '204': { description: Password changed } } } }
+  /auth/password-reset/request: { post: { security: [], summary: Request password reset, requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string, format: email } } } } } }, responses: { '200': { description: Neutral reset response } } } }
+  /auth/password-reset/complete: { post: { security: [], summary: Complete password reset, responses: { '200': { description: Password reset completed } } } }
+  /users: { get: { summary: List users, responses: { '200': { description: User page } } }, post: { summary: Invite user, responses: { '201': { description: Invitation created } } } }
+  /users/{id}: { parameters: [{ $ref: '#/components/parameters/id' }], patch: { summary: Update user, responses: { '200': { description: User updated } } } }
+  /leads: { get: { summary: List leads, responses: { '200': { description: Lead page } } }, post: { summary: Create lead, responses: { '201': { description: Lead created } } } }
+  /leads/{leadId}: { parameters: [{ $ref: '#/components/parameters/leadId' }], get: { summary: Get lead, responses: { '200': { description: Lead detail } } }, patch: { summary: Update lead, responses: { '200': { description: Lead updated } } } }
+  /leads/companies: { get: { summary: List employers, responses: { '200': { description: Employer page } } }, post: { summary: Create employer, responses: { '201': { description: Employer created } } } }
+  /leads/companies/{companyId}: { parameters: [{ $ref: '#/components/parameters/companyId' }], patch: { summary: Update employer, responses: { '200': { description: Employer updated } } } }
+  /candidates: { get: { summary: List candidates, responses: { '200': { description: Candidate page } } }, post: { summary: Create candidate, responses: { '201': { description: Candidate created } } } }
+  /profiles: { get: { summary: List profiles, responses: { '200': { description: Profile page } } }, post: { summary: Create profile, responses: { '201': { description: Profile created } } } }
+  /imports/candidates: { post: { summary: Bulk import candidates, requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkImportRequest' } } } }, responses: { '200': { description: Import result, content: { application/json: { schema: { $ref: '#/components/schemas/BulkImportResult' } } } } } } }
+  /imports/leads: { post: { summary: Bulk import leads, requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BulkImportRequest' } } } }, responses: { '200': { description: Import result, content: { application/json: { schema: { $ref: '#/components/schemas/BulkImportResult' } } } } } } }
+  /calendar: { get: { summary: List interview calendar, responses: { '200': { description: Interview list } } } }
+  /calendar/google/free-busy: { get: { summary: Check a candidate calendar for conflicts, parameters: [{ name: profileId, in: query, required: false, schema: { type: string, format: uuid } }, { name: companyId, in: query, required: false, schema: { type: string, format: uuid } }, { name: startsAt, in: query, required: true, schema: { type: string, format: date-time } }, { name: endsAt, in: query, required: true, schema: { type: string, format: date-time } }], responses: { '200': { description: Busy state } } } }
+  /calendar/google/connect: { get: { summary: Start candidate Google Calendar authorization, parameters: [{ name: profileId, in: query, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Google authorization URL } } } }
+  /calendar/google/status: { get: { summary: Get candidate Google Calendar status, parameters: [{ name: profileId, in: query, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Calendar connection status } } } }
+  /calendar/google: { delete: { summary: Disconnect candidate Google Calendar, parameters: [{ name: profileId, in: query, required: true, schema: { type: string, format: uuid } }], responses: { '204': { description: Calendar disconnected } } } }
+  /tasks: { get: { summary: List tasks, responses: { '200': { description: Task list } } }, post: { summary: Create task, responses: { '201': { description: Task created } } } }
+  /dashboard: { get: { summary: Dashboard analytics, responses: { '200': { description: Dashboard metrics } } } }
+  /activity: { get: { summary: Activity feed, responses: { '200': { description: Activity events } } } }
+  /notifications: { get: { summary: Notifications, responses: { '200': { description: Notifications } } } }

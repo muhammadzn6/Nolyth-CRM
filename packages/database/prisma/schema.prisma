@@ -1,0 +1,879 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext]
+}
+
+enum UserRole {
+  ADMIN
+  BD
+  CLOSER
+}
+
+enum AuthTokenPurpose {
+  PASSWORD_RESET
+  USER_INVITATION
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+enum CandidateStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ProfileStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum CompensationPeriod {
+  HOURLY
+  YEARLY
+}
+
+enum LeadStatus {
+  APPLIED
+  RESPONSE_RECEIVED
+  INTERVIEWING
+  OFFER_RECEIVED
+  OFFER_ACCEPTED
+  PLACED
+  STARTED
+  CLOSED
+}
+
+enum LeadContactRole {
+  RECRUITER
+  HR
+  HIRING_MANAGER
+  INTERVIEWER
+}
+
+enum CommunicationType {
+  EMAIL
+  PHONE
+  LINKEDIN
+  JOB_PLATFORM
+  NOTE
+}
+
+enum CommunicationDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum CollaborationVisibility {
+  INTERNAL_TEAM
+  SHARED_WITH_CLOSER
+}
+enum TaskStatus {
+  OPEN
+  COMPLETED
+  CANCELED
+}
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+enum TaskType {
+  FOLLOW_UP
+  PREPARE_INTERVIEW
+  GENERAL
+}
+enum InterviewStatus {
+  SCHEDULED
+  RESCHEDULE_REQUIRED
+  CANCELLED
+  NO_SHOW
+  COMPLETED
+  WAITING_FEEDBACK
+  PASSED
+  FAILED
+}
+enum InterviewRoundType {
+  PRE_SCREEN
+  RECRUITER
+  HR
+  TECHNICAL
+  CODING
+  SYSTEM_DESIGN
+  BEHAVIORAL
+  HIRING_MANAGER
+  FINAL
+  OTHER
+}
+enum InterviewAttendance {
+  ATTENDED
+  MISSED
+  UNKNOWN
+}
+enum DocumentType {
+  CV
+  COVER_LETTER
+  SUPPORTING
+  OTHER
+}
+enum DocumentUsageType {
+  CV
+  SUPPORTING
+}
+enum AvailabilityExceptionType {
+  AVAILABLE_OVERRIDE
+  UNAVAILABLE
+  LEAVE
+}
+enum OfferStatus {
+  OFFERED
+  ACCEPTED
+  DECLINED
+}
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum CalendarProvider {
+  GOOGLE
+}
+
+enum GoogleCalendarConnectionStatus {
+  CONNECTED
+  EXPIRED
+  SYNCING
+}
+
+enum GoogleCalendarSyncStatus {
+  SYNCED
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  displayName            String                     @map("display_name")
+  email                  String                     @unique @db.Citext
+  passwordHash           String?                    @map("password_hash")
+  timezone               String                     @default("UTC")
+  lastLoginAt            DateTime?                  @map("last_login_at") @db.Timestamptz(6)
+  passwordChangedAt      DateTime?                  @map("password_changed_at") @db.Timestamptz(6)
+  createdByUserId        String?                    @map("created_by_user_id") @db.Uuid
+  role                   UserRole                   @default(BD)
+  isActive               Boolean                    @default(true) @map("is_active")
+  createdAt              DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version                Int                        @default(1)
+  createdByUser          User?                      @relation("UserCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdUsers           User[]                     @relation("UserCreatedBy")
+  sessions               UserSession[]
+  authTokens             AuthToken[]
+  linkedCandidate        Candidate?                 @relation("CandidateLinkedUser")
+  archivedCandidates     Candidate[]                @relation("CandidateArchivedBy")
+  createdProfiles        Profile[]                  @relation("ProfileCreatedBy")
+  archivedProfiles       Profile[]                  @relation("ProfileArchivedBy")
+  bdAssignments          ProfileBdAssignment[]      @relation("ProfileBdAssignee")
+  bdAssignmentsMade      ProfileBdAssignment[]      @relation("ProfileBdAssignedBy")
+  closerEligibilities    ProfileCloserEligibility[] @relation("ProfileCloserEligibleUser")
+  closerEligibilitySet   ProfileCloserEligibility[] @relation("ProfileCloserEligibilitySetBy")
+  createdJobLeads        JobLead[]                  @relation("JobLeadCreatedBy")
+  createdCompanies       Company[]                 @relation("CompanyCreatedBy")
+  createdContacts        Contact[]                 @relation("ContactCreatedBy")
+  ownedJobLeads          JobLead[]                  @relation("JobLeadCurrentOwner")
+  responsibleJobLeads    JobLead[]                  @relation("JobLeadResponsibleCloser")
+  archivedJobLeads       JobLead[]                  @relation("JobLeadArchivedBy")
+  closedJobLeads         JobLead[]                  @relation("JobLeadClosedBy")
+  ownershipTransfersFrom LeadOwnershipTransfer[]    @relation("LeadOwnershipTransferFrom")
+  ownershipTransfersTo   LeadOwnershipTransfer[]    @relation("LeadOwnershipTransferTo")
+  ownershipTransfersMade LeadOwnershipTransfer[]    @relation("LeadOwnershipTransferActor")
+  closerAssignments      LeadCloserAssignment[]     @relation("LeadCloserAssignee")
+  closerAssignmentsMade  LeadCloserAssignment[]     @relation("LeadCloserAssignedBy")
+  statusTransitions      LeadStatusTransition[]     @relation("LeadStatusTransitionActor")
+  activityEvents         ActivityEvent[]
+  authoredCommunications Communication[] @relation("CommunicationAuthor")
+  authoredComments       Comment[] @relation("CommentAuthor")
+  assignedTasks          Task[] @relation("TaskAssignee")
+  createdTasks           Task[] @relation("TaskCreator")
+  createdInterviews      InterviewRound[] @relation("InterviewCreator")
+  assignedInterviews     InterviewRound[] @relation("InterviewCloser")
+  availabilityRules      AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
+  createdOffers           Offer[] @relation("OfferCreator")
+  notifications           Notification[]
+  createdDocuments       Document[] @relation("DocumentCreator")
+  uploadedDocumentVersions DocumentVersion[] @relation("DocumentUploader")
+  attachedDocumentUsages LeadDocumentUsage[] @relation("DocumentUsageAttacher")
+  googleCalendarConnections GoogleCalendarConnection[]
+  clientCloserAssignments     CompanyCloserAssignment[] @relation("CompanyCloserAssignee")
+  clientCloserAssignmentsMade CompanyCloserAssignment[] @relation("CompanyCloserAssignedBy")
+
+  @@map("users")
+}
+
+model GoogleCalendarConnection {
+  id                    String                         @id @default(uuid()) @db.Uuid
+  userId                String                         @map("user_id") @db.Uuid
+  companyId             String?                        @map("company_id") @db.Uuid
+  profileId             String?                        @map("profile_id") @db.Uuid
+  provider              CalendarProvider
+  email                 String                         @map("account_email") @db.Citext
+  calendarId            String                         @map("calendar_id")
+  calendarName          String                         @map("calendar_name")
+  encryptedRefreshToken String                         @map("encrypted_refresh_token")
+  scopes                String[]                       @default([])
+  lastSyncedAt          DateTime?                      @map("last_synced_at") @db.Timestamptz(6)
+  status                GoogleCalendarConnectionStatus @default(CONNECTED)
+  createdAt             DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user                  User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company               Company?                       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  profile               Profile?                       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, provider])
+  @@unique([profileId, provider])
+  @@index([profileId, provider])
+  @@map("google_calendar_connections")
+}
+
+model UserSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  sessionTokenHash String    @unique @map("session_token_hash")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version          Int       @default(1)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("user_sessions")
+}
+
+model AuthToken {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  tokenHash  String           @unique @map("token_hash")
+  purpose    AuthTokenPurpose
+  expiresAt  DateTime         @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime?        @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([purpose, expiresAt])
+  @@map("auth_tokens")
+}
+
+model Candidate {
+  id            String          @id @default(uuid()) @db.Uuid
+  linkedUserId  String?         @unique @map("linked_user_id") @db.Uuid
+  archivedById  String?         @map("archived_by_id") @db.Uuid
+  firstName     String          @map("first_name")
+  lastName      String          @map("last_name")
+  preferredName String?         @map("preferred_name")
+  email         String?         @unique @db.Citext
+  phone         String?
+  timezone      String          @default("UTC")
+  location      String?
+  internalNotes String?         @map("internal_notes")
+  status        CandidateStatus @default(ACTIVE)
+  archivedAt    DateTime?       @map("archived_at") @db.Timestamptz(6)
+  archiveReason String?         @map("archive_reason")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version       Int             @default(1)
+  linkedUser    User?           @relation("CandidateLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  archivedBy    User?           @relation("CandidateArchivedBy", fields: [archivedById], references: [id], onDelete: Restrict)
+  profiles      Profile[]
+
+  @@index([status, archivedAt])
+  @@index([archivedById])
+  @@map("candidates")
+}
+
+model Profile {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  candidateId          String                     @map("candidate_id") @db.Uuid
+  createdById          String                     @map("created_by_id") @db.Uuid
+  archivedById         String?                    @map("archived_by_id") @db.Uuid
+  name                 String
+  description          String?
+  status               ProfileStatus              @default(DRAFT)
+  defaultCurrency      String                     @default("USD") @map("default_currency") @db.VarChar(3)
+  targetCompensation   Decimal?                   @map("target_compensation") @db.Decimal(14, 2)
+  compensationPeriod   CompensationPeriod?        @map("compensation_period")
+  targetRoles          String[]                   @default([]) @map("target_roles")
+  preferredLocations   String[]                   @default([]) @map("preferred_locations")
+  workplacePreferences String[]                   @default([]) @map("workplace_preferences")
+  jobTypePreferences   String[]                   @default([]) @map("job_type_preferences")
+  contractPreferences  String[]                   @default([]) @map("contract_preferences")
+  archivedAt           DateTime?                  @map("archived_at") @db.Timestamptz(6)
+  archiveReason        String?                    @map("archive_reason")
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version              Int                        @default(1)
+  candidate            Candidate                  @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  createdBy            User                       @relation("ProfileCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  archivedBy           User?                      @relation("ProfileArchivedBy", fields: [archivedById], references: [id], onDelete: Restrict)
+  bdAssignments        ProfileBdAssignment[]
+  closerEligibilities  ProfileCloserEligibility[]
+  jobLeads             JobLead[]
+  tasks                Task[]
+  documents            Document[]
+  googleCalendarConnections GoogleCalendarConnection[]
+
+  @@index([candidateId, status])
+  @@index([status, archivedAt])
+  @@index([createdById])
+  @@index([archivedById])
+  @@map("profiles")
+}
+
+model ProfileBdAssignment {
+  id           String    @id @default(uuid()) @db.Uuid
+  profileId    String    @map("profile_id") @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  assignedById String    @map("assigned_by_id") @db.Uuid
+  endedAt      DateTime? @map("ended_at") @db.Timestamptz(6)
+  endedReason  String?   @map("ended_reason")
+  assignedAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version      Int       @default(1)
+  profile      Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  user         User      @relation("ProfileBdAssignee", fields: [userId], references: [id], onDelete: Restrict)
+  assignedBy   User      @relation("ProfileBdAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([profileId, endedAt])
+  @@index([userId])
+  @@map("profile_bd_assignments")
+}
+
+model ProfileCloserEligibility {
+  id          String    @id @default(uuid()) @db.Uuid
+  profileId   String    @map("profile_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  setById     String    @map("set_by_id") @db.Uuid
+  isEligible  Boolean   @default(true) @map("is_eligible")
+  endedAt     DateTime? @map("ended_at") @db.Timestamptz(6)
+  endedReason String?   @map("ended_reason")
+  assignedAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int       @default(1)
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  user        User      @relation("ProfileCloserEligibleUser", fields: [userId], references: [id], onDelete: Restrict)
+  setBy       User      @relation("ProfileCloserEligibilitySetBy", fields: [setById], references: [id], onDelete: Restrict)
+
+  @@index([profileId, endedAt])
+  @@index([userId])
+  @@map("profile_closer_eligibility")
+}
+
+model JobLead {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  profileId            String                  @map("profile_id") @db.Uuid
+  companyId            String                  @map("company_id") @db.Uuid
+  sourceId             String                  @map("source_id") @db.Uuid
+  createdById          String                  @map("created_by_id") @db.Uuid
+  currentOwnerId       String                  @map("current_owner_id") @db.Uuid
+  responsibleCloserId  String?                 @map("responsible_closer_id") @db.Uuid
+  archivedById         String?                 @map("archived_by_id") @db.Uuid
+  closedById           String?                 @map("closed_by_id") @db.Uuid
+  companyName          String                  @map("company_name")
+  jobTitle             String                  @map("job_title")
+  description          String?
+  rawUrl               String                  @map("raw_url")
+  location             String?
+  workplaceType        String?                 @map("workplace_type")
+  employmentType       String?                 @map("employment_type")
+  contractType         String?                 @map("contract_type")
+  compensationMin      Decimal?                @map("compensation_min") @db.Decimal(14, 2)
+  compensationMax      Decimal?                @map("compensation_max") @db.Decimal(14, 2)
+  compensationPeriod   CompensationPeriod?     @map("compensation_period")
+  appliedDate          DateTime                @map("applied_date") @db.Date
+  isImportant          Boolean                 @default(false) @map("is_important")
+  source               String                  @default("manual")
+  canonicalUrl         String?                 @map("canonical_url")
+  canonicalHash        String?                 @map("canonical_hash")
+  status               LeadStatus              @default(APPLIED)
+  archiveReason        String?                 @map("archive_reason")
+  archivedAt           DateTime?               @map("archived_at") @db.Timestamptz(6)
+  closureReason        String?                 @map("closure_reason")
+  closureNotes         String?                 @map("closure_notes")
+  closedAt             DateTime?               @map("closed_at") @db.Timestamptz(6)
+  placedAt             DateTime?               @map("placed_at") @db.Timestamptz(6)
+  startDate            DateTime?               @map("start_date") @db.Date
+  startedAt            DateTime?               @map("started_at") @db.Timestamptz(6)
+  compensationAmount   Decimal?                @map("compensation_amount") @db.Decimal(14, 2)
+  compensationCurrency String?                 @map("compensation_currency") @db.VarChar(3)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version              Int                     @default(1)
+  profile              Profile                 @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  company              Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  sourceRef            JobSource               @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  createdBy            User                    @relation("JobLeadCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  currentOwner         User                    @relation("JobLeadCurrentOwner", fields: [currentOwnerId], references: [id], onDelete: Restrict)
+  responsibleCloser    User?                   @relation("JobLeadResponsibleCloser", fields: [responsibleCloserId], references: [id], onDelete: Restrict)
+  archivedBy           User?                   @relation("JobLeadArchivedBy", fields: [archivedById], references: [id], onDelete: Restrict)
+  closedBy             User?                   @relation("JobLeadClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+  ownershipTransfers   LeadOwnershipTransfer[]
+  closerAssignments    LeadCloserAssignment[]
+  statusTransitions    LeadStatusTransition[]
+  contacts             LeadContact[]
+  communications       Communication[]
+  comments             Comment[]
+  tasks                Task[]
+  interviews           InterviewRound[]
+  documentUsages       LeadDocumentUsage[]
+  offers               Offer[]
+
+  @@index([profileId, status])
+  @@index([profileId, status, appliedDate])
+  @@index([profileId, isImportant, appliedDate])
+  @@index([profileId, canonicalHash])
+  @@index([currentOwnerId])
+  @@index([responsibleCloserId])
+  @@index([companyId])
+  @@index([sourceId])
+  @@map("job_leads")
+}
+
+model Company {
+  id            String     @id @default(uuid()) @db.Uuid
+  canonicalName String     @unique @map("canonical_name") @db.Citext
+  website       String?
+  domain        String?
+  industry      String?
+  location      String?
+  createdById   String     @map("created_by_id") @db.Uuid
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version       Int        @default(1)
+  createdBy     User       @relation("CompanyCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  contacts      Contact[]
+  leads         JobLead[]
+  googleCalendarConnections GoogleCalendarConnection[]
+  closerAssignments CompanyCloserAssignment[] @relation("CompanyCloser")
+  @@index([domain])
+  @@map("companies")
+}
+
+model CompanyCloserAssignment {
+  id           String    @id @default(uuid()) @db.Uuid
+  companyId    String    @map("company_id") @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  assignedById String    @map("assigned_by_id") @db.Uuid
+  assignedAt   DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  endedAt      DateTime? @map("ended_at") @db.Timestamptz(6)
+  company      Company   @relation("CompanyCloser", fields: [companyId], references: [id], onDelete: Cascade)
+  closer       User      @relation("CompanyCloserAssignee", fields: [userId], references: [id], onDelete: Restrict)
+  assignedBy   User      @relation("CompanyCloserAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, userId])
+  @@index([userId, endedAt])
+  @@map("company_closer_assignments")
+}
+
+model Contact {
+  id          String        @id @default(uuid()) @db.Uuid
+  companyId   String        @map("company_id") @db.Uuid
+  createdById String        @map("created_by_id") @db.Uuid
+  name        String
+  title       String?
+  email       String?       @db.Citext
+  phone       String?
+  linkedinUrl String?       @map("linkedin_url")
+  notes       String?
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version     Int           @default(1)
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy   User          @relation("ContactCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  leads       LeadContact[]
+  communications Communication[]
+  @@index([companyId, name])
+  @@map("contacts")
+}
+
+model LeadContact {
+  id        String          @id @default(uuid()) @db.Uuid
+  leadId    String          @map("lead_id") @db.Uuid
+  contactId String          @map("contact_id") @db.Uuid
+  role      LeadContactRole
+  isPrimary Boolean         @default(false) @map("is_primary")
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  lead      JobLead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact   Contact         @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@unique([leadId, contactId])
+  @@index([contactId])
+  @@map("lead_contacts")
+}
+
+model JobSource {
+  id           String     @id @default(uuid()) @db.Uuid
+  name         String     @unique @db.Citext
+  displayOrder Int        @default(0) @map("display_order")
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version      Int        @default(1)
+  leads        JobLead[]
+  @@map("job_sources")
+}
+
+model LeadOwnershipTransfer {
+  id          String   @id @default(uuid()) @db.Uuid
+  leadId      String   @map("lead_id") @db.Uuid
+  fromOwnerId String?  @map("from_owner_id") @db.Uuid
+  toOwnerId   String   @map("to_owner_id") @db.Uuid
+  actorId     String   @map("actor_id") @db.Uuid
+  reason      String?
+  occurredAt  DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  lead        JobLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromOwner   User?    @relation("LeadOwnershipTransferFrom", fields: [fromOwnerId], references: [id], onDelete: Restrict)
+  toOwner     User     @relation("LeadOwnershipTransferTo", fields: [toOwnerId], references: [id], onDelete: Restrict)
+  actor       User     @relation("LeadOwnershipTransferActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([leadId, occurredAt])
+  @@map("lead_ownership_transfers")
+}
+
+model LeadCloserAssignment {
+  id           String    @id @default(uuid()) @db.Uuid
+  leadId       String    @map("lead_id") @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  assignedById String    @map("assigned_by_id") @db.Uuid
+  endedAt      DateTime? @map("ended_at") @db.Timestamptz(6)
+  endedReason  String?   @map("ended_reason")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version      Int       @default(1)
+  lead         JobLead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user         User      @relation("LeadCloserAssignee", fields: [userId], references: [id], onDelete: Restrict)
+  assignedBy   User      @relation("LeadCloserAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([leadId, endedAt])
+  @@index([userId])
+  @@map("lead_closer_assignments")
+}
+
+model LeadStatusTransition {
+  id         String      @id @default(uuid()) @db.Uuid
+  leadId     String      @map("lead_id") @db.Uuid
+  fromStatus LeadStatus? @map("from_status")
+  toStatus   LeadStatus  @map("to_status")
+  actorId    String      @map("actor_id") @db.Uuid
+  reason     String?
+  occurredAt DateTime    @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  lead       JobLead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  actor      User        @relation("LeadStatusTransitionActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([leadId, occurredAt])
+  @@map("lead_status_transitions")
+}
+
+model Communication {
+  id                String                  @id @default(uuid()) @db.Uuid
+  leadId            String                  @map("lead_id") @db.Uuid
+  contactId         String?                 @map("contact_id") @db.Uuid
+  authorId          String                  @map("author_id") @db.Uuid
+  type              CommunicationType
+  direction         CommunicationDirection
+  subject           String?
+  body              String
+  occurredAt        DateTime                @map("occurred_at") @db.Timestamptz(6)
+  outcome           String?
+  visibility        CollaborationVisibility
+  nextActionSummary String?                 @map("next_action_summary")
+  nextActionDueAt   DateTime?               @map("next_action_due_at") @db.Timestamptz(6)
+  archivedAt        DateTime?               @map("archived_at") @db.Timestamptz(6)
+  archiveReason     String?                 @map("archive_reason")
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version           Int                     @default(1)
+  lead              JobLead                 @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact           Contact?                @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  author            User                    @relation("CommunicationAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  @@index([leadId, occurredAt])
+  @@index([contactId])
+  @@map("communications")
+}
+
+model Comment {
+  id         String                  @id @default(uuid()) @db.Uuid
+  leadId     String                  @map("lead_id") @db.Uuid
+  authorId   String                  @map("author_id") @db.Uuid
+  body       String
+  visibility CollaborationVisibility
+  archivedAt DateTime?               @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version    Int                     @default(1)
+  lead       JobLead                 @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  author     User                    @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  @@index([leadId, createdAt])
+  @@map("comments")
+}
+
+model Task {
+  id              String       @id @default(uuid()) @db.Uuid
+  profileId       String       @map("profile_id") @db.Uuid
+  leadId          String?      @map("lead_id") @db.Uuid
+  assigneeId      String       @map("assignee_id") @db.Uuid
+  creatorId       String       @map("creator_id") @db.Uuid
+  type            TaskType
+  title           String
+  description     String?
+  priority        TaskPriority @default(MEDIUM)
+  status          TaskStatus   @default(OPEN)
+  dueAt           DateTime     @map("due_at") @db.Timestamptz(6)
+  completedAt     DateTime?    @map("completed_at") @db.Timestamptz(6)
+  completedNotes  String?      @map("completed_notes")
+  canceledAt      DateTime?    @map("canceled_at") @db.Timestamptz(6)
+  canceledReason  String?      @map("canceled_reason")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version         Int          @default(1)
+  profile         Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  lead            JobLead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignee        User         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  creator         User         @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  @@index([profileId, status, dueAt])
+  @@index([assigneeId, status, dueAt])
+  @@index([leadId])
+  @@map("tasks")
+}
+
+model InterviewRound {
+  id                   String             @id @default(uuid()) @db.Uuid
+  leadId               String             @map("lead_id") @db.Uuid
+  roundNumber          Int                @map("round_number")
+  roundType            InterviewRoundType @map("round_type")
+  status               InterviewStatus    @default(SCHEDULED)
+  closerId             String             @map("closer_id") @db.Uuid
+  creatorId            String             @map("creator_id") @db.Uuid
+  startsAt             DateTime           @map("starts_at") @db.Timestamptz(6)
+  endsAt               DateTime           @map("ends_at") @db.Timestamptz(6)
+  timezone             String
+  originalDatetimeText String             @map("original_datetime_text")
+  interviewer          String?
+  meetingLink          String?            @map("meeting_link")
+  location             String?
+  preparationNotes     String?            @map("preparation_notes")
+  closerNotes          String?            @map("closer_notes")
+  officialFeedback     String?            @map("official_feedback")
+  officialResult       String?            @map("official_result")
+  attendance           InterviewAttendance?
+  googleEventId        String?            @map("google_event_id")
+  googleSyncStatus     GoogleCalendarSyncStatus? @map("google_sync_status")
+  googleLastSyncedAt   DateTime?          @map("google_last_synced_at") @db.Timestamptz(6)
+  completedAt          DateTime?          @map("completed_at") @db.Timestamptz(6)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version              Int                @default(1)
+  lead                 JobLead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  closer               User               @relation("InterviewCloser", fields: [closerId], references: [id], onDelete: Restrict)
+  creator              User               @relation("InterviewCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  @@unique([leadId, roundNumber])
+  @@index([closerId, startsAt])
+  @@index([leadId, startsAt])
+  @@index([googleEventId])
+  @@map("interview_rounds")
+}
+
+model Document {
+  id               String            @id @default(uuid()) @db.Uuid
+  profileId        String            @map("profile_id") @db.Uuid
+  type             DocumentType
+  title            String
+  currentVersionId String?           @unique @map("current_version_id") @db.Uuid
+  archivedAt       DateTime?         @map("archived_at") @db.Timestamptz(6)
+  archiveReason    String?           @map("archive_reason")
+  createdById      String            @map("created_by_id") @db.Uuid
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version          Int               @default(1)
+  profile          Profile           @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdBy        User              @relation("DocumentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  currentVersion   DocumentVersion?  @relation("DocumentCurrentVersion", fields: [currentVersionId], references: [id], onDelete: Restrict)
+  versions         DocumentVersion[] @relation("DocumentVersions")
+  @@index([profileId, archivedAt])
+  @@map("documents")
+}
+
+model AvailabilityRule {
+  id            String   @id @default(uuid()) @db.Uuid
+  closerId      String   @map("closer_id") @db.Uuid
+  dayOfWeek     Int      @map("day_of_week")
+  localStart    String   @map("local_start")
+  localEnd      String   @map("local_end")
+  timezone      String
+  effectiveFrom DateTime? @map("effective_from") @db.Timestamptz(6)
+  effectiveTo   DateTime? @map("effective_to") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  closer        User     @relation(fields: [closerId], references: [id], onDelete: Cascade)
+  @@index([closerId, dayOfWeek])
+  @@map("availability_rules")
+}
+
+model Offer {
+  id                   String      @id @default(uuid()) @db.Uuid
+  leadId               String      @map("lead_id") @db.Uuid
+  status               OfferStatus @default(OFFERED)
+  compensationAmount   Decimal     @map("compensation_amount") @db.Decimal(14, 2)
+  compensationCurrency String      @map("compensation_currency") @db.VarChar(3)
+  employmentType       String      @map("employment_type")
+  details              String
+  decisionDeadline     DateTime?   @map("decision_deadline") @db.Timestamptz(6)
+  acceptedAt           DateTime?   @map("accepted_at") @db.Timestamptz(6)
+  startDate            DateTime?   @map("start_date") @db.Date
+  startedAt            DateTime?   @map("started_at") @db.Timestamptz(6)
+  createdById          String      @map("created_by_id") @db.Uuid
+  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version              Int         @default(1)
+  lead                 JobLead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdBy            User        @relation("OfferCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  @@index([leadId, status])
+  @@map("offers")
+}
+
+model Notification {
+  id                  String   @id @default(uuid()) @db.Uuid
+  idempotencyKey      String   @unique @map("idempotency_key")
+  recipientId         String   @map("recipient_id") @db.Uuid
+  type                String
+  title               String
+  message             String
+  relatedEntityType   String?  @map("related_entity_type")
+  relatedEntityId     String?  @map("related_entity_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt              DateTime? @map("read_at") @db.Timestamptz(6)
+  recipient           User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  deliveries          NotificationDelivery[]
+  @@index([recipientId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id             String                    @id @default(uuid()) @db.Uuid
+  notificationId String                    @map("notification_id") @db.Uuid
+  channel        String
+  status         NotificationDeliveryStatus @default(PENDING)
+  attempts       Int                       @default(0)
+  lastAttemptAt  DateTime?                 @map("last_attempt_at") @db.Timestamptz(6)
+  deliveredAt    DateTime?                 @map("delivered_at") @db.Timestamptz(6)
+  failureReason  String?                   @map("failure_reason")
+  notification   Notification              @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  @@index([notificationId, channel])
+  @@map("notification_deliveries")
+}
+
+model AvailabilityException {
+  id       String                   @id @default(uuid()) @db.Uuid
+  closerId String                   @map("closer_id") @db.Uuid
+  startsAt DateTime                 @map("starts_at") @db.Timestamptz(6)
+  endsAt   DateTime                 @map("ends_at") @db.Timestamptz(6)
+  type     AvailabilityExceptionType
+  reason   String?
+  closer   User                     @relation(fields: [closerId], references: [id], onDelete: Cascade)
+  @@index([closerId, startsAt, endsAt])
+  @@map("availability_exceptions")
+}
+
+model DocumentVersion {
+  id               String     @id @default(uuid()) @db.Uuid
+  documentId       String     @map("document_id") @db.Uuid
+  versionNumber    Int        @map("version_number")
+  storageKey       String     @map("storage_key")
+  originalFilename String     @map("original_filename")
+  mimeType         String     @map("mime_type")
+  sizeBytes        Int        @map("size_bytes")
+  checksum         String
+  uploadedById     String     @map("uploaded_by_id") @db.Uuid
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  document         Document   @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  currentFor       Document? @relation("DocumentCurrentVersion")
+  uploadedBy       User       @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  usages           LeadDocumentUsage[]
+  @@unique([documentId, versionNumber])
+  @@map("document_versions")
+}
+
+model LeadDocumentUsage {
+  id               String            @id @default(uuid()) @db.Uuid
+  leadId           String            @map("lead_id") @db.Uuid
+  documentVersionId String           @map("document_version_id") @db.Uuid
+  usageType        DocumentUsageType @map("usage_type")
+  attachedById     String            @map("attached_by_id") @db.Uuid
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  lead             JobLead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  documentVersion  DocumentVersion   @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+  attachedBy       User              @relation("DocumentUsageAttacher", fields: [attachedById], references: [id], onDelete: Restrict)
+  @@unique([leadId, documentVersionId, usageType])
+  @@index([leadId])
+  @@map("lead_document_usages")
+}
+
+model ActivityEvent {
+  id                String    @id @default(uuid()) @db.Uuid
+  actorId           String?   @map("actor_id") @db.Uuid
+  actorNameSnapshot String?   @map("actor_name_snapshot")
+  actorRoleSnapshot UserRole? @map("actor_role_snapshot")
+  profileId         String?   @map("profile_id") @db.Uuid
+  leadId            String?   @map("lead_id") @db.Uuid
+  entityType        String    @map("entity_type")
+  entityId          String    @map("entity_id") @db.Uuid
+  action            String
+  oldSnapshot       Json?     @map("old_snapshot")
+  newSnapshot       Json?     @map("new_snapshot")
+  metadata          Json?
+  requestId         String?   @map("request_id")
+  payload           Json?
+  occurredAt        DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  actor             User?     @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, occurredAt])
+  @@index([profileId, occurredAt])
+  @@index([leadId, occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([requestId, occurredAt])
+  @@map("activity_events")
+}
+
+model OutboxEvent {
+  id             String       @id @default(uuid()) @db.Uuid
+  aggregateType  String       @map("aggregate_type")
+  aggregateId    String       @map("aggregate_id") @db.Uuid
+  eventType      String       @map("event_type")
+  idempotencyKey String       @unique @map("idempotency_key")
+  status         OutboxStatus @default(PENDING)
+  attempts       Int          @default(0)
+  claimedAt      DateTime?    @map("claimed_at") @db.Timestamptz(6)
+  lastError      String?      @map("last_error")
+  processedAt    DateTime?    @map("processed_at") @db.Timestamptz(6)
+  publishedAt    DateTime?    @map("published_at") @db.Timestamptz(6)
+  payload        Json
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt])
+  @@index([aggregateType, aggregateId, createdAt])
+  @@map("outbox_events")
+}

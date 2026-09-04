@@ -1,0 +1,7 @@
+import Link from "next/link";
+import type { CompanySummary } from "@orbit/contracts";
+import { Card } from "@orbit/ui";
+
+export function ClientDirectory({ companies }: { companies: CompanySummary[] }) {
+  return <Card className="overflow-hidden p-0"><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-border bg-surface-subtle text-xs uppercase tracking-[0.12em] text-muted-foreground"><tr><th className="px-5 py-4">Employer</th><th className="px-5 py-4">Industry</th><th className="px-5 py-4" /></tr></thead><tbody className="divide-y divide-border">{companies.map((company) => <tr className="hover:bg-surface-subtle" key={company.id}><td className="px-5 py-4"><Link className="font-semibold text-primary hover:underline" href={`/admin/clients/${company.id}`}>{company.canonicalName}</Link><p className="mt-1 text-xs text-muted-foreground">{company.domain ?? "No domain set"}</p></td><td className="px-5 py-4 text-muted-foreground">{company.industry ?? "Not set"}</td><td className="px-5 py-4 text-right"><Link className="font-semibold text-primary hover:underline" href={`/admin/clients/${company.id}`}>Open workspace →</Link><Link className="ml-4 font-semibold text-muted-foreground hover:text-primary" href={`/admin/clients/${company.id}/edit`}>Edit</Link></td></tr>)}{companies.length === 0 ? <tr><td className="px-5 py-10 text-center text-muted-foreground" colSpan={3}>No employers created yet.</td></tr> : null}</tbody></table></div></Card>;
+}
