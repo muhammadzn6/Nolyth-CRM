@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CloserDashboardExternalMeeting, InterviewSummary, SessionUser } from "@orbit/contracts";
 import { Card } from "@orbit/ui";
 import { InterviewActions } from "../interviews/interview-actions";
@@ -12,6 +12,8 @@ type CalendarItem =
 
 const viewLabels: Array<[View, string]> = [["month", "Month"], ["week", "Week"], ["day", "Day"], ["agenda", "Agenda"]];
 const hours = Array.from({ length: 17 }, (_, index) => index + 6);
+const primaryTimezone = "America/New_York";
+const secondaryTimezone = "Asia/Karachi";
 
 function dateKey(value: Date): string {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
@@ -47,6 +49,15 @@ function timeParts(value: string, timezone: string) {
   return { hour: Number(parts.find((part) => part.type === "hour")?.value ?? 0) % 24, minute: Number(parts.find((part) => part.type === "minute")?.value ?? 0) };
 }
 
+function formatClock(value: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: timezone }).format(value);
+}
+
+function dateKeyInTimezone(value: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: timezone }).formatToParts(value);
+  return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
+}
+
 function eventLabel(interview: InterviewSummary): string {
   return `${interview.roundType.replaceAll("_", " ")} · Round ${interview.roundNumber}`;
 }
@@ -80,6 +91,12 @@ export function CalendarWorkspace({ actor, interviews, externalMeetings = [], em
   const [allCalendars, setAllCalendars] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showDetails, setShowDetails] = useState<CalendarItem | null>(null);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const filteredInterviews = useMemo(() => interviews.filter((interview) =>
     showInterviews &&
@@ -112,7 +129,7 @@ export function CalendarWorkspace({ actor, interviews, externalMeetings = [], em
       <section aria-label="Calendar view" className={embedded ? "rounded-lg border border-border bg-surface shadow-[0_1px_2px_rgba(23,35,56,0.03)]" : "mt-6 rounded-lg border border-border bg-surface shadow-[0_1px_2px_rgba(23,35,56,0.03)]"}>
         <div className="flex flex-col gap-3 border-b border-border p-3 sm:p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-lg font-bold text-foreground">{title}</p><p className="mt-1 text-xs text-muted-foreground">{interviewCount} Orbit interview{interviewCount === 1 ? "" : "s"} in view{externalCount ? ` · ${externalCount} Google event${externalCount === 1 ? "" : "s"}` : ""} · {Intl.DateTimeFormat().resolvedOptions().timeZone}</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex rounded-lg border border-border bg-background p-1">{viewLabels.map(([value, label]) => <button aria-pressed={view === value} className={`rounded-md px-2.5 py-1.5 text-xs font-semibold sm:px-3 ${view === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`} key={value} onClick={() => setView(value)} type="button">{label}</button>)}</div><div className="relative"><button aria-expanded={filtersOpen} aria-label="Open calendar filters" className={`grid size-9 place-items-center rounded-lg border ${filtersOpen || status !== "ALL" || roundType !== "ALL" || showCancelled ? "border-primary bg-primary-soft text-primary" : "border-border bg-background text-muted-foreground hover:text-foreground"}`} onClick={() => setFiltersOpen((open) => !open)} type="button"><svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10m-7 6h4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" /></svg></button>{filtersOpen ? <div className="fixed inset-x-4 top-20 z-30 rounded-xl border border-border bg-surface p-4 text-left shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-11 sm:w-64"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">Filter calendar</p><button aria-label="Close calendar filters" className="text-lg text-muted-foreground sm:hidden" onClick={() => setFiltersOpen(false)} type="button">×</button></div><label className="mt-4 block text-xs font-semibold text-muted-foreground">Status<select className="mt-1.5 min-h-10 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground" value={status} onChange={(event) => setStatus(event.target.value)}><option value="ALL">All statuses</option><option value="SCHEDULED">Scheduled</option><option value="RESCHEDULE_REQUIRED">Needs reschedule</option><option value="WAITING_FEEDBACK">Waiting feedback</option></select></label><label className="mt-3 block text-xs font-semibold text-muted-foreground">Interview type<select className="mt-1.5 min-h-10 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground" value={roundType} onChange={(event) => setRoundType(event.target.value)}><option value="ALL">All types</option>{allTypes.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}</select></label><label className="mt-4 flex items-center gap-2 text-xs font-medium text-muted-foreground"><input checked={showCancelled} className="size-4 accent-primary" onChange={(event) => setShowCancelled(event.target.checked)} type="checkbox" /> Show cancelled</label></div> : null}</div></div></div><div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground"><label className="inline-flex items-center gap-2"><input checked={showInterviews} className="size-4 accent-primary" onChange={(event) => setShowInterviews(event.target.checked)} type="checkbox" /><span className="size-2 rounded-full bg-primary" />Orbit interviews</label><label className="inline-flex items-center gap-2"><input checked={showExternal} className="size-4 accent-primary" onChange={(event) => setShowExternal(event.target.checked)} type="checkbox" /><span className="size-2 rounded-full bg-success" />External Google events</label>{actor.role === "ADMIN" ? <label className="inline-flex items-center gap-2 font-semibold text-foreground"><input checked={allCalendars} className="size-4 accent-primary" onChange={(event) => setAllCalendars(event.target.checked)} type="checkbox" />All calendars</label> : <span>Role-scoped calendar</span>}<span className="hidden sm:inline">·</span><span><span className="mr-1.5 inline-block size-2 rounded-full bg-warning" />Scheduling issue</span></div></div>
         {itemsInView.length === 0 ? <p className="border-b border-border bg-surface-subtle px-4 py-2.5 text-xs font-medium text-muted-foreground" role="status">No events in this scope. Adjust the calendar filters or add an interview.</p> : null}
-        <div className="overflow-x-auto">{view === "agenda" ? <AgendaView dates={dates} grouped={grouped} onSelect={setShowDetails} /> : view === "month" ? <MonthGrid anchor={anchor} dates={dates} grouped={grouped} onSelect={setShowDetails} /> : <TimeGrid dates={dates} grouped={grouped} view={view} onSelect={setShowDetails} />}</div>
+        <div className={view === "month" || view === "agenda" ? "overflow-x-auto" : "max-h-[680px] overflow-auto"} data-testid={view === "month" || view === "agenda" ? undefined : "calendar-time-scroll"}>{view === "agenda" ? <AgendaView dates={dates} grouped={grouped} onSelect={setShowDetails} /> : view === "month" ? <MonthGrid anchor={anchor} dates={dates} grouped={grouped} onSelect={setShowDetails} /> : <TimeGrid dates={dates} grouped={grouped} now={now} view={view} onSelect={setShowDetails} />}</div>
       </section>
 
       {showDetails ? <EventDetails actorRole={actor.role} item={showDetails} onClose={() => setShowDetails(null)} /> : null}
@@ -128,15 +145,21 @@ function MonthGrid({ anchor, dates, grouped, onSelect }: { anchor: Date; dates: 
   return <div className="min-w-[720px]"><div className="grid grid-cols-7 border-b border-border bg-surface-subtle">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <p className="border-r border-border px-2 py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground last:border-r-0" key={day}>{day}</p>)}</div><div className="grid grid-cols-7">{dates.map((date) => { const items = grouped.get(dateKey(date)) ?? []; const outside = date.getMonth() !== anchor.getMonth(); return <div className={`min-h-[96px] border-b border-r border-border p-2 ${outside ? "bg-background/50" : "bg-surface"}`} key={dateKey(date)}><p className={`text-xs font-semibold ${dateKey(date) === dateKey(new Date()) ? "grid size-6 place-items-center rounded-full bg-primary text-primary-foreground" : outside ? "text-muted-foreground/50" : "text-muted-foreground"}`}>{date.getDate()}</p><div className="mt-2 space-y-1">{items.map((item) => <EventButton item={item} key={`${item.kind}-${item.value.id}`} onSelect={onSelect} compact />)}</div></div>; })}</div></div>;
 }
 
-function TimeGrid({ dates, grouped, view, onSelect }: { dates: Date[]; grouped: Map<string, CalendarItem[]>; view: View; onSelect: (item: CalendarItem) => void }) {
-  const columns = view === "day" ? "grid-cols-[4rem_minmax(0,1fr)]" : "grid-cols-[4rem_repeat(7,minmax(0,1fr))]";
-  return <div className="min-w-[720px]" data-testid="calendar-time-grid"><div className={`grid ${columns} border-b border-border bg-surface-subtle`}> <div />{dates.map((date) => <p className="border-l border-border px-2 py-3 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground" key={dateKey(date)}>{view === "day" ? formatDay(date) : new Intl.DateTimeFormat("en-US", { weekday: "short", day: "numeric" }).format(date)}</p>)}</div><div className={`grid ${columns}`}> <div>{hours.map((hour) => <div className="h-16 border-b border-border px-2 pt-1 text-[10px] text-muted-foreground" data-testid="calendar-hour" key={hour}>{hour > 12 ? hour - 12 : hour}{hour >= 12 ? " PM" : " AM"}</div>)}</div>{dates.map((date) => <div className="relative border-l border-border" data-testid="calendar-day-column" key={dateKey(date)}>{hours.map((hour) => <div className="h-16 border-b border-border" key={hour} />)}{(grouped.get(dateKey(date)) ?? []).map((item) => <PositionedEvent item={item} key={`${item.kind}-${item.value.id}`} onSelect={onSelect} />)}</div>)}</div></div>;
+function TimeGrid({ dates, grouped, view, now, onSelect }: { dates: Date[]; grouped: Map<string, CalendarItem[]>; view: View; now: Date; onSelect: (item: CalendarItem) => void }) {
+  const columns = view === "day" ? "grid-cols-[5.75rem_minmax(0,1fr)]" : "grid-cols-[5.75rem_repeat(7,minmax(0,1fr))]";
+  const currentDateKey = dateKeyInTimezone(now, primaryTimezone);
+  const nowParts = timeParts(now.toISOString(), primaryTimezone);
+  const currentMinutes = nowParts.hour * 60 + nowParts.minute;
+  const currentTop = Math.max(0, Math.min(hours.length * 64 - 2, ((currentMinutes - hours[0]! * 60) / 60) * 64));
+
+  return <div className="min-w-[720px]" data-testid="calendar-time-grid"><div className={`sticky top-0 z-20 grid ${columns} border-b border-border bg-surface-subtle`}><div className="sticky left-0 z-30 border-r border-border px-2 py-2 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground"><span data-testid="calendar-timezone-us">US · New York</span><span className="mt-1 block" data-testid="calendar-timezone-pakistan">Pakistan · Karachi</span></div>{dates.map((date) => <p className={`border-l border-border px-2 py-3 text-center text-[10px] font-bold uppercase tracking-[0.12em] ${dateKey(date) === currentDateKey ? "text-primary" : "text-muted-foreground"}`} key={dateKey(date)}>{view === "day" ? formatDay(date) : new Intl.DateTimeFormat("en-US", { weekday: "short", day: "numeric" }).format(date)}</p>)}</div><div className={`grid ${columns}`}><div className="sticky left-0 z-10 bg-surface">{hours.map((hour) => { const instant = new Date(now); instant.setHours(hour, 0, 0, 0); return <div className="h-16 border-b border-border px-2 pt-1 text-[10px] leading-4 text-muted-foreground" data-testid="calendar-hour" key={hour}><span className="block">{formatClock(instant, primaryTimezone)}</span><span className="block text-[9px] text-muted-foreground/70">{formatClock(instant, secondaryTimezone)}</span></div>; })}</div>{dates.map((date) => <div className="relative border-l border-border" data-testid="calendar-day-column" key={dateKey(date)}>{hours.map((hour) => <div className="h-16 border-b border-border" key={hour} />)}{dateKey(date) === currentDateKey ? <div aria-label={`Current time: ${formatClock(now, primaryTimezone)} US, ${formatClock(now, secondaryTimezone)} Pakistan`} className="pointer-events-none absolute inset-x-0 z-10 flex items-center" data-testid="calendar-current-time" style={{ top: currentTop }}><span className="-ml-1.5 size-2.5 rounded-full bg-danger" /><span className="h-px flex-1 bg-danger" /><span className="absolute left-2 top-1 rounded-full bg-danger px-1.5 py-0.5 text-[9px] font-bold text-white">{formatClock(now, primaryTimezone)}</span></div> : null}{(grouped.get(dateKey(date)) ?? []).map((item) => <PositionedEvent item={item} key={`${item.kind}-${item.value.id}`} onSelect={onSelect} />)}</div>)}</div></div>;
 }
 
 function PositionedEvent({ item, onSelect }: { item: CalendarItem; onSelect: (item: CalendarItem) => void }) {
-  const { startsAt, endsAt, timezone } = itemDates(item);
-  const start = timeParts(startsAt, timezone); const end = timeParts(endsAt, timezone);
-  const top = Math.max(0, ((start.hour * 60 + start.minute) - 6 * 60) / 60 * 64); const duration = Math.max(30, (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute));
+  const { startsAt, endsAt } = itemDates(item);
+  const start = timeParts(startsAt, primaryTimezone);
+  const top = Math.max(0, ((start.hour * 60 + start.minute) - 6 * 60) / 60 * 64);
+  const duration = Math.max(30, (new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60_000);
   return <div className="absolute inset-x-1" style={{ top, height: Math.max(38, duration / 60 * 64) }}><EventButton item={item} onSelect={onSelect} /></div>;
 }
 

@@ -70,6 +70,15 @@ describe("CalendarWorkspace", () => {
     expect(container.querySelector('[aria-label="Open calendar filters"]')).not.toBeNull();
   });
 
+  it("shows dual timezone labels and a current-time anchor in time views", async () => {
+    await act(async () => root.render(<CalendarWorkspace actor={actor} interviews={[interview]} />));
+
+    expect(container.querySelector('[data-testid="calendar-timezone-us"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="calendar-timezone-pakistan"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="calendar-current-time"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="calendar-time-scroll"]')).not.toBeNull();
+  });
+
   it("switches to the agenda view and opens event details", async () => {
     await act(async () => root.render(<CalendarWorkspace actor={actor} interviews={[interview]} />));
 
