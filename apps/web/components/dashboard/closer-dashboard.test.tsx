@@ -169,7 +169,7 @@ describe("CloserDashboard", () => {
     expect(container.textContent).toContain("Assigned applications");
     expect(container.textContent).toContain("Eyong");
     expect(container.textContent).toContain("Backend Engineer at Google");
-    expect(container.textContent).toContain("Feedback due");
+    expect(container.textContent).toContain("Feedback pending");
     expect(container.textContent).toContain("Today");
   });
 
