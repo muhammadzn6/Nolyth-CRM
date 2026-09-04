@@ -11,6 +11,8 @@ import {
   getCurrentActor,
   getDashboard,
   listActivity,
+  listLeads,
+  listTasks,
 } from "../lib/api-client";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +39,12 @@ export default async function HomePage() {
     try { recentActivity = await listActivity({ limit: 4 }, cookie); } catch { recentActivity = undefined; }
     let calendar;
     try { calendar = await getCalendar({}, cookie); } catch { calendar = undefined; }
-    return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} /></AppShell>;
+    let applications;
+    let openTasks;
+    if (actor.role === "BD") {
+      try { [applications, openTasks] = await Promise.all([listLeads({ limit: 100 }, cookie), listTasks({ status: "OPEN" }, cookie)]); } catch { applications = undefined; openTasks = undefined; }
+    }
+    return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} applications={applications?.items} openTasks={openTasks} /></AppShell>;
   } catch (reason) {
     return <AppShell actor={actor}><DashboardOverview actor={actor} error={reason instanceof ApiClientError ? reason.message : "Live dashboard data is temporarily unavailable."} /></AppShell>;
   }
