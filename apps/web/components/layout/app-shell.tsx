@@ -27,7 +27,7 @@ export function AppShell({ actor, children }: { actor: SessionUser; children: Re
     .map(({ roles: _roles, ...item }) => item);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="app-shell min-h-screen bg-background">
       <AppSidebar
         collapsed={sidebarCollapsed}
         items={items}

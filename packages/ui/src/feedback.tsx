@@ -52,7 +52,7 @@ export function FeedbackState({
 }: FeedbackStateProps) {
   return (
     <div
-      className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-surface px-6 py-10 text-center"
+      className="flex min-h-56 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-border bg-surface px-6 py-10 text-center shadow-[0_8px_24px_rgba(35,42,58,0.03)]"
       role={tone === "danger" ? "alert" : undefined}
     >
       <span className={joinClasses("mb-4 grid size-10 place-items-center rounded-xl", toneClasses[tone])}>

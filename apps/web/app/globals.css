@@ -125,6 +125,12 @@
   .editorial-journey .journey-line { position: absolute; right: 5%; bottom: 2.4rem; left: 4%; height: 0.18rem; background: var(--primary); transform: rotate(-5deg); }
   .editorial-journey i { z-index: 1; width: 0.7rem; height: 0.7rem; border: 2px solid var(--primary); border-radius: 50%; background: var(--surface); }
   .editorial-journey-labels { display: flex; justify-content: space-between; gap: 0.5rem; color: var(--muted-foreground); font-size: 0.62rem; }
+  .app-shell :where(select, textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"])) { border-radius: 999px; }
+  .app-shell :where(textarea) { min-height: 7rem; border-radius: 1.25rem; padding-top: 0.8rem; padding-bottom: 0.8rem; }
+  .app-shell :where(table thead) { background: var(--surface-subtle); }
+  .app-shell :where(table th) { color: var(--muted-foreground); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .app-shell :where(table tbody tr) { transition: background-color 140ms ease; }
+  .app-shell :where(table tbody tr:hover) { background: var(--surface-subtle); }
   @media (max-width: 900px) { .editorial-hero { align-items: flex-start; flex-direction: column-reverse; } .editorial-greeting { text-align: left; } .editorial-pulse-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .editorial-date-rail { flex-wrap: wrap; } .editorial-add-button { margin-left: 0; } .editorial-pulse-grid { grid-template-columns: 1fr; } .editorial-filter-row span:nth-child(n+2) { display: none; } }
 }
