@@ -55,9 +55,9 @@ describe("AppShell", () => {
     expect(admin).toContain('href="/candidates"');
     expect(admin).toContain(">Candidates<");
     expect(admin).toContain("Recruitment");
-    expect(admin).toContain("Employers");
+    expect(admin).not.toContain("Employers");
     expect(admin).toContain("Administration");
-    expect(admin).toContain('href="/admin/clients"');
+    expect(admin).not.toContain('href="/admin/clients"');
     expect(admin).not.toContain("Client calendars");
     expect(admin).toContain('href="/settings"');
     expect(admin).toContain(">Work queue<");
@@ -153,7 +153,7 @@ describe("foundation screens", () => {
     expect(html).toContain("Lead moved to interviewing");
     expect(html).toContain("Workspace pulse");
     expect(html).not.toContain("Scheduling &amp; workload");
-    expect(html).toContain("Employer operations");
+    expect(html).not.toContain("Employer operations");
   });
 
   it("shows a contextual work queue preview instead of duplicating the old task label", () => {

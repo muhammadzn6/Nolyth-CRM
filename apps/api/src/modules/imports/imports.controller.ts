@@ -30,9 +30,22 @@ function parseCsv(csv: string): Array<{ row: number; values: Record<string, stri
 export class ImportsController {
   constructor(@Inject(LeadsService) private readonly leads: LeadsService, @Inject(CandidatesService) private readonly candidates: CandidatesService) {}
   @Post("candidates") async candidatesImport(@Body() input: unknown, @Req() request: AuthenticatedRequest) { return this.run(request.actor, input, (actor, values) => this.candidates.createCandidate(actor, { firstName: values.first_name, lastName: values.last_name, ...(values.email ? { email: values.email } : {}), timezone: values.timezone || "UTC", ...(values.phone ? { phone: values.phone } : {}), ...(values.location ? { location: values.location } : {}) })); }
-  @Post("leads") async leadsImport(@Body() input: unknown, @Req() request: AuthenticatedRequest) { return this.run(request.actor, input, (actor, values) => this.leads.create(actor, { profileId: values.profile_id, companyId: values.company_id, currentOwnerId: values.current_owner_id, sourceId: values.source_id, jobTitle: values.job_title, rawUrl: values.raw_url, appliedDate: values.applied_date })); }
-  private async run(actor: Actor | undefined, input: unknown, create: (actor: Actor, values: Record<string, string>) => Promise<unknown>) {
-    if (!actor || actor.role !== "ADMIN" || !actor.isActive) throw new AuthorizationError();
+  @Post("leads") async leadsImport(@Body() input: unknown, @Req() request: AuthenticatedRequest) {
+    return this.run(request.actor, input, (actor, values) => this.leads.create(actor, {
+      profileId: values.profile_id,
+      ...(values.company_id ? { companyId: values.company_id } : {}),
+      ...(values.company_name ? { companyName: values.company_name } : {}),
+      ...(values.current_owner_id ? { currentOwnerId: values.current_owner_id } : {}),
+      ...(values.source_id ? { sourceId: values.source_id } : {}),
+      ...(values.recruiter_name ? { recruiterName: values.recruiter_name } : {}),
+      ...(values.recruiter_email ? { recruiterEmail: values.recruiter_email } : {}),
+      jobTitle: values.job_title,
+      rawUrl: values.raw_url,
+      appliedDate: values.applied_date,
+    }), ["ADMIN", "BD"]);
+  }
+  private async run(actor: Actor | undefined, input: unknown, create: (actor: Actor, values: Record<string, string>) => Promise<unknown>, roles: readonly Actor["role"][] = ["ADMIN"]) {
+    if (!actor || !roles.includes(actor.role) || !actor.isActive) throw new AuthorizationError();
     const parsed = bulkImportRequestSchema.safeParse(input); if (!parsed.success) throw new ValidationError("The request payload is invalid", parsed.error.issues);
     const rows = parseCsv(parsed.data.csv); const errors: Array<{ row: number; message: string }> = []; let imported = 0;
     for (const row of rows) { try { await create(actor, row.values); imported += 1; } catch (cause) { errors.push({ row: row.row, message: cause instanceof Error ? cause.message : "Row could not be imported." }); } }

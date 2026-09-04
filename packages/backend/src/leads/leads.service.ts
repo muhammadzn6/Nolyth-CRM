@@ -192,14 +192,14 @@ export class LeadsService {
     const visible = actor.role === "BD"
       ? rows.filter((row) => row.currentOwnerId === actor.id)
       : actor.role === "CLOSER"
-        ? rows.filter((row) => row.responsibleCloserId === actor.id)
+        ? rows.filter((row) => row.responsibleCloserId === actor.id && row.status !== "APPLIED")
         : rows;
     return page(visible.map((row) => summary(row)), q.limit);
   }
 
   async get(actor: Actor, id: string): Promise<LeadSummary & { company: Record<string, unknown>; contacts: ReadonlyArray<Record<string, unknown>> }> {
     const lead = await this.requireLead(id); await this.authorization.assertProfileAccess(actor, String(lead.profileId));
-    if (actor.role === "CLOSER" && lead.responsibleCloserId !== actor.id) throw new AuthorizationError();
+    if (actor.role === "CLOSER" && (lead.responsibleCloserId !== actor.id || lead.status === "APPLIED")) throw new AuthorizationError();
     if (actor.role === "BD" && lead.currentOwnerId !== actor.id) throw new AuthorizationError();
     const result = await this.database.jobLead.findUnique({ where: { id }, include: { company: true, contacts: { include: { contact: true } } } });
     if (!result) throw new NotFoundError("The requested lead was not found");
@@ -221,12 +221,25 @@ export class LeadsService {
     if (!actor.isActive || !["ADMIN", "BD"].includes(actor.role)) throw new AuthorizationError();
     const parsed = createLeadSchema.safeParse(input); if (!parsed.success) throw invalid(parsed.error.issues);
     await this.authorization.assertProfileAccess(actor, parsed.data.profileId);
-    if (actor.role === "BD" && parsed.data.currentOwnerId !== actor.id) throw new AuthorizationError();
-    const company = await this.database.company.findUnique({ where: { id: parsed.data.companyId } });
-    const source = await this.database.jobSource.findUnique({ where: { id: parsed.data.sourceId } });
-    if (!company || !source) throw new NotFoundError("The company or source was not found");
+    const currentOwnerId = parsed.data.currentOwnerId ?? actor.id;
+    if (actor.role === "BD" && currentOwnerId !== actor.id) throw new AuthorizationError();
+    const { companyId, companyName, sourceId, recruiterName, recruiterEmail, currentOwnerId: _ownerId, ...leadData } = parsed.data;
+    const company = companyId
+      ? await this.database.company.findUnique({ where: { id: companyId } })
+      : await this.database.company.findUnique({ where: { canonicalName: companyName! } });
+    const normalizedCompany = company ?? (companyName
+      ? await this.database.company.create({ data: { canonicalName: companyName, createdById: actor.id } })
+      : null);
+    const source = sourceId
+      ? await this.database.jobSource.findUnique({ where: { id: sourceId } })
+      : await this.database.jobSource.findFirst({ where: { isActive: true }, orderBy: { displayOrder: "asc" } });
+    if (!normalizedCompany || !source) throw new NotFoundError("The company or source was not found");
     try {
-      const created = await this.database.jobLead.create({ data: { ...parsed.data, companyName: String(company.canonicalName), createdById: actor.id, appliedDate: new Date(`${parsed.data.appliedDate}T00:00:00.000Z`), canonicalUrl: parsed.data.rawUrl, canonicalHash: parsed.data.rawUrl.toLowerCase() } });
+      const created = await this.database.jobLead.create({ data: { ...leadData, currentOwnerId, companyId: normalizedCompany.id, sourceId: source.id, companyName: String(normalizedCompany.canonicalName), createdById: actor.id, appliedDate: new Date(`${leadData.appliedDate}T00:00:00.000Z`), canonicalUrl: leadData.rawUrl, canonicalHash: leadData.rawUrl.toLowerCase() } });
+      if (recruiterName || recruiterEmail) {
+        const contact = await this.database.contact.create({ data: { companyId: normalizedCompany.id, createdById: actor.id, name: recruiterName ?? "Recruiter", email: recruiterEmail ?? null } });
+        await this.database.leadContact.create({ data: { leadId: created.id, contactId: contact.id, role: "RECRUITER", isPrimary: true } });
+      }
       await this.audit(actor, created, "lead.created", { status: created.status, jobTitle: created.jobTitle });
       return summary(created);
     } catch (error) {
@@ -277,6 +290,7 @@ export class LeadsService {
   async assignCloser(actor: Actor, id: string, closerId: string, expectedVersion: number): Promise<LeadSummary> {
     if (!actor.isActive || actor.role === "CLOSER") throw new AuthorizationError();
     const lead = await this.requireLead(id); await this.authorization.assertProfileAccess(actor, String(lead.profileId));
+    if (lead.status === "APPLIED") throw new ValidationError("A Closer can be assigned after a recruiter response");
     const parsed = assignLeadCloserRequestSchema.safeParse({ closerId, expectedVersion }); if (!parsed.success) throw invalid(parsed.error.issues);
     const eligible = await this.database.profileCloserEligibility.findFirst({ where: { profileId: lead.profileId, userId: closerId, isEligible: true, endedAt: null } });
     if (!eligible) throw new ValidationError("The selected Closer is not eligible for this profile");

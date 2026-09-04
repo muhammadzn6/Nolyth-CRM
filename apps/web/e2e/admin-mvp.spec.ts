@@ -15,13 +15,9 @@ test.describe("admin MVP surfaces", () => {
     await signIn(page);
   });
 
-  test("exposes employer CRUD and administration", async ({ page }) => {
-    await page.goto("/admin/clients");
-    await expect(page.getByRole("heading", { name: "Employers" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "New employer" })).toBeVisible();
-    await page.getByRole("link", { name: "New employer" }).click();
-    await expect(page.getByRole("heading", { name: "New employer" })).toBeVisible();
-    await expect(page.getByRole("form", { name: "Create employer" })).toBeVisible();
+  test("exposes application intake and administration", async ({ page }) => {
+    await page.goto("/leads");
+    await expect(page.getByRole("heading", { name: "Applications", exact: true })).toBeVisible();
   });
 
   test("exposes import, collaboration, and profile tab surfaces", async ({ page }) => {
@@ -29,7 +25,7 @@ test.describe("admin MVP surfaces", () => {
     await expect(page.getByRole("heading", { name: "Candidates", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bulk import candidates" })).toBeVisible();
     await page.goto("/leads");
-    await expect(page.getByRole("heading", { name: "Bulk import leads" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bulk import applications" })).toBeVisible();
     await page.goto("/reset-password");
     await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
   });
@@ -39,9 +35,8 @@ test.describe("admin MVP surfaces", () => {
       ["/", "Today at a glance"],
       ["/candidates", "Candidates"],
       ["/profiles", "Profiles"],
-      ["/leads", "Leads"],
+      ["/leads", "Applications"],
       ["/tasks", "Work queue"],
-      ["/admin/clients", "Employers"],
       ["/analytics", "Analytics"],
       ["/activity", "Activity"],
       ["/admin/users", "Users and invitations"],
