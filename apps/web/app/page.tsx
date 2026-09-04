@@ -10,6 +10,7 @@ import {
   getCalendar,
   getCurrentActor,
   getDashboard,
+  listLeads,
   listActivity,
   listTasks,
 } from "../lib/api-client";
@@ -39,8 +40,10 @@ export default async function HomePage() {
     let calendar;
     try { calendar = await getCalendar({}, cookie); } catch { calendar = undefined; }
     let openTasks: Awaited<ReturnType<typeof listTasks>> = [];
-    try { openTasks = await listTasks({ status: "OPEN", limit: 4 }, cookie); } catch { openTasks = []; }
-    return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} openTasks={openTasks} /></AppShell>;
+    try { openTasks = await listTasks({ status: "OPEN", limit: 100 }, cookie); } catch { openTasks = []; }
+    let applications: Awaited<ReturnType<typeof listLeads>>["items"] = [];
+    if (actor.role === "BD") { try { applications = (await listLeads({ limit: 100 }, cookie)).items; } catch { applications = []; } }
+    return <AppShell actor={actor}><DashboardOverview actor={actor} applications={applications} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} openTasks={openTasks} /></AppShell>;
   } catch (reason) {
     return <AppShell actor={actor}><DashboardOverview actor={actor} error={reason instanceof ApiClientError ? reason.message : "Live dashboard data is temporarily unavailable."} /></AppShell>;
   }

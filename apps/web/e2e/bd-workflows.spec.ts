@@ -16,6 +16,15 @@ test.describe("BD recruiter workflows", () => {
     await signInAsBd(page);
   });
 
+  test("shows intake-focused KPIs and daily target signals", async ({ page }) => {
+    const pulse = page.getByLabel("BD intake pulse");
+    await expect(pulse).toBeVisible();
+    for (const label of ["Applications today", "Remaining target", "Data quality issues", "Duplicate applications", "Recruiter responses", "Active applications", "Follow-ups due", "Interviews to schedule"]) {
+      await expect(pulse.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(pulse.getByRole("link", { name: /Applications today:.*daily target of 70/ })).toBeVisible();
+  });
+
   test("creates and edits an internal communication and comment", async ({ page }) => {
     const runId = Date.now().toString();
     await page.goto(`/leads/${leadId}/communications`);
