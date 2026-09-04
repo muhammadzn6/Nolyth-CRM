@@ -1,0 +1,27 @@
+{
+  "name": "@orbit/worker",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "lint": "eslint --config ../../eslint.config.mjs .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  },
+  "devDependencies": {
+    "eslint": "^9.35.0",
+    "tsx": "^4.20.5"
+  },
+  "dependencies": {
+    "@orbit/backend": "workspace:*",
+    "@orbit/config": "workspace:*",
+    "@orbit/contracts": "workspace:*",
+    "@orbit/database": "workspace:*",
+    "bullmq": "^5.81.4"
+  }
+}

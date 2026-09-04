@@ -1,0 +1,26 @@
+{
+  "name": "@orbit/backend",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint --config ../../eslint.config.mjs .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "vitest run --config ../../vitest.config.mts --passWithNoTests"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1124.0",
+    "@aws-sdk/s3-request-presigner": "^3.1124.0",
+    "@orbit/config": "workspace:*",
+    "@orbit/contracts": "workspace:*",
+    "@orbit/database": "workspace:*",
+    "argon2": "^0.45.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.35.0"
+  }
+}
