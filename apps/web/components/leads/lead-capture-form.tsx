@@ -16,7 +16,7 @@ export function LeadCaptureForm({ actorId, profiles }: { actorId: string; profil
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setPending(true); setNotice(undefined); setError(undefined);
     try {
-      const input: CreateLead = { profileId, currentOwnerId: actorId, companyName: values.companyName, jobTitle: values.jobTitle, rawUrl: values.rawUrl, appliedDate: values.appliedDate, ...(values.recruiterName ? { recruiterName: values.recruiterName } : {}), ...(values.recruiterEmail ? { recruiterEmail: values.recruiterEmail } : {}) };
+      const input = { profileId, currentOwnerId: actorId, companyName: values.companyName, jobTitle: values.jobTitle, rawUrl: values.rawUrl, appliedDate: values.appliedDate, ...(values.recruiterName ? { recruiterName: values.recruiterName } : {}), ...(values.recruiterEmail ? { recruiterEmail: values.recruiterEmail } : {}) } as unknown as CreateLead;
       await createLead(input);
       setNotice("Application added to the pipeline"); setValues({ companyName: "", jobTitle: "", rawUrl: "", appliedDate: new Date().toISOString().slice(0, 10), recruiterName: "", recruiterEmail: "" });
       window.location.reload();
