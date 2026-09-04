@@ -21,7 +21,7 @@ const navigation: Array<NavigationItem & { group: string; roles: SessionUser["ro
 ];
 
 export function AppShell({ actor, children }: { actor: SessionUser; children: ReactNode }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const items = navigation
     .filter((item) => item.roles.includes(actor.role))
     .map(({ roles: _roles, ...item }) => item);
@@ -34,8 +34,8 @@ export function AppShell({ actor, children }: { actor: SessionUser; children: Re
         onCollapsedChange={setSidebarCollapsed}
         role={actor.role}
       />
-      <div className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "lg:pl-[76px]" : "lg:pl-[224px]"}`}>
-        <AppHeader actor={actor} />
+      <div className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "lg:pl-[108px]" : "lg:pl-[256px]"}`}>
+        <AppHeader actor={actor} onNavigationToggle={() => setSidebarCollapsed((value) => !value)} />
         <main className="px-4 py-6 md:px-8 lg:px-12 lg:py-10">{children}</main>
       </div>
     </div>

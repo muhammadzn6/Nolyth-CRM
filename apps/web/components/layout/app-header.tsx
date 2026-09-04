@@ -9,7 +9,7 @@ import { logout } from "../../lib/api-client";
 
 const roleLabels = { ADMIN: "Administrator", BD: "Business development", CLOSER: "Closer" } as const;
 
-export function AppHeader({ actor }: { actor: SessionUser }) {
+export function AppHeader({ actor, onNavigationToggle = () => undefined }: { actor: SessionUser; onNavigationToggle?: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -95,8 +95,10 @@ export function AppHeader({ actor }: { actor: SessionUser }) {
   }
 
   return (
-    <header className="sticky top-0 z-30 mx-3 mt-3 flex h-14 items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 px-4 shadow-[0_8px_24px_rgba(35,42,58,0.04)] backdrop-blur md:mx-5 md:px-6 lg:mx-8 lg:px-8">
-      <div className="w-10 shrink-0 lg:hidden" />
+    <header className="sticky top-0 z-30 mx-3 mt-3 flex h-14 items-center gap-3 rounded-2xl border border-border/80 bg-surface/90 px-3 shadow-[0_8px_24px_rgba(35,42,58,0.04)] backdrop-blur md:mx-5 md:px-5 lg:mx-8 lg:px-6">
+      <button aria-label="Toggle navigation" className="grid size-9 shrink-0 place-items-center rounded-full text-foreground transition hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-focus" onClick={onNavigationToggle} type="button"><span aria-hidden="true" className="text-lg leading-none">☰</span></button>
+      <span aria-hidden="true" className="hidden size-9 place-items-center rounded-full bg-foreground text-xs font-black text-white sm:grid">O</span>
+      <div className="hidden min-w-0 sm:block"><p className="text-sm font-bold leading-tight text-foreground">Orbit</p><p className="truncate text-[10px] text-muted-foreground">{actor.role === "ADMIN" ? "Admin command center" : actor.role === "BD" ? "Placement operations" : "Interview workspace"}</p></div>
       <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
         <span>Workspace</span><span aria-hidden="true">/</span><span className="font-semibold capitalize text-foreground">{pageLabel}</span>
       </div>

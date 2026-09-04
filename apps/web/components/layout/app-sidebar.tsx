@@ -60,20 +60,16 @@ export function AppSidebar({
       </button>
       {mobileOpen ? <button aria-label="Close navigation overlay" className="fixed inset-0 z-30 bg-sidebar/45 backdrop-blur-[1px] lg:hidden" onClick={() => setMobileOpen(false)} type="button" /> : null}
       <aside
-      className={`fixed inset-y-0 left-0 z-40 flex border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 motion-reduce:transition-none lg:translate-x-0 ${collapsed ? "w-[76px]" : "w-[224px]"} ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+      className={`fixed inset-y-3 left-3 z-40 flex rounded-[2rem] border border-border/80 bg-surface text-foreground shadow-[0_12px_32px_rgba(35,42,58,0.06)] transition-[width,transform] duration-200 motion-reduce:transition-none lg:inset-y-24 lg:left-4 lg:translate-x-0 ${collapsed ? "w-[76px]" : "w-[224px]"} ${mobileOpen ? "translate-x-0" : "-translate-x-[120%]"}`}
       >
         <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-sm font-black text-white shadow-[0_5px_12px_rgba(10,51,237,0.2)]">O</span>
-          {!collapsed ? (
-            <div className="min-w-0">
-              <p className="text-sm font-bold tracking-wide text-sidebar-foreground">ORBIT</p>
-              <p className="truncate text-[10px] font-medium uppercase tracking-[0.18em] text-sidebar-muted">Placement CRM</p>
-            </div>
-          ) : null}
+        <div className="flex h-12 items-center justify-center px-3">
+          <Link aria-label="Create lead" className="grid size-9 place-items-center rounded-full bg-foreground text-xl leading-none text-white transition hover:bg-primary focus-visible:ring-2 focus-visible:ring-focus" href="/leads">
+            <span aria-hidden="true">+</span>
+          </Link>
           <Button
             aria-label="Close navigation"
-              className="ml-auto text-sidebar-muted hover:bg-surface-subtle hover:text-sidebar-foreground lg:hidden"
+              className="ml-auto text-muted-foreground hover:bg-surface-subtle hover:text-foreground lg:hidden"
             onClick={() => setMobileOpen(false)}
             size="icon"
             variant="ghost"
@@ -82,16 +78,16 @@ export function AppSidebar({
           </Button>
         </div>
 
-        <nav aria-label="Primary navigation" className="flex-1 space-y-1 px-3 py-5">
+        <nav aria-label="Primary navigation" className="flex-1 space-y-1 px-3 py-4">
           {items.map((item, index) => (
             <div key={item.href}>
-            {!collapsed && (index === 0 || item.group !== items[index - 1]?.group) ? <p className="mb-2 mt-5 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-muted first:mt-0">{item.group}</p> : null}
+            {(index === 0 || item.group !== items[index - 1]?.group) ? <p className={`${collapsed ? "sr-only" : "mb-2 mt-5 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground first:mt-0"}`}>{item.group}</p> : null}
             {(() => {
               const active = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
             <Link
               aria-current={active ? "page" : undefined}
-              className={`flex h-10 items-center gap-3 rounded-full border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${active ? "border-primary/15 bg-primary-soft font-semibold text-primary" : "border-transparent text-sidebar-muted hover:bg-surface-subtle hover:text-sidebar-foreground"}`}
+              className={`flex h-10 items-center gap-3 rounded-full border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${collapsed ? "justify-center" : ""} ${active ? "border-foreground bg-foreground font-semibold text-white" : "border-transparent text-muted-foreground hover:bg-surface-subtle hover:text-foreground"}`}
               href={item.href}
               onClick={() => setMobileOpen(false)}
               title={collapsed ? item.label : undefined}
@@ -114,7 +110,7 @@ export function AppSidebar({
           ) : null}
           <Button
             aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-            className="hidden w-full text-sidebar-muted hover:bg-white/10 hover:text-white lg:inline-flex"
+            className="hidden w-full text-muted-foreground hover:bg-surface-subtle hover:text-foreground lg:inline-flex"
             onClick={() => onCollapsedChange(!collapsed)}
             size={collapsed ? "icon" : "sm"}
             variant="ghost"

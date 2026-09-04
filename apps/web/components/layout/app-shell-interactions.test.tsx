@@ -49,16 +49,16 @@ describe("AppShell interactions", () => {
 
     const sidebar = container.querySelector("aside");
     const content = container.querySelector("main")?.parentElement;
-    const collapse = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Collapse navigation"]',
+    const expand = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Expand navigation"]',
     );
 
-    expect(sidebar?.className).toContain("w-[224px]");
-    expect(content?.className).toContain("lg:pl-[224px]");
-
-    act(() => collapse?.click());
-
     expect(sidebar?.className).toContain("w-[76px]");
-    expect(content?.className).toContain("lg:pl-[76px]");
+    expect(content?.className).toContain("lg:pl-[108px]");
+
+    act(() => expand?.click());
+
+    expect(sidebar?.className).toContain("w-[224px]");
+    expect(content?.className).toContain("lg:pl-[256px]");
   });
 });
