@@ -95,7 +95,7 @@ export function AppHeader({ actor }: { actor: SessionUser }) {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/70 bg-surface/90 px-4 backdrop-blur md:px-6 lg:px-10">
+    <header className="sticky top-0 z-30 mx-3 mt-3 flex h-14 items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 px-4 shadow-[0_8px_24px_rgba(35,42,58,0.04)] backdrop-blur md:mx-5 md:px-6 lg:mx-8 lg:px-8">
       <div className="w-10 shrink-0 lg:hidden" />
       <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
         <span>Workspace</span><span aria-hidden="true">/</span><span className="font-semibold capitalize text-foreground">{pageLabel}</span>
@@ -103,7 +103,7 @@ export function AppHeader({ actor }: { actor: SessionUser }) {
       <form action="/search" className="relative ml-auto hidden w-full max-w-[340px] md:block" role="search">
         <label className="sr-only" htmlFor="global-search">Search Orbit</label>
         <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">⌕</span>
-        <input className="h-9 w-full rounded-xl border border-border bg-surface pl-9 pr-12 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-3 focus:ring-focus/15" id="global-search" name="q" placeholder="Search profiles, leads, people…" />
+        <input className="h-10 w-full rounded-full border border-border bg-surface-subtle pl-9 pr-12 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-3 focus:ring-focus/15" id="global-search" name="q" placeholder="Search profiles, leads, people…" />
         <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md border border-border bg-surface-subtle px-1.5 py-0.5 text-[10px] text-muted-foreground">⌘K</kbd>
       </form>
       <a aria-label="Notifications" className="relative grid size-9 place-items-center rounded-xl text-foreground transition hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-focus" href="/notifications">
