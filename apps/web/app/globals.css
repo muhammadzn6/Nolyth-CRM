@@ -134,3 +134,9 @@
   @media (max-width: 900px) { .editorial-hero { align-items: flex-start; flex-direction: column-reverse; } .editorial-greeting { text-align: left; } .editorial-pulse-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) { .editorial-date-rail { flex-wrap: wrap; } .editorial-add-button { margin-left: 0; } .editorial-pulse-grid { grid-template-columns: 1fr; } .editorial-filter-row span:nth-child(n+2) { display: none; } }
 }
+
+@layer utilities {
+  .app-shell :where(button, [role="button"]) { border-radius: 999px; }
+  .app-shell :where(select, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"])) { border-radius: 999px; }
+  .app-shell :where(textarea) { border-radius: 1.25rem; }
+}
