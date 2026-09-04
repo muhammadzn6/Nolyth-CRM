@@ -20,6 +20,21 @@ test.describe("admin MVP surfaces", () => {
     await expect(page.getByRole("heading", { name: "Applications", exact: true })).toBeVisible();
   });
 
+  test("shows clickable operational KPIs before the calendar", async ({ page }) => {
+    await page.goto("/");
+    const pulse = page.getByLabel("Workspace pulse");
+    await expect(pulse).toBeVisible();
+    for (const label of ["Applications", "Recruiter responses", "Interviews", "Overdue actions", "Scheduling conflicts", "Offers", "Placements"]) {
+      await expect(pulse.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(pulse.getByRole("link", { name: /Recruiter responses:.*Applications that have received/ })).toHaveAttribute("href", "/leads?status=RESPONSE_RECEIVED");
+    const panel = page.getByLabel("Dashboard activity panel");
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("tab", { name: /Needs attention/ })).toBeVisible();
+    await panel.getByRole("tab", { name: /Today/ }).click();
+    await expect(panel.getByRole("tab", { name: /Today/ })).toHaveAttribute("aria-selected", "true");
+  });
+
   test("exposes import, collaboration, and profile tab surfaces", async ({ page }) => {
     await page.goto("/candidates");
     await expect(page.getByRole("heading", { name: "Candidates", exact: true })).toBeVisible();

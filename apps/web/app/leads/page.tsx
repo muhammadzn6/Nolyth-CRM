@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { leadStatusSchema } from "@orbit/contracts";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -12,16 +13,19 @@ import { LeadCaptureForm } from "../../components/leads/lead-capture-form";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Applications" };
 
-export default async function LeadsRoute() {
+export default async function LeadsRoute({ searchParams }: { searchParams?: Promise<{ status?: string }> }) {
   const cookie = (await headers()).get("cookie") ?? undefined;
   const actor = await getCurrentActor(cookie);
   if (!actor) redirect("/login");
+  const requestedStatus = leadStatusSchema.safeParse((await searchParams)?.status).success
+    ? leadStatusSchema.parse((await searchParams)?.status)
+    : undefined;
   let leads;
   let users: Awaited<ReturnType<typeof listUsers>> = [];
   let profiles: Awaited<ReturnType<typeof listProfiles>> = { items: [], nextCursor: null };
   try {
     [leads, users, profiles] = await Promise.all([
-      listLeads({}, cookie),
+      listLeads({ status: requestedStatus }, cookie),
       actor.role === "ADMIN" ? listUsers(cookie) : Promise.resolve([]),
       actor.role === "BD" ? listProfiles({}, cookie) : Promise.resolve({ items: [], nextCursor: null }),
     ]);
