@@ -191,20 +191,13 @@ function hasValidCompensationRange(value: {
 export const createLeadSchema = z
   .strictObject({
     profileId: uuidSchema,
-    companyId: uuidSchema.optional(),
-    companyName: textSchema.optional(),
-    currentOwnerId: uuidSchema.optional(),
-    sourceId: uuidSchema.optional(),
-    recruiterName: textSchema.optional(),
-    recruiterEmail: emailSchema.optional(),
+    companyId: uuidSchema,
+    currentOwnerId: uuidSchema,
+    sourceId: uuidSchema,
     jobTitle: textSchema,
     rawUrl: urlSchema,
     appliedDate: dateSchema,
     ...optionalLeadFields,
-  })
-  .refine((value) => Boolean(value.companyId || value.companyName), {
-    message: "Company name is required",
-    path: ["companyName"],
   })
   .refine(hasValidCompensationRange, {
     message: "Compensation minimum cannot exceed compensation maximum",

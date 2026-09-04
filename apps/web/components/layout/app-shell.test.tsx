@@ -55,13 +55,11 @@ describe("AppShell", () => {
     expect(admin).toContain('href="/candidates"');
     expect(admin).toContain(">Candidates<");
     expect(admin).toContain("Recruitment");
-    expect(admin).not.toContain("Employers");
+    expect(admin).toContain("Employers");
     expect(admin).toContain("Administration");
-    expect(admin).not.toContain('href="/admin/clients"');
+    expect(admin).toContain('href="/admin/clients"');
     expect(admin).not.toContain("Client calendars");
     expect(admin).toContain('href="/settings"');
-    expect(admin).toContain(">Work queue<");
-    expect(admin).not.toContain(">Tasks<");
     expect(bd).not.toContain('href="/admin"');
     expect(bd).not.toContain('href="/candidates"');
   });
@@ -83,7 +81,6 @@ describe("AppShell", () => {
     expect(closer).not.toContain('href="/profiles"');
     expect(closer).toContain('href="/activity"');
     expect(closer).toContain('href="/settings"');
-    expect(closer).not.toContain('href="/calendar"');
     expect(closer).not.toContain(">Analytics<");
   });
 
@@ -153,36 +150,6 @@ describe("foundation screens", () => {
     expect(html).toContain("Lead moved to interviewing");
     expect(html).toContain("Workspace pulse");
     expect(html).not.toContain("Scheduling &amp; workload");
-    expect(html).not.toContain("Employer operations");
-  });
-
-  it("shows a contextual work queue preview instead of duplicating the old task label", () => {
-    const html = renderToStaticMarkup(
-      <DashboardOverview
-        actor={actors.BD}
-        openTasks={[{
-          id: "90000000-0000-4000-8000-000000000001",
-          profileId: "30000000-0000-4000-8000-000000000001",
-          leadId: "70000000-0000-4000-8000-000000000001",
-          assigneeId: actors.BD.id,
-          creatorId: actors.BD.id,
-          type: "FOLLOW_UP",
-          title: "Follow up with Google recruiter",
-          description: "Confirm the next interview round.",
-          priority: "HIGH",
-          status: "OPEN",
-          dueAt: "2026-09-05T10:00:00.000Z",
-          completedAt: null,
-          completedNotes: null,
-          createdAt: "2026-09-01T10:00:00.000Z",
-          updatedAt: "2026-09-01T10:00:00.000Z",
-          version: 1,
-        }]}
-      />,
-    );
-
-    expect(html).toContain("Work queue");
-    expect(html).toContain("Follow up with Google recruiter");
-    expect(html).toContain("Open work queue");
+    expect(html).toContain("Employer operations");
   });
 });

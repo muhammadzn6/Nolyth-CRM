@@ -25,7 +25,7 @@ test.describe("Closer workspace", () => {
     await expect(page.getByRole("heading", { name: "Google Calendar" })).toBeVisible();
 
     const navigation = page.getByRole("navigation", { name: "Primary navigation" });
-    for (const label of ["Dashboard", "Leads", "Work queue", "Activity", "Account settings"]) {
+    for (const label of ["Dashboard", "Leads", "Tasks", "Interview calendar", "Activity", "Account settings"]) {
       await expect(navigation.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
     for (const label of ["Candidates", "Profiles", "Employer directory", "Analytics", "Users"]) {
@@ -49,8 +49,8 @@ test.describe("Closer workspace", () => {
   });
 
   test("shows assigned interviews and closer actions on the calendar", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.getByLabel("Primary calendar")).toBeVisible();
+    await page.goto("/calendar");
+    await expect(page.getByRole("heading", { name: "Interview calendar" })).toBeVisible();
     await expect(page.getByText("SCHEDULED", { exact: true }).first()).toBeVisible();
     await page.getByTestId("calendar-event").first().click();
     await expect(page.getByRole("button", { name: "Mark attended" }).first()).toBeVisible();
@@ -60,7 +60,7 @@ test.describe("Closer workspace", () => {
 
   test("loads closer task, availability, activity, and notification surfaces", async ({ page }) => {
     for (const [route, heading] of [
-      ["/tasks", "Work queue"],
+      ["/tasks", "Tasks"],
       ["/availability", "My availability"],
       ["/activity", "Activity"],
       ["/notifications", "Notifications"],

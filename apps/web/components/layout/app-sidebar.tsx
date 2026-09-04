@@ -60,11 +60,11 @@ export function AppSidebar({
       </button>
       {mobileOpen ? <button aria-label="Close navigation overlay" className="fixed inset-0 z-30 bg-sidebar/45 backdrop-blur-[1px] lg:hidden" onClick={() => setMobileOpen(false)} type="button" /> : null}
       <aside
-      className={`fixed inset-y-0 left-0 z-40 flex border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 motion-reduce:transition-none lg:translate-x-0 ${collapsed ? "w-[76px]" : "w-[248px]"} ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+      className={`fixed inset-y-0 left-0 z-40 flex border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 motion-reduce:transition-none lg:translate-x-0 ${collapsed ? "w-[76px]" : "w-[224px]"} ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-primary text-sm font-black text-white shadow-[0_5px_12px_rgba(10,51,237,0.2)]">O</span>
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-sm font-black text-white shadow-[0_5px_12px_rgba(10,51,237,0.2)]">O</span>
           {!collapsed ? (
             <div className="min-w-0">
               <p className="text-sm font-bold tracking-wide text-sidebar-foreground">ORBIT</p>
@@ -73,7 +73,7 @@ export function AppSidebar({
           ) : null}
           <Button
             aria-label="Close navigation"
-            className="ml-auto text-sidebar-muted hover:bg-white/10 hover:text-white lg:hidden"
+              className="ml-auto text-sidebar-muted hover:bg-surface-subtle hover:text-sidebar-foreground lg:hidden"
             onClick={() => setMobileOpen(false)}
             size="icon"
             variant="ghost"
@@ -91,7 +91,7 @@ export function AppSidebar({
               return (
             <Link
               aria-current={active ? "page" : undefined}
-              className={`flex h-10 items-center gap-3 rounded-xl border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${active ? "border-primary/15 bg-primary-soft font-semibold text-primary" : "border-transparent text-sidebar-muted hover:bg-surface-subtle hover:text-sidebar-foreground"}`}
+              className={`flex h-10 items-center gap-3 rounded-full border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${active ? "border-primary/15 bg-primary-soft font-semibold text-primary" : "border-transparent text-sidebar-muted hover:bg-surface-subtle hover:text-sidebar-foreground"}`}
               href={item.href}
               onClick={() => setMobileOpen(false)}
               title={collapsed ? item.label : undefined}

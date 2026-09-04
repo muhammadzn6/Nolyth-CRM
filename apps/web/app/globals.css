@@ -2,17 +2,17 @@
 @source "../../../packages/ui/src";
 
 :root {
-  --background: #f3f5f6;
-  --foreground: #102338;
+  --background: #f3f1ee;
+  --foreground: #172338;
   --surface: #ffffff;
   --surface-subtle: #f7f8fa;
-  --muted-foreground: #667384;
-  --border: #e2e7ec;
-  --border-strong: #c8d2dc;
-  --primary: #0a33ed;
-  --primary-hover: #0728bd;
+  --muted-foreground: #5f6878;
+  --border: #dfe4ea;
+  --border-strong: #cbd4df;
+  --primary: #315dcc;
+  --primary-hover: #2449a8;
   --primary-foreground: #ffffff;
-  --primary-soft: #e8edff;
+  --primary-soft: #eaf0ff;
   --success: #16865c;
   --success-soft: #e9f7f1;
   --warning: #c98312;
@@ -23,10 +23,10 @@
   --info: #2f6f9f;
   --info-soft: #e8f1f8;
   --focus: #4c73ea;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #102338;
-  --sidebar-muted: #748196;
-  --sidebar-border: #e7ebef;
+  --sidebar: #f8f8f7;
+  --sidebar-foreground: #172033;
+  --sidebar-muted: #5f6878;
+  --sidebar-border: #e5e4e1;
 }
 
 @theme inline {
@@ -61,8 +61,26 @@
 @layer base {
   * { border-color: var(--border); }
   html { color-scheme: light; }
-  body { margin: 0; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-  h1, h2, h3, p { text-wrap: pretty; }
+  body { margin: 0; background: var(--background); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
   button, a, input { -webkit-tap-highlight-color: transparent; }
   ::selection { background: var(--primary-soft); color: var(--foreground); }
+}
+
+@layer components {
+  .editorial-dashboard section.rounded-2xl,
+  .editorial-dashboard section.rounded-lg,
+  .editorial-dashboard [aria-label="Calendar view"] {
+    border-radius: 1.5rem;
+    border-color: color-mix(in srgb, var(--border) 85%, white);
+    box-shadow: 0 12px 32px rgb(35 42 58 / 0.045);
+  }
+
+  .editorial-dashboard [aria-label="Workspace pulse"] > a,
+  .editorial-dashboard [aria-label="Closer workload summary"] > a {
+    min-height: 112px;
+    border-radius: 1.35rem;
+    border-color: color-mix(in srgb, var(--border) 82%, white);
+    padding: 1.15rem;
+    box-shadow: 0 8px 22px rgb(35 42 58 / 0.035);
+  }
 }

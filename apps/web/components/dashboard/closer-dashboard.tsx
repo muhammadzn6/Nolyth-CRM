@@ -11,7 +11,6 @@ import type {
 import { Button, Card, CardDescription, CardTitle } from "@orbit/ui";
 import { GoogleCalendarConnection } from "../calendar/google-calendar-connection";
 import { CalendarWorkspace } from "../calendar/calendar-workspace";
-import { buildCloserDashboardKpis } from "./closer-dashboard-kpis";
 
 type CloserDashboardProps = {
   actor: SessionUser;
@@ -99,9 +98,16 @@ function EmptyState({ children }: { children: string }) {
   return <p className="py-5 text-sm text-muted-foreground">{children}</p>;
 }
 
-function CloserPulse({ data, calendarInterviews }: { data: CloserDashboardData; calendarInterviews: InterviewSummary[] }) {
-  const cards = buildCloserDashboardKpis({ todayMeetings: data.todayMeetings, calendarInterviews, feedback: data.needsFeedback.length, conflicts: data.conflicts.length, openActions: data.openTasks.length });
-  return <div aria-label="Closer workload summary" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{cards.map((card) => <a aria-label={`${card.label}: ${card.value}. ${card.definition}`} className={`rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(23,35,56,0.03)] transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md ${card.tone === "danger" ? "border-danger/30 bg-danger-soft" : card.tone === "warning" ? "border-warning/40 bg-warning-soft" : ""}`} href={card.href} key={card.key} title={card.definition}><p className="text-[11px] font-semibold leading-4 text-muted-foreground">{card.label}</p><p className={`mt-2 text-2xl font-bold tracking-[-0.04em] ${card.tone === "danger" ? "text-danger" : card.tone === "warning" ? "text-warning-foreground" : card.tone === "info" ? "text-info" : "text-foreground"}`}>{card.value}</p><p className="mt-1 text-[10px] font-medium text-muted-foreground">View details →</p></a>)}</div>;
+function CloserPulse({ data }: { data: CloserDashboardData }) {
+  const items = [
+    ["Today", data.todayMeetings.length, "text-foreground"],
+    ["This week", data.assignedApplications.length, "text-foreground"],
+    ["Feedback due", data.needsFeedback.length, data.needsFeedback.length ? "text-warning-foreground" : "text-success"],
+    ["Conflicts", data.conflicts.length, data.conflicts.length ? "text-danger" : "text-success"],
+  ] as const;
+  return <div aria-label="Closer workload summary" className="grid grid-cols-2 divide-x divide-y divide-border border-y border-border bg-surface sm:grid-cols-4 sm:divide-y-0">
+    {items.map(([label, value, tone]) => <div className="px-4 py-3 first:pl-0 sm:px-4" key={label}><p className="text-[11px] font-semibold text-muted-foreground">{label}</p><p className={`mt-1 text-xl font-bold tracking-[-0.04em] ${tone}`}>{value}</p></div>)}
+  </div>;
 }
 
 function externalTime(meeting: CloserDashboardExternalMeeting) {
@@ -120,6 +126,7 @@ function Agenda({ meetings, externalMeetings }: { meetings: InterviewSummary[]; 
           <CardTitle>Today’s agenda</CardTitle>
           <CardDescription className="mt-1">Your scheduled interviews, in order.</CardDescription>
         </div>
+        <a className="text-xs font-semibold text-primary hover:text-primary-hover" href="/calendar">Open calendar</a>
       </header>
       {items.length === 0 ? <EmptyState>No meetings on your agenda today.</EmptyState> : (
         <ol className="mt-5 divide-y divide-border">
@@ -195,8 +202,8 @@ function AssignedApplications({ applications }: { applications: CloserDashboardD
 function FeedbackQueue({ meetings }: { meetings: InterviewSummary[] }) {
   return (
     <Card className="p-5 sm:p-6">
-      <header><CardTitle>Feedback to record</CardTitle><CardDescription className="mt-1">Close the loop on completed interviews.</CardDescription></header>
-      {meetings.length === 0 ? <EmptyState>No feedback is waiting.</EmptyState> : <ol className="mt-5 space-y-3">{meetings.map((meeting) => <li className="rounded-xl border border-border p-4" key={meeting.id}><p className="text-sm font-semibold text-foreground">{interviewLabel(meeting)}</p><p className="mt-1 text-xs text-muted-foreground">{meeting.interviewer ?? "Interview feedback"} · ended {interviewDate(meeting)} · {meeting.timezone}</p></li>)}</ol>}
+      <header className="flex items-start justify-between gap-4"><div><CardTitle>Feedback to record</CardTitle><CardDescription className="mt-1">Close the loop on completed interviews.</CardDescription></div><a className="text-xs font-semibold text-primary hover:text-primary-hover" href="/calendar">View schedule</a></header>
+      {meetings.length === 0 ? <EmptyState>No feedback is waiting.</EmptyState> : <ol className="mt-5 space-y-3">{meetings.map((meeting) => <li className="rounded-xl border border-border p-4" key={meeting.id}><p className="text-sm font-semibold text-foreground">{interviewLabel(meeting)}</p><p className="mt-1 text-xs text-muted-foreground">{meeting.interviewer ?? "Interview feedback"} · ended {interviewDate(meeting)} · {meeting.timezone}</p><a className="mt-3 inline-flex text-xs font-semibold text-primary hover:text-primary-hover" href="/calendar">Record feedback</a></li>)}</ol>}
     </Card>
   );
 }
@@ -204,8 +211,8 @@ function FeedbackQueue({ meetings }: { meetings: InterviewSummary[] }) {
 function ActionQueue({ data }: { data: CloserDashboardData }) {
   return (
     <Card className="p-5 sm:p-6">
-      <header className="flex items-start justify-between gap-4"><div><CardTitle>Work queue</CardTitle><CardDescription className="mt-1">The next actions and scheduling issues needing attention.</CardDescription></div><a className="text-xs font-semibold text-primary hover:text-primary-hover" href="/tasks">Open queue</a></header>
-      {data.openTasks.length === 0 && data.conflicts.length === 0 ? <EmptyState>Queue is clear.</EmptyState> : <div className="mt-5 space-y-3">{data.conflicts.map((meeting) => <a className="block rounded-xl border border-danger/30 bg-danger-soft p-4" href="/" key={meeting.id}><p className="text-sm font-semibold text-danger">Reschedule required</p><p className="mt-1 text-xs text-foreground">{interviewLabel(meeting)} · {interviewTime(meeting)} · {meeting.timezone}</p></a>)}{data.openTasks.map((task) => <a className="block rounded-xl border border-border p-4 transition hover:border-border-strong hover:bg-surface-subtle" href="/tasks" key={task.id}><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-foreground">{task.title}</p><span className="shrink-0 text-xs font-semibold text-muted-foreground">{titleCase(task.priority)}</span></div><p className="mt-1 text-xs text-muted-foreground">Due {dashboardTimestamp(task.dueAt, data.timezone)}</p></a>)}</div>}
+      <header><CardTitle>Action queue</CardTitle><CardDescription className="mt-1">Tasks and scheduling issues needing attention.</CardDescription></header>
+      {data.openTasks.length === 0 && data.conflicts.length === 0 ? <EmptyState>No open tasks.</EmptyState> : <div className="mt-5 space-y-3">{data.conflicts.map((meeting) => <a className="block rounded-xl border border-danger/30 bg-danger-soft p-4" href="/calendar" key={meeting.id}><p className="text-sm font-semibold text-danger">Reschedule required</p><p className="mt-1 text-xs text-foreground">{interviewLabel(meeting)} · {interviewTime(meeting)} · {meeting.timezone}</p></a>)}{data.openTasks.map((task) => <a className="block rounded-xl border border-border p-4 transition hover:border-border-strong hover:bg-surface-subtle" href="/tasks" key={task.id}><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-foreground">{task.title}</p><span className="shrink-0 text-xs font-semibold text-muted-foreground">{titleCase(task.priority)}</span></div><p className="mt-1 text-xs text-muted-foreground">Due {dashboardTimestamp(task.dueAt, data.timezone)}</p></a>)}</div>}
     </Card>
   );
 }
@@ -221,7 +228,7 @@ function Updates({ data }: { data: CloserDashboardData }) {
 
 function CalendarConnectionCard({ connection, timezone }: { connection: CalendarConnection; timezone: string }) {
   const state = calendarState(connection);
-  return <Card className="p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Candidate calendars</p><CardTitle className="mt-2">Google Calendar</CardTitle><p className={`mt-4 text-sm font-semibold ${state.tone}`}>{state.title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{state.description}</p>{connection.lastSyncedAt ? <p className="mt-3 text-xs text-muted-foreground">Last synced {dashboardTimestamp(connection.lastSyncedAt, timezone)}</p> : null}</Card>;
+  return <Card className="p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Candidate calendars</p><CardTitle className="mt-2">Google Calendar</CardTitle><p className={`mt-4 text-sm font-semibold ${state.tone}`}>{state.title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{state.description}</p>{connection.lastSyncedAt ? <p className="mt-3 text-xs text-muted-foreground">Last synced {dashboardTimestamp(connection.lastSyncedAt, timezone)}</p> : null}<a className="mt-4 inline-flex text-xs font-semibold text-primary hover:text-primary-hover" href="/calendar">Open interview schedule →</a></Card>;
 }
 
 export function CloserDashboard({ actor, data, calendarInterviews, error }: CloserDashboardProps) {
@@ -241,14 +248,14 @@ export function CloserDashboard({ actor, data, calendarInterviews, error }: Clos
   };
 
   return (
-    <div className="mx-auto max-w-[1500px]">
+    <div className="editorial-dashboard mx-auto max-w-[1500px]">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Closer workspace</p><h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Today’s schedule</h1><p className="mt-1.5 text-sm text-muted-foreground">Calls, preparation, and feedback assigned to you.</p></div><Button aria-label="Refresh dashboard" onClick={() => window.location.reload()} variant="secondary">Refresh</Button></header>
       {error ? <p className="mt-4 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground" role="status">{error}</p> : null}
-      <section className="mt-5"><CloserPulse calendarInterviews={calendarInterviews ?? dashboard.todayMeetings} data={dashboard} /></section>
+      <section className="mt-5"><CloserPulse data={dashboard} /></section>
       <section aria-label="Primary calendar" className="mt-5"><CalendarWorkspace actor={actor} interviews={calendarInterviews ?? dashboard.todayMeetings} externalMeetings={dashboard.externalMeetings} embedded /></section>
-      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.85fr)]" id="actions"><NextMeetingBriefing meeting={dashboard.nextMeeting} /><ActionQueue data={dashboard} /></section>
+      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.85fr)]"><NextMeetingBriefing meeting={dashboard.nextMeeting} /><ActionQueue data={dashboard} /></section>
       <section className="mt-5"><AssignedApplications applications={dashboard.assignedApplications} /></section>
-      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]" id="feedback"><FeedbackQueue meetings={dashboard.needsFeedback} /><CalendarConnectionCard connection={dashboard.calendarConnection} timezone={dashboard.timezone} /></section>
+      <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]"><FeedbackQueue meetings={dashboard.needsFeedback} /><CalendarConnectionCard connection={dashboard.calendarConnection} timezone={dashboard.timezone} /></section>
       <section className="mt-5"><Updates data={dashboard} /></section>
     </div>
   );

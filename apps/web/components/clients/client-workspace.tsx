@@ -7,6 +7,8 @@ export function ClientWorkspace({ company }: { company: CompanySummary }) {
   const tabs = [
     { label: "Overview", href: "#overview" },
     { label: "Pipeline", href: `/leads?companyId=${company.id}` },
+    { label: "Interviews", href: `/calendar?companyId=${company.id}` },
+    { label: "Tasks", href: `/tasks?companyId=${company.id}` },
     { label: "Offers", href: `/admin/clients/${company.id}/offers` },
     { label: "Placements", href: `/admin/clients/${company.id}/placements` },
     { label: "Analytics", href: `/analytics?companyId=${company.id}` },

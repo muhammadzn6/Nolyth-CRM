@@ -45,7 +45,7 @@ describe("company, contact, and lead contracts", () => {
     );
   });
 
-  it.each(["profileId"])(
+  it.each(["profileId", "companyId", "currentOwnerId", "sourceId"])(
     "requires %s when creating a lead",
     (field) => {
       const input = validLead() as Record<string, unknown>;
@@ -54,26 +54,6 @@ describe("company, contact, and lead contracts", () => {
       expect(schema("createLeadSchema").safeParse(input).success).toBe(false);
     },
   );
-
-  it("accepts a first-time company name without pre-created company or source records", () => {
-    const input = { ...validLead(), companyName: "NewCo", recruiterName: "Jordan Lee", recruiterEmail: "jordan@newco.example" };
-    delete (input as Record<string, unknown>).companyId;
-    delete (input as Record<string, unknown>).sourceId;
-    expect(schema("createLeadSchema").safeParse(input).success).toBe(true);
-  });
-
-  it("allows the server to default ownership for an importing BD", () => {
-    const input = { ...validLead(), companyName: "NewCo" };
-    delete (input as Record<string, unknown>).companyId;
-    delete (input as Record<string, unknown>).currentOwnerId;
-    expect(schema("createLeadSchema").safeParse(input).success).toBe(true);
-  });
-
-  it("requires either a company id or company name", () => {
-    const input = validLead() as Record<string, unknown>;
-    delete input.companyId;
-    expect(schema("createLeadSchema").safeParse(input).success).toBe(false);
-  });
 
   it("requires the externally applied job identity and date", () => {
     for (const field of ["jobTitle", "rawUrl", "appliedDate"]) {

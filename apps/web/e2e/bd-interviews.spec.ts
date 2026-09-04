@@ -16,8 +16,8 @@ test("BD can schedule and manage interviews for an owned application", async ({ 
   await expect(page.getByRole("button", { name: "Schedule interview" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit interview" }).first()).toBeVisible();
 
-  await page.goto("/");
-  await expect(page.getByLabel("Primary calendar")).toBeVisible();
+  await page.goto("/calendar");
+  await expect(page.getByRole("heading", { name: "Interview calendar" })).toBeVisible();
   await expect(page.getByText("SCHEDULED", { exact: true }).first()).toBeVisible();
   await page.getByTestId("calendar-event").first().click();
   await expect(page.getByPlaceholder("Cancellation reason").first()).toBeVisible();

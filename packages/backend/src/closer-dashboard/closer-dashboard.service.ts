@@ -233,7 +233,7 @@ export class CloserDashboardService {
     const timezone = typeof closer?.timezone === "string" ? closer.timezone : "UTC";
     const { start: startOfToday, end: endOfToday } = zonedDayBounds(now, timezone);
     const assignedLeads = await this.database.jobLead.findMany({
-      where: { responsibleCloserId: actor.id, status: { in: ["RESPONSE_RECEIVED", "INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED"] } },
+      where: { responsibleCloserId: actor.id, status: { notIn: ["CLOSED", "STARTED"] } },
       select: {
         id: true,
         profileId: true,

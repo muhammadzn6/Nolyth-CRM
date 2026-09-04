@@ -270,7 +270,7 @@ export function ProfileWorkspace({
 
       <nav aria-label="Profile sections" className="overflow-x-auto border-b border-border/70 pb-2">
         <div className="flex min-w-max gap-1">
-          {["Overview", "Leads", "Interviews", "Work queue", "Documents", "Team", "Activity", "Analytics"].map((item, index) => <Link aria-current={index === 0 ? "page" : undefined} className={`rounded-lg px-3.5 py-2 text-sm font-semibold ${index === 0 ? "bg-primary-soft text-primary" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground"}`} href={index === 0 ? `/profiles/${profileId}` : `/profiles/${profileId}/${item === "Work queue" ? "tasks" : item.toLowerCase()}`} key={item}>{item}</Link>)}
+          {["Overview", "Leads", "Interviews", "Tasks", "Documents", "Team", "Activity", "Analytics"].map((item, index) => <Link aria-current={index === 0 ? "page" : undefined} className={`rounded-lg px-3.5 py-2 text-sm font-semibold ${index === 0 ? "bg-primary-soft text-primary" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground"}`} href={index === 0 ? `/profiles/${profileId}` : `/profiles/${profileId}/${item.toLowerCase()}`} key={item}>{item}</Link>)}
         </div>
       </nav>
 
