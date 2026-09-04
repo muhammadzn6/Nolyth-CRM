@@ -189,7 +189,7 @@ describe("CloserDashboard", () => {
     expect(container.textContent).toContain("Not connected");
     expect(container.textContent).toContain("0 Orbit interviews in view");
     expect(container.textContent).toContain("No feedback is waiting");
-    expect(container.textContent).toContain("No open tasks");
+    expect(container.textContent).toContain("Queue is clear");
   });
 
   it("makes dashboard timestamps explicit in the closer timezone", async () => {

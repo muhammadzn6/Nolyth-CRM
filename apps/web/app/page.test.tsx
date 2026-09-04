@@ -6,6 +6,7 @@ const getCurrentActorMock = vi.hoisted(() => vi.fn());
 const getDashboardMock = vi.hoisted(() => vi.fn());
 const getCloserDashboardMock = vi.hoisted(() => vi.fn());
 const getCalendarMock = vi.hoisted(() => vi.fn());
+const listTasksMock = vi.hoisted(() => vi.fn());
 
 vi.mock("next/headers", () => ({
   headers: vi.fn(async () => new Headers({ cookie: "orbit_session=token" })),
@@ -33,6 +34,7 @@ vi.mock("../lib/api-client", () => ({
   getDashboard: getDashboardMock,
   getCloserDashboard: getCloserDashboardMock,
   getCalendar: getCalendarMock,
+  listTasks: listTasksMock,
 }));
 
 import HomePage from "./page";
@@ -54,6 +56,7 @@ describe("HomePage", () => {
     getDashboardMock.mockReset();
     getCloserDashboardMock.mockReset();
     getCalendarMock.mockReset();
+    listTasksMock.mockReset();
   });
 
   it("renders the calendar-first dashboard only for closer actors", async () => {
@@ -61,11 +64,13 @@ describe("HomePage", () => {
     getCloserDashboardMock.mockResolvedValue({});
     getDashboardMock.mockResolvedValue({});
     getCalendarMock.mockResolvedValue([]);
+    listTasksMock.mockResolvedValue([]);
 
     expect(renderToStaticMarkup(await HomePage())).toContain("closer-dashboard");
     expect(renderToStaticMarkup(await HomePage())).toContain("standard-dashboard");
     expect(renderToStaticMarkup(await HomePage())).toContain("standard-dashboard");
     expect(getCloserDashboardMock).toHaveBeenCalledTimes(1);
     expect(getDashboardMock).toHaveBeenCalledTimes(2);
+    expect(listTasksMock).toHaveBeenCalledTimes(2);
   });
 });
