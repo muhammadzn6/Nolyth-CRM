@@ -127,6 +127,25 @@ import {
   type CalendarConnection,
   type CompanyCloserAssignment,
   bulkImportResultSchema,
+  bdTargetScheduleInputSchema,
+  bdTargetScheduleSchema,
+  duplicateReviewWithLeadSchema,
+  performanceApprovedLeaveInputSchema,
+  performanceApprovedLeaveSchema,
+  performanceHolidayInputSchema,
+  performanceHolidaySchema,
+  performanceRuleInputSchema,
+  performanceRuleMutationSchema,
+  performanceRulePreviewSchema,
+  performanceRuleSchema,
+  updateBdTargetScheduleInputSchema,
+  updateDuplicateReviewInputSchema,
+  type BdTargetSchedule,
+  type PerformanceApprovedLeave,
+  type PerformanceHoliday,
+  type PerformanceRuleMutation,
+  type PerformanceRulePreview,
+  type PerformanceRuleSet,
 } from "@orbit/contracts";
 import { loadWebEnv } from "@orbit/config";
 
@@ -146,6 +165,20 @@ export type LeadListInput = Partial<Omit<LeadListQuery, "limit">> & { limit?: nu
 export type CalendarInput = { companyId?: string; from?: string; to?: string };
 export type TaskListInput = Partial<Omit<TaskListQuery, "limit">> & { limit?: number };
 export type DashboardData = { kpis: AnalyticsKpis; breakdowns: { statuses: Array<{ key: string; count: number }>; sources: Array<{ key: string; count: number }> }; upcomingInterviews: number };
+export type DuplicateReviewWithLead = ReturnType<typeof duplicateReviewWithLeadSchema.parse>;
+export type PerformanceRuleInput = Omit<PerformanceRuleMutation, "id" | "expectedVersion">;
+export type CreateBdTargetSchedule = Pick<BdTargetSchedule, "bdId" | "dailyTarget"> & {
+  effectiveTo?: string;
+  auditMetadata?: Record<string, unknown>;
+};
+export type CreatePerformanceHoliday = Pick<PerformanceHoliday, "holidayDate" | "name"> & {
+  auditMetadata?: Record<string, unknown>;
+};
+export type CreatePerformanceApprovedLeave = Pick<
+  PerformanceApprovedLeave,
+  "bdId" | "startsAt" | "endsAt" | "reason" | "availableStartHour" | "availableEndHour"
+>;
+export type { PerformanceRulePreview };
 type Schema<T> = {
   safeParse(data: unknown):
     | { success: true; data: T }
@@ -1045,4 +1078,96 @@ export function setCloserEligibility(profileId: string, userId: string): Promise
 
 export function endCloserEligibility(profileId: string, assignmentId: string, reason: string): Promise<void> {
   return endAssignment("closer-eligibility", profileId, assignmentId, reason);
+}
+
+export async function getPerformanceRules(cookie?: string): Promise<PerformanceRuleSet | null> {
+  const data = await read("/performance/rules", cookie);
+  if (data === null) return null;
+  return parseResource(performanceRuleSchema, data, "performance rules");
+}
+
+export async function previewPerformanceRules(input: PerformanceRuleInput): Promise<PerformanceRulePreview> {
+  const command = parseInput(performanceRuleInputSchema, input, "Enter valid performance rule values.");
+  return parseResource(
+    performanceRulePreviewSchema,
+    await mutate("/performance/rules/preview", "POST", command),
+    "performance rule impact preview",
+  );
+}
+
+export async function updatePerformanceRules(input: PerformanceRuleMutation): Promise<PerformanceRuleSet> {
+  const command = parseInput(performanceRuleMutationSchema, input, "Enter valid performance rule values.");
+  return parseResource(performanceRuleSchema, await mutate("/performance/rules", "PATCH", command), "performance rules");
+}
+
+export async function listBdTargetSchedules(input: { bdId?: string } = {}, cookie?: string): Promise<BdTargetSchedule[]> {
+  const bdId = input.bdId === undefined ? undefined : parseUserId(input.bdId);
+  const data = await read(`/performance/admin/targets?${queryString({ bdId })}`, cookie);
+  return parseResource(bdTargetScheduleSchema.array(), data, "BD target schedules");
+}
+
+export async function createBdTargetSchedule(input: CreateBdTargetSchedule): Promise<BdTargetSchedule> {
+  const command = parseInput(bdTargetScheduleInputSchema, input, "Enter a valid BD target.");
+  return parseResource(bdTargetScheduleSchema, await mutate("/performance/admin/targets", "POST", command), "BD target schedule");
+}
+
+export async function updateBdTargetSchedule(
+  scheduleId: string,
+  input: Pick<BdTargetSchedule, "bdId" | "dailyTarget" | "effectiveFrom"> & {
+    effectiveTo?: string;
+    auditMetadata?: Record<string, unknown>;
+    expectedVersion: number;
+  },
+): Promise<BdTargetSchedule> {
+  const id = parseId(scheduleId, "BD target schedule");
+  const command = parseInput(updateBdTargetScheduleInputSchema, input, "Enter a valid BD target.");
+  return parseResource(bdTargetScheduleSchema, await mutate(`/performance/admin/targets/${id}`, "PATCH", command), "BD target schedule");
+}
+
+export async function listPerformanceHolidays(cookie?: string): Promise<PerformanceHoliday[]> {
+  return parseResource(performanceHolidaySchema.array(), await read("/performance/admin/holidays", cookie), "performance holidays");
+}
+
+export async function createPerformanceHoliday(input: CreatePerformanceHoliday): Promise<PerformanceHoliday> {
+  const command = parseInput(performanceHolidayInputSchema, input, "Enter a valid holiday.");
+  return parseResource(performanceHolidaySchema, await mutate("/performance/admin/holidays", "POST", command), "performance holiday");
+}
+
+export async function listPerformanceApprovedLeaves(input: { bdId?: string } = {}, cookie?: string): Promise<PerformanceApprovedLeave[]> {
+  const bdId = input.bdId === undefined ? undefined : parseUserId(input.bdId);
+  return parseResource(
+    performanceApprovedLeaveSchema.array(),
+    await read(`/performance/admin/leaves?${queryString({ bdId })}`, cookie),
+    "approved leave",
+  );
+}
+
+export async function createPerformanceApprovedLeave(input: CreatePerformanceApprovedLeave): Promise<PerformanceApprovedLeave> {
+  const command = parseInput(performanceApprovedLeaveInputSchema, input, "Enter a valid approved leave period.");
+  return parseResource(
+    performanceApprovedLeaveSchema,
+    await mutate("/performance/admin/leaves", "POST", command),
+    "approved leave",
+  );
+}
+
+export async function getDuplicateReviews(cookie?: string): Promise<DuplicateReviewWithLead[]> {
+  return parseResource(
+    duplicateReviewWithLeadSchema.array(),
+    await read("/performance/duplicate-reviews", cookie),
+    "duplicate review queue",
+  );
+}
+
+export async function reviewDuplicateOverride(
+  reviewId: string,
+  input: { status: "APPROVED" | "REJECTED"; reviewReason: string; expectedVersion: number },
+): Promise<DuplicateReviewWithLead> {
+  const id = parseId(reviewId, "duplicate review");
+  const command = parseInput(updateDuplicateReviewInputSchema, input, "Enter a duplicate-review decision and reason.");
+  return parseResource(
+    duplicateReviewWithLeadSchema,
+    await mutate(`/performance/duplicate-reviews/${id}`, "POST", command),
+    "duplicate review",
+  );
 }
