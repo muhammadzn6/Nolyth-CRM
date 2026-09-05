@@ -127,9 +127,11 @@ describe("CalendarWorkspace", () => {
     expect(container.textContent).toContain("2 Orbit interviews in view");
   });
 
-  it("uses the supplied date as its initial calendar anchor", async () => {
+  it("opens the week containing the supplied calendar date", async () => {
     await act(async () => root.render(<CalendarWorkspace actor={actor} interviews={[]} initialDate="2026-09-08T09:00:00.000Z" />));
 
-    expect(container.querySelector('[aria-label="Calendar view"]')?.textContent).toContain("Tue, Sep 8");
+    const calendar = container.querySelector('[aria-label="Calendar view"]');
+    expect(calendar?.textContent).toContain("Sun, Sep 6 – Sat, Sep 12");
+    expect(container.querySelector('[data-testid="calendar-time-grid"]')?.textContent).toContain("8 Tue");
   });
 });

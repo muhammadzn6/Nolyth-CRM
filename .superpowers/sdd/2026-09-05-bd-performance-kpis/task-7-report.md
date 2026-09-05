@@ -42,3 +42,10 @@ All listed commands passed before commit.
 - `git diff --check` passed.
 
 The targeted selected-date calendar regression passed. The wider calendar-workspace suite retains unrelated date-sensitive expectations from the in-progress calendar visual redesign and was intentionally left unchanged.
+
+## Review-fix: selected calendar date in the configured week view
+
+- Kept the calendar's configured default view as **week** for this committed Task 7 surface.
+- Corrected the selected-date regression to verify the intended behavior: `?date=2026-09-08T09:00:00.000Z` opens the exact week containing September 8 and renders the Tuesday column, rather than incorrectly requiring a day-view title.
+- The route-to-workspace `initialDate` contract and BD quick action remain unchanged.
+- Fresh validation: 102 web tests, web typecheck, web lint, and `git diff --check` pass.
