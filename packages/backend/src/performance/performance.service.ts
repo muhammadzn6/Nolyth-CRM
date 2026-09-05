@@ -301,6 +301,12 @@ export class PerformanceService {
     return rule ? this.ruleSummary(rule) : null;
   }
 
+  async getPerformanceRuleHistory(actor: Actor) {
+    this.authorization.assertRole(actor, ["ADMIN"]);
+    const rules = await this.database.performanceRuleSet.findMany?.({ orderBy: { effectiveFrom: "asc" } }) ?? [];
+    return rules.map((rule) => this.ruleSummary(rule));
+  }
+
   async listBdTargetSchedules(actor: Actor, query: unknown = {}) {
     this.assertAdmin(actor);
     const parsed = bdTargetScheduleListQuerySchema.safeParse(query);

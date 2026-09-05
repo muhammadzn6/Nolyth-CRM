@@ -58,3 +58,22 @@ Result: 2 files passed, 8 tests passed.
 - Successful performance responses are parsed through the shared contracts; unsuccessful responses continue through the shared structured API error path.
 - The route redirects unauthenticated or non-Admin users; the client component also prevents loading protected data for a non-Admin actor.
 - The UI deliberately renders server-provided impact and policy state rather than calculating target credit or rankings in React.
+
+## Review-fix follow-up
+
+The Task 5 review findings are resolved without changing Task 6 calendar work.
+
+- Future holidays and approved leave/reduced-schedule records now have version-aware edit and delete controls. The UI passes the record version to the existing mutation routes and displays the API's historical-protection message when a started record cannot be rewritten.
+- `GET /performance/rules/history` is Admin-protected and returns the existing immutable rule versions ordered by effective date. The rules workspace renders the effective range, version, editor identity, and audit context.
+- Bounded numeric and timezone fields now expose maximum constraints, `aria-invalid`, linked error text, and field-specific validation feedback.
+
+### Review-fix regression evidence
+
+Initial RED checks established the missing API history helper, missing future-record controls/history UI, and missing backend history route. Final verification:
+
+- `npm --prefix apps/web test -- --run lib/performance-api-client.test.ts components/performance/performance-rules-form.test.tsx` — 11 passed.
+- `npm --prefix packages/backend test -- --run src/performance/performance.service.test.ts` — 42 passed.
+- `npm --prefix apps/api test -- --run src/modules/performance/performance.controller.test.ts` — 11 passed.
+- `npm --prefix apps/web run typecheck`, `npm --prefix packages/backend run typecheck`, and `npm --prefix apps/api run typecheck` — passed.
+- `npm run db:validate` — passed.
+- Isolated Task 5 diff check — passed.

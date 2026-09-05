@@ -66,6 +66,48 @@ describe("PerformanceService", () => {
     })).rejects.toEqual(new AuthorizationError());
   });
 
+  it("returns every immutable performance rule version in effective-date order for an Admin", async () => {
+    const first = {
+      id: "10000000-0000-4000-8000-000000000091",
+      effectiveFrom: new Date("2026-08-01T00:00:00.000Z"),
+      effectiveTo: new Date("2026-09-10T00:00:00.000Z"),
+      defaultDailyTarget: 70,
+      workingDays: [1, 2, 3, 4, 5],
+      businessCalendarTimeZone: "Asia/Karachi",
+      workdayStartHour: 9,
+      workdayEndHour: 17,
+      followUpSlaBusinessHours: 48,
+      adminReassignmentSlaBusinessHours: 2,
+      maturityWindowDays: 21,
+      duplicateLookbackMonths: 6,
+      applicationWeightPercent: 45,
+      followUpWeightPercent: 25,
+      outcomeWeightPercent: 30,
+      positiveReplyPoints: 1,
+      screeningPoints: 2,
+      interviewPoints: 3,
+      offerPoints: 5,
+      slowdownThresholdPercent: 120,
+      slowdownMultiplierPercent: 25,
+      createdById: admin.id,
+      auditMetadata: { reason: "Initial policy" },
+      version: 1,
+      createdAt: new Date("2026-07-31T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-31T00:00:00.000Z"),
+    };
+    const next = { ...first, id: "10000000-0000-4000-8000-000000000092", effectiveFrom: new Date("2026-09-10T00:00:00.000Z"), effectiveTo: null, version: 2, auditMetadata: { reason: "Raised target" } };
+    const findMany = vi.fn().mockResolvedValue([first, next]);
+    const authorization = { assertRole: vi.fn() };
+    const service = new PerformanceService({ performanceRuleSet: { findMany } } as never, authorization as never);
+
+    await expect(service.getPerformanceRuleHistory(admin)).resolves.toMatchObject([
+      { id: first.id, effectiveFrom: "2026-08-01T00:00:00.000Z", effectiveTo: "2026-09-10T00:00:00.000Z", auditMetadata: { reason: "Initial policy" } },
+      { id: next.id, effectiveFrom: "2026-09-10T00:00:00.000Z", effectiveTo: null, auditMetadata: { reason: "Raised target" } },
+    ]);
+    expect(authorization.assertRole).toHaveBeenCalledWith(admin, ["ADMIN"]);
+    expect(findMany).toHaveBeenCalledWith({ orderBy: { effectiveFrom: "asc" } });
+  });
+
   it("aggregates team quality from raw unequal-volume counts instead of BD percentages", () => {
     const service = new PerformanceService({} as never, { assertRole: vi.fn() } as never);
     const aggregate = (service as unknown as { aggregateQuality(rows: Array<Record<string, unknown>>): Record<string, number | null> }).aggregateQuality([

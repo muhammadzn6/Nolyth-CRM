@@ -140,6 +140,9 @@ import {
   performanceRuleSchema,
   updateBdTargetScheduleInputSchema,
   updateDuplicateReviewInputSchema,
+  updatePerformanceApprovedLeaveInputSchema,
+  updatePerformanceHolidayInputSchema,
+  performanceVersionInputSchema,
   type BdTargetSchedule,
   type PerformanceApprovedLeave,
   type PerformanceHoliday,
@@ -1086,6 +1089,14 @@ export async function getPerformanceRules(cookie?: string): Promise<PerformanceR
   return parseResource(performanceRuleSchema, data, "performance rules");
 }
 
+export async function getPerformanceRuleHistory(cookie?: string): Promise<PerformanceRuleSet[]> {
+  return parseResource(
+    performanceRuleSchema.array(),
+    await read("/performance/rules/history", cookie),
+    "performance rule history",
+  );
+}
+
 export async function previewPerformanceRules(input: PerformanceRuleInput): Promise<PerformanceRulePreview> {
   const command = parseInput(performanceRuleInputSchema, input, "Enter valid performance rule values.");
   return parseResource(
@@ -1133,6 +1144,26 @@ export async function createPerformanceHoliday(input: CreatePerformanceHoliday):
   return parseResource(performanceHolidaySchema, await mutate("/performance/admin/holidays", "POST", command), "performance holiday");
 }
 
+export async function updatePerformanceHoliday(
+  holidayId: string,
+  input: Pick<PerformanceHoliday, "holidayDate" | "name"> & { auditMetadata?: Record<string, unknown>; expectedVersion: number },
+): Promise<PerformanceHoliday> {
+  const id = parseId(holidayId, "holiday");
+  const command = parseInput(updatePerformanceHolidayInputSchema, input, "Enter a valid holiday.");
+  return parseResource(
+    performanceHolidaySchema,
+    await mutate(`/performance/admin/holidays/${id}`, "PATCH", command),
+    "performance holiday",
+  );
+}
+
+export async function deletePerformanceHoliday(holidayId: string, expectedVersion: number): Promise<void> {
+  const id = parseId(holidayId, "holiday");
+  const command = parseInput(performanceVersionInputSchema, { expectedVersion }, "The holiday version is invalid.");
+  const data = await mutate(`/performance/admin/holidays/${id}`, "DELETE", command);
+  if (data !== null) throw new ApiClientError("The API returned an invalid holiday deletion result.", "INVALID_RESPONSE");
+}
+
 export async function listPerformanceApprovedLeaves(input: { bdId?: string } = {}, cookie?: string): Promise<PerformanceApprovedLeave[]> {
   const bdId = input.bdId === undefined ? undefined : parseUserId(input.bdId);
   return parseResource(
@@ -1149,6 +1180,26 @@ export async function createPerformanceApprovedLeave(input: CreatePerformanceApp
     await mutate("/performance/admin/leaves", "POST", command),
     "approved leave",
   );
+}
+
+export async function updatePerformanceApprovedLeave(
+  leaveId: string,
+  input: Pick<PerformanceApprovedLeave, "bdId" | "startsAt" | "endsAt" | "reason" | "availableStartHour" | "availableEndHour"> & { expectedVersion: number },
+): Promise<PerformanceApprovedLeave> {
+  const id = parseId(leaveId, "approved leave");
+  const command = parseInput(updatePerformanceApprovedLeaveInputSchema, input, "Enter a valid approved leave period.");
+  return parseResource(
+    performanceApprovedLeaveSchema,
+    await mutate(`/performance/admin/leaves/${id}`, "PATCH", command),
+    "approved leave",
+  );
+}
+
+export async function deletePerformanceApprovedLeave(leaveId: string, expectedVersion: number): Promise<void> {
+  const id = parseId(leaveId, "approved leave");
+  const command = parseInput(performanceVersionInputSchema, { expectedVersion }, "The approved leave version is invalid.");
+  const data = await mutate(`/performance/admin/leaves/${id}`, "DELETE", command);
+  if (data !== null) throw new ApiClientError("The API returned an invalid approved leave deletion result.", "INVALID_RESPONSE");
 }
 
 export async function getDuplicateReviews(cookie?: string): Promise<DuplicateReviewWithLead[]> {

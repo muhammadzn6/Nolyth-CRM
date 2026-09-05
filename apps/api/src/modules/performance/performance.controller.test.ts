@@ -201,6 +201,18 @@ describe("PerformanceController", () => {
     expect(service.reviewDuplicateOverride).toHaveBeenCalledWith(admin, "10000000-0000-4000-8000-000000000002", expect.objectContaining({ status: "APPROVED" }));
   });
 
+  it("returns immutable performance rule history through the shared rule contract", async () => {
+    const history = [
+      { ...rule, effectiveFrom: "2026-08-01T00:00:00.000Z", effectiveTo: "2026-09-10T00:00:00.000Z", version: 1 },
+      { ...rule, id: "10000000-0000-4000-8000-000000000009", effectiveFrom: "2026-09-10T00:00:00.000Z", effectiveTo: null, version: 2 },
+    ];
+    const service = { getPerformanceRuleHistory: vi.fn().mockResolvedValue(history) };
+    const controller = new PerformanceController(service as unknown as PerformanceService);
+
+    await expect(controller.ruleHistory(request())).resolves.toEqual(history);
+    expect(service.getPerformanceRuleHistory).toHaveBeenCalledWith(admin);
+  });
+
   it("validates and returns the explicit Admin record-audit action", async () => {
     const service = { auditLeadRecord: vi.fn().mockResolvedValue(auditRecord) };
     const controller = new PerformanceController(service as unknown as PerformanceService);

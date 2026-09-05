@@ -57,6 +57,7 @@ function parseResponse<T>(schema: Pick<Schema<T>, "parse">, value: unknown): T {
 }
 
 const nullablePerformanceRuleSchema = performanceRuleSchema.nullable();
+const performanceRuleHistorySchema = performanceRuleSchema.array();
 const duplicateReviewQueueSchema = duplicateReviewWithLeadSchema.array();
 const targetScheduleListSchema = bdTargetScheduleSchema.array();
 const holidayListSchema = performanceHolidaySchema.array();
@@ -100,6 +101,12 @@ export class PerformanceController {
   }
 
   @Post("rules/preview") previewRules(@Body() input: unknown, @Req() request: AuthenticatedRequest) {
+  @Get("rules/history") ruleHistory(@Req() request: AuthenticatedRequest) {
+    return this.performance
+      .getPerformanceRuleHistory(this.actor(request))
+      .then((response) => parseResponse(performanceRuleHistorySchema, response));
+  }
+
     return this.performance
       .previewPerformanceRules(this.actor(request), parse(performanceRuleInputSchema, input))
       .then((response) => parseResponse(performanceRulePreviewSchema, response));

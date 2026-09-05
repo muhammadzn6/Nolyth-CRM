@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  deletePerformanceApprovedLeave,
+  deletePerformanceHoliday,
   getDuplicateReviews,
   getPerformanceRules,
+  getPerformanceRuleHistory,
   previewPerformanceRules,
   reviewDuplicateOverride,
+  updatePerformanceApprovedLeave,
+  updatePerformanceHoliday,
   updatePerformanceRules,
 } from "./api-client";
 
@@ -155,5 +160,62 @@ describe("performance API client", () => {
       requestId: "req_forbidden",
       status: 403,
     });
+  });
+
+  it("uses versioned holiday and leave mutations and reads rule history through shared contracts", async () => {
+    const holiday = {
+      id: "20000000-0000-4000-8000-000000000001",
+      holidayDate: "2026-12-25",
+      name: "Winter holiday",
+      createdById: adminId,
+      auditMetadata: { source: "admin" },
+      version: 2,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-02T00:00:00.000Z",
+    };
+    const leave = {
+      id: "30000000-0000-4000-8000-000000000001",
+      bdId,
+      startsAt: "2026-12-20T09:00:00.000Z",
+      endsAt: "2026-12-21T17:00:00.000Z",
+      reason: "Conference",
+      availableStartHour: 10,
+      availableEndHour: 14,
+      approvedById: adminId,
+      approvedAt: "2026-09-01T00:00:00.000Z",
+      auditMetadata: null,
+      version: 3,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-02T00:00:00.000Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(success([rule]))
+      .mockResolvedValueOnce(success(holiday))
+      .mockResolvedValueOnce(success(null))
+      .mockResolvedValueOnce(success(leave))
+      .mockResolvedValueOnce(success(null));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getPerformanceRuleHistory()).resolves.toMatchObject([{ id: ruleId, version: 3 }]);
+    await expect(updatePerformanceHoliday(holiday.id, { holidayDate: "2026-12-26", name: "Observed holiday", expectedVersion: 2 })).resolves.toMatchObject({ id: holiday.id });
+    await expect(deletePerformanceHoliday(holiday.id, 2)).resolves.toBeUndefined();
+    await expect(updatePerformanceApprovedLeave(leave.id, {
+      bdId,
+      startsAt: leave.startsAt,
+      endsAt: leave.endsAt,
+      reason: leave.reason,
+      availableStartHour: leave.availableStartHour,
+      availableEndHour: leave.availableEndHour,
+      expectedVersion: 3,
+    })).resolves.toMatchObject({ id: leave.id });
+    await expect(deletePerformanceApprovedLeave(leave.id, 3)).resolves.toBeUndefined();
+
+    expect(fetchMock.mock.calls.map(([url, init]) => ({ url, method: init?.method ?? "GET" }))).toEqual([
+      { url: "https://api.orbit.example/api/v1/performance/rules/history", method: "GET" },
+      { url: `https://api.orbit.example/api/v1/performance/admin/holidays/${holiday.id}`, method: "PATCH" },
+      { url: `https://api.orbit.example/api/v1/performance/admin/holidays/${holiday.id}`, method: "DELETE" },
+      { url: `https://api.orbit.example/api/v1/performance/admin/leaves/${leave.id}`, method: "PATCH" },
+      { url: `https://api.orbit.example/api/v1/performance/admin/leaves/${leave.id}`, method: "DELETE" },
+    ]);
   });
 });

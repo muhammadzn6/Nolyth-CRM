@@ -12,8 +12,11 @@ import { PerformanceRulesForm } from "./performance-rules-form";
 
 const {
   createPerformanceHolidayMock,
+  deletePerformanceApprovedLeaveMock,
+  deletePerformanceHolidayMock,
   createPerformanceApprovedLeaveMock,
   getDuplicateReviewsMock,
+  getPerformanceRuleHistoryMock,
   getPerformanceRulesMock,
   listBdTargetSchedulesMock,
   listPerformanceApprovedLeavesMock,
@@ -21,12 +24,17 @@ const {
   listUsersMock,
   previewPerformanceRulesMock,
   reviewDuplicateOverrideMock,
+  updatePerformanceApprovedLeaveMock,
+  updatePerformanceHolidayMock,
   updatePerformanceRulesMock,
   updateBdTargetScheduleMock,
 } = vi.hoisted(() => ({
   createPerformanceHolidayMock: vi.fn(),
+  deletePerformanceApprovedLeaveMock: vi.fn(),
+  deletePerformanceHolidayMock: vi.fn(),
   createPerformanceApprovedLeaveMock: vi.fn(),
   getDuplicateReviewsMock: vi.fn(),
+  getPerformanceRuleHistoryMock: vi.fn(),
   getPerformanceRulesMock: vi.fn(),
   listBdTargetSchedulesMock: vi.fn(),
   listPerformanceApprovedLeavesMock: vi.fn(),
@@ -34,14 +42,20 @@ const {
   listUsersMock: vi.fn(),
   previewPerformanceRulesMock: vi.fn(),
   reviewDuplicateOverrideMock: vi.fn(),
+  updatePerformanceApprovedLeaveMock: vi.fn(),
+  updatePerformanceHolidayMock: vi.fn(),
   updatePerformanceRulesMock: vi.fn(),
   updateBdTargetScheduleMock: vi.fn(),
 }));
 
 vi.mock("../../lib/api-client", () => ({
+  ApiClientError: class ApiClientError extends Error {},
   createPerformanceHoliday: createPerformanceHolidayMock,
+  deletePerformanceApprovedLeave: deletePerformanceApprovedLeaveMock,
+  deletePerformanceHoliday: deletePerformanceHolidayMock,
   createPerformanceApprovedLeave: createPerformanceApprovedLeaveMock,
   getDuplicateReviews: getDuplicateReviewsMock,
+  getPerformanceRuleHistory: getPerformanceRuleHistoryMock,
   getPerformanceRules: getPerformanceRulesMock,
   listBdTargetSchedules: listBdTargetSchedulesMock,
   listPerformanceApprovedLeaves: listPerformanceApprovedLeavesMock,
@@ -49,6 +63,8 @@ vi.mock("../../lib/api-client", () => ({
   listUsers: listUsersMock,
   previewPerformanceRules: previewPerformanceRulesMock,
   reviewDuplicateOverride: reviewDuplicateOverrideMock,
+  updatePerformanceApprovedLeave: updatePerformanceApprovedLeaveMock,
+  updatePerformanceHoliday: updatePerformanceHolidayMock,
   updatePerformanceRules: updatePerformanceRulesMock,
   updateBdTargetSchedule: updateBdTargetScheduleMock,
 }));
@@ -109,6 +125,33 @@ const target = {
   version: 1,
   createdAt: "2026-09-01T00:00:00.000Z",
   updatedAt: "2026-09-01T00:00:00.000Z",
+};
+
+const holiday = {
+  id: "20000000-0000-4000-8000-000000000001",
+  holidayDate: "2026-12-25",
+  name: "Winter holiday",
+  createdById: admin.id,
+  auditMetadata: { source: "admin" },
+  version: 2,
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-02T00:00:00.000Z",
+};
+
+const leaveRecord = {
+  id: "20000000-0000-4000-8000-000000000002",
+  bdId: bd.id,
+  startsAt: "2026-12-20T09:00:00.000Z",
+  endsAt: "2026-12-21T17:00:00.000Z",
+  reason: "Conference",
+  availableStartHour: 10,
+  availableEndHour: 14,
+  approvedById: admin.id,
+  approvedAt: "2026-09-01T00:00:00.000Z",
+  auditMetadata: null,
+  version: 3,
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-02T00:00:00.000Z",
 };
 
 const review = {
@@ -177,10 +220,22 @@ describe("PerformanceRulesForm", () => {
     document.body.append(container);
     root = createRoot(container);
     getPerformanceRulesMock.mockResolvedValue(rule);
-    listUsersMock.mockResolvedValue([bd]);
+    getPerformanceRuleHistoryMock.mockResolvedValue([rule, {
+      ...rule,
+      id: "10000000-0000-4000-8000-000000000009",
+      effectiveFrom: "2026-08-01T00:00:00.000Z",
+      effectiveTo: "2026-09-10T00:00:00.000Z",
+      version: 2,
+      createdById: bd.id,
+      auditMetadata: { reason: "Initial policy" },
+    }]);
+    listUsersMock.mockResolvedValue([
+      { ...admin, timezone: "Asia/Karachi", lastLoginAt: null },
+      { ...bd, timezone: "Asia/Karachi", lastLoginAt: null },
+    ]);
     listBdTargetSchedulesMock.mockResolvedValue([target]);
-    listPerformanceHolidaysMock.mockResolvedValue([]);
-    listPerformanceApprovedLeavesMock.mockResolvedValue([]);
+    listPerformanceHolidaysMock.mockResolvedValue([holiday]);
+    listPerformanceApprovedLeavesMock.mockResolvedValue([leaveRecord]);
     getDuplicateReviewsMock.mockResolvedValue([review]);
     previewPerformanceRulesMock.mockResolvedValue(preview);
     updatePerformanceRulesMock.mockResolvedValue({ ...rule, defaultDailyTarget: 75 });
@@ -202,6 +257,10 @@ describe("PerformanceRulesForm", () => {
     });
     reviewDuplicateOverrideMock.mockResolvedValue({ ...review, status: "APPROVED" });
     updateBdTargetScheduleMock.mockResolvedValue({ ...target, dailyTarget: 90 });
+    updatePerformanceHolidayMock.mockResolvedValue({ ...holiday, name: "Observed winter holiday", version: 3 });
+    deletePerformanceHolidayMock.mockResolvedValue(undefined);
+    updatePerformanceApprovedLeaveMock.mockResolvedValue({ ...leaveRecord, reason: "Client conference", version: 4 });
+    deletePerformanceApprovedLeaveMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -341,5 +400,61 @@ describe("PerformanceRulesForm", () => {
       reviewReason: "Same canonical job posting.",
       expectedVersion: review.version,
     });
+  });
+
+  it("edits future business-calendar records and shows a historical-protection error from the API", async () => {
+    updatePerformanceHolidayMock.mockRejectedValueOnce(new Error("Started holidays cannot rewrite historical performance"));
+    await render();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-action='edit-holiday-${holiday.id}']`)?.click();
+      change(container.querySelector<HTMLInputElement>("#holiday-name")!, "Observed winter holiday");
+      container.querySelector<HTMLButtonElement>("[data-action='save-holiday']")?.click();
+    });
+    expect(updatePerformanceHolidayMock).toHaveBeenCalledWith(holiday.id, {
+      holidayDate: holiday.holidayDate,
+      name: "Observed winter holiday",
+      expectedVersion: holiday.version,
+    });
+    expect(container.textContent).toContain("Started holidays cannot rewrite historical performance");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-action='edit-leave-${leaveRecord.id}']`)?.click();
+      change(container.querySelector<HTMLInputElement>("#leave-reason")!, "Client conference");
+      container.querySelector<HTMLButtonElement>("[data-action='save-leave']")?.click();
+    });
+    expect(updatePerformanceApprovedLeaveMock).toHaveBeenCalledWith(leaveRecord.id, expect.objectContaining({
+      bdId: bd.id,
+      reason: "Client conference",
+      expectedVersion: leaveRecord.version,
+    }));
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-action='delete-holiday-${holiday.id}']`)?.click();
+      container.querySelector<HTMLButtonElement>(`[data-action='delete-leave-${leaveRecord.id}']`)?.click();
+    });
+    expect(deletePerformanceHolidayMock).toHaveBeenCalledWith(holiday.id, holiday.version);
+    expect(deletePerformanceApprovedLeaveMock).toHaveBeenCalledWith(leaveRecord.id, leaveRecord.version + 1);
+  });
+
+  it("renders ordered rule provenance and exposes field-level timezone and numeric validation", async () => {
+    await render();
+
+    expect(container.textContent).toContain("Rule version history");
+    expect(container.textContent).toContain("Version 2");
+    expect(container.textContent).toContain("Maya Chen");
+
+    await act(async () => {
+      change(container.querySelector<HTMLInputElement>("#businessCalendarTimeZone")!, "Not/AZone");
+      change(container.querySelector<HTMLInputElement>("#applicationWeightPercent")!, "101");
+      container.querySelector<HTMLButtonElement>("[data-action='preview-rules']")?.click();
+    });
+    const timezone = container.querySelector<HTMLInputElement>("#businessCalendarTimeZone")!;
+    const applicationWeight = container.querySelector<HTMLInputElement>("#applicationWeightPercent")!;
+    expect(timezone.getAttribute("aria-invalid")).toBe("true");
+    expect(timezone.getAttribute("aria-describedby")).toBe("businessCalendarTimeZone-error");
+    expect(applicationWeight.getAttribute("aria-invalid")).toBe("true");
+    expect(applicationWeight.getAttribute("max")).toBe("100");
+    expect(container.textContent).toContain("Business calendar timezone must be a valid IANA timezone");
   });
 });
