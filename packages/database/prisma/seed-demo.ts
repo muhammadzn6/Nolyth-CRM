@@ -1,7 +1,7 @@
 import { argon2id, hash } from "argon2";
 import { database } from "../src/client";
 
-const DEMO_PASSWORD = process.env.ORBIT_DEMO_PASSWORD ?? "OrbitDemo123!";
+const DEMO_PASSWORD = process.env.ORBIT_DEMO_PASSWORD;
 const ids = {
   bd: "10000000-0000-4000-8000-000000000001",
   closer: "10000000-0000-4000-8000-000000000002",
@@ -24,6 +24,7 @@ const ids = {
 };
 
 async function main() {
+  if (!DEMO_PASSWORD) throw new Error("ORBIT_DEMO_PASSWORD must be set before running the disposable demo seed.");
   const passwordHash = await hash(DEMO_PASSWORD, { type: argon2id });
   const admin = await database.user.findUnique({ where: { email: "admin@orbit.local" } });
   if (!admin) throw new Error("Run the normal admin seed first");
@@ -78,7 +79,7 @@ async function main() {
   await database.notification.upsert({ where: { id: ids.notification }, create: { id: ids.notification, idempotencyKey: "demo-offer-ready", recipientId: closer.id, type: "IN_APP", title: "Demo offer ready for review", message: "Northstar Labs offer is ready for Avery Chen.", relatedEntityType: "offer", relatedEntityId: ids.offer }, update: { readAt: null, recipientId: closer.id } });
   await database.activityEvent.upsert({ where: { id: ids.activity }, create: { id: ids.activity, actorId: admin.id, actorNameSnapshot: admin.displayName, actorRoleSnapshot: admin.role, profileId: ids.profile, leadId: ids.leadInterview, entityType: "demo_workspace", entityId: ids.profile, action: "demo.seeded", metadata: { bdId: bd.id, closerId: closer.id } }, update: { actorId: admin.id, metadata: { bdId: bd.id, closerId: closer.id } } });
 
-  console.log(JSON.stringify({ bd: { name: bd.displayName, email: bd.email }, closer: { name: closer.displayName, email: closer.email }, password: DEMO_PASSWORD, profileId: ids.profile, leadIds: [ids.leadApplied, ids.leadInterview, ids.leadOffer] }, null, 2));
+  console.log(JSON.stringify({ bd: { name: bd.displayName, email: bd.email }, closer: { name: closer.displayName, email: closer.email }, profileId: ids.profile, leadIds: [ids.leadApplied, ids.leadInterview, ids.leadOffer] }, null, 2));
 }
 
 main().catch((error: unknown) => { console.error(error); process.exitCode = 1; }).finally(async () => { await database.$disconnect(); });

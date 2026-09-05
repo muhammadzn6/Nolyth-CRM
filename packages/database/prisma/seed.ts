@@ -12,7 +12,7 @@ async function main() {
   const passwordChangedAt = new Date();
   const passwordHash = await hash(seedPassword, { type: argon2id });
 
-  await database.user.upsert({
+  const admin = await database.user.upsert({
     where: { email: "admin@orbit.local" },
     create: {
       displayName: "Orbit Administrator",
@@ -31,6 +31,18 @@ async function main() {
       timezone: "UTC",
     },
   });
+
+  const activeRule = await database.performanceRuleSet.findFirst({
+    where: { effectiveFrom: { lte: new Date() }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }] },
+  });
+  if (!activeRule) {
+    await database.performanceRuleSet.create({
+      data: {
+        effectiveFrom: new Date("2020-01-01T00:00:00.000Z"),
+        createdById: admin.id,
+      },
+    });
+  }
 }
 
 main()

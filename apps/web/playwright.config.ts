@@ -12,9 +12,11 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "line",
+  outputDir: resolve(workspaceRoot, "output/playwright/test-results"),
   use: {
     baseURL: webOrigin,
     trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   projects: [
     {
@@ -32,6 +34,7 @@ export default defineConfig({
         process.env.DATABASE_URL ?? "postgresql://orbit:orbit@localhost:5432/orbit",
       NEXT_PUBLIC_API_BASE_URL: `${apiOrigin}/api/v1`,
       NEXT_PUBLIC_APP_BASE_URL: webOrigin,
+      ORBIT_DEMO_PASSWORD: process.env.ORBIT_DEMO_PASSWORD ?? "",
       ORBIT_SEED_ADMIN_PASSWORD: process.env.ORBIT_SEED_ADMIN_PASSWORD ?? "",
       PORT: new URL(webOrigin).port,
       REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",

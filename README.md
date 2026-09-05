@@ -74,6 +74,34 @@ pnpm db:seed
 
 Server processes read variables from their process environment. Run the `set -a` / `source .env` sequence in each new shell before starting the API, worker, migrations, seed, or smoke suite. Next.js also reads its environment files, but the other runtimes do not implicitly load them.
 
+### BD performance browser checks
+
+Use a disposable local database for performance browser checks. Set `DATABASE_URL` to that throwaway database before running migration or seed commands; never point these commands at a shared local database. Start the local stack only on web port `3100` and API port `3101`; do not use `3000` or `3001`, which may belong to other services.
+
+```bash
+set -a
+source .env
+set +a
+export ORBIT_SEED_ADMIN_PASSWORD='choose-a-local-admin-password'
+export ORBIT_DEMO_PASSWORD='choose-a-local-demo-password'
+pnpm db:migrate
+pnpm db:seed
+pnpm db:seed:demo
+API_PORT=3101 PORT=3100 node scripts/start-foundation.mjs
+```
+
+In a second terminal, using the same exported environment:
+
+```bash
+ORBIT_E2E_ADMIN_PASSWORD="$ORBIT_SEED_ADMIN_PASSWORD" \
+ORBIT_E2E_BD_PASSWORD="$ORBIT_DEMO_PASSWORD" \
+ORBIT_E2E_WEB_ORIGIN=http://localhost:3100 \
+ORBIT_E2E_API_ORIGIN=http://localhost:3101 \
+pnpm --filter @orbit/web test:e2e -- e2e/bd-performance.spec.ts e2e/admin-bd-performance.spec.ts e2e/duplicate-review.spec.ts
+```
+
+The local Admin account is `admin@orbit.local` and uses the value you supply through `ORBIT_SEED_ADMIN_PASSWORD`. The disposable demo BD account is `maya.bd@orbit.local` and uses `ORBIT_DEMO_PASSWORD`. These passwords are intentionally not committed, and the demo seed must not be used in production. Browser screenshots, traces, and failure artifacts are written under `output/playwright/`.
+
 ## Verification
 
 The full local verification order and disposable-database guard are documented in [Foundation verification](docs/verification/foundation.md). `pnpm test` owns the destructive persistence suite and requires the disposable `orbit_task3_test` database. `pnpm test:e2e` does not run that suite: it runs API/worker checks first, then starts all three runtime processes on isolated ports `3100` and `3101` for the Playwright login, liveness, seeded-authenticated-shell, and admin user-management smoke. Do not point the smoke at ports `3000` or `3001`; those are the default developer ports and may already be serving unrelated local processes.

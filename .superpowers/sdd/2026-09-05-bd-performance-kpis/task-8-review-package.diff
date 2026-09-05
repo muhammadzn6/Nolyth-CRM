@@ -1,0 +1,478 @@
+diff --git a/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-8-report.md b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-8-report.md
+new file mode 100644
+index 0000000..a431f85
+--- /dev/null
++++ b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-8-report.md
+@@ -0,0 +1,45 @@
++# Task 8 — Browser coverage and final verification
++
++## Delivered scope
++
++- Added three role-scoped Playwright specs for BD performance, Admin performance, and duplicate review workflows.
++- Added shared E2E helpers that require environment-backed credentials, assert the required local ports, audit app-owned console/network failures, and retain screenshots in Playwright's workspace output directory.
++- Configured browser artifacts under `output/playwright/` and forwarded `ORBIT_DEMO_PASSWORD` only from the process environment.
++- Documented disposable-database seed/start/test commands using `3100` and `3101` only.
++- Made the demo seed require `ORBIT_DEMO_PASSWORD` and removed its password echo.
++
++## Browser coverage
++
++- BD: daily target progress, remaining target, personal score coverage, personal drill-down, peer-safe quality summary, and Edit/Open application/Open calendar interview actions.
++- Admin: rolling-period controls, KPI drill-down, Building Baseline, reassignment queue, rule impact preview, future-effective save, and rule history.
++- Duplicate workflow: server rejection of incomplete intake, automatic applied date, confirmed duplicate traceability with zero credit, likely-duplicate warning and mandatory override, Admin approval retention, Admin rejection, and rejected-review qualified-credit removal.
++
++## Verification evidence
++
++Passed:
++
++- `npm --prefix apps/web run test:e2e -- --list e2e/bd-performance.spec.ts e2e/admin-bd-performance.spec.ts e2e/duplicate-review.spec.ts` — 3 tests discovered.
++- `npm --prefix apps/web run lint`.
++- `npm --prefix apps/web run typecheck`.
++- `npm --prefix apps/api run typecheck`.
++- `npm --prefix packages/backend run typecheck`.
++- `npm --prefix packages/contracts run typecheck`.
++- `packages/database/node_modules/.bin/prisma validate --schema packages/database/prisma/schema.prisma`.
++- `git diff --check`.
++- Playwright CLI opened and snapshotted `http://localhost:3100/login` successfully.
++- Controlled local stack startup used only `PORT=3100` and `API_PORT=3101`; `GET http://localhost:3101/health/ready` returned HTTP 200 and `GET http://localhost:3100/login` returned HTTP 200.
++
++Blocked live verification:
++
++- `prisma migrate status` against the configured shared local `orbit` database at `localhost:55432` reports migration-history drift: database-only `20260724111622_auth_api_updated` plus seven unapplied BD-performance migrations beginning `20260905010000_harden_performance_rule_invariants`.
++- The running worker logged `worker.performance_sla_evaluation_failed` with `PrismaClientKnownRequestError`, consistent with that drift.
++- The full browser run on `3100/3101` executed all three required specs and failed at sign-in. A direct API login with the environment-backed `ORBIT_SEED_ADMIN_PASSWORD` and `Origin: http://localhost:3100` returned HTTP 401 `Invalid email or password`. No fallback or committed credential was introduced.
++- `npx vitest run apps/web packages/contracts packages/backend` ran 498 tests: 492 passed and 6 failed. All six failures are in pre-existing, uncommitted calendar/closer visual work (`calendar-workspace.test.tsx` and `closer-dashboard.test.tsx`), outside Task 8. Those files were preserved untouched.
++
++## Ruling
++
++Do not migrate, reset, or reseed the configured shared local database. A clean disposable database with the current migration set and the two environment-supplied seed passwords is required for successful live E2E execution.
++
++## Commit scope
++
++Only Task 8 specs, helper, Playwright configuration, README, demo/local seed adjustment, and Task 8 review artifacts are staged. Existing calendar, dashboard, lead-intake, CSS, and ledger edits remain uncommitted.
+diff --git a/README.md b/README.md
+index ac9c454..8498289 100644
+--- a/README.md
++++ b/README.md
+@@ -74,6 +74,34 @@ pnpm db:seed
+
+ Server processes read variables from their process environment. Run the `set -a` / `source .env` sequence in each new shell before starting the API, worker, migrations, seed, or smoke suite. Next.js also reads its environment files, but the other runtimes do not implicitly load them.
+
++### BD performance browser checks
++
++Use a disposable local database for performance browser checks. Set `DATABASE_URL` to that throwaway database before running migration or seed commands; never point these commands at a shared local database. Start the local stack only on web port `3100` and API port `3101`; do not use `3000` or `3001`, which may belong to other services.
++
++```bash
++set -a
++source .env
++set +a
++export ORBIT_SEED_ADMIN_PASSWORD='choose-a-local-admin-password'
++export ORBIT_DEMO_PASSWORD='choose-a-local-demo-password'
++pnpm db:migrate
++pnpm db:seed
++pnpm db:seed:demo
++API_PORT=3101 PORT=3100 node scripts/start-foundation.mjs
++```
++
++In a second terminal, using the same exported environment:
++
++```bash
++ORBIT_E2E_ADMIN_PASSWORD="$ORBIT_SEED_ADMIN_PASSWORD" \
++ORBIT_E2E_BD_PASSWORD="$ORBIT_DEMO_PASSWORD" \
++ORBIT_E2E_WEB_ORIGIN=http://localhost:3100 \
++ORBIT_E2E_API_ORIGIN=http://localhost:3101 \
++pnpm --filter @orbit/web test:e2e -- e2e/bd-performance.spec.ts e2e/admin-bd-performance.spec.ts e2e/duplicate-review.spec.ts
++```
++
++The local Admin account is `admin@orbit.local` and uses the value you supply through `ORBIT_SEED_ADMIN_PASSWORD`. The disposable demo BD account is `maya.bd@orbit.local` and uses `ORBIT_DEMO_PASSWORD`. These passwords are intentionally not committed, and the demo seed must not be used in production. Browser screenshots, traces, and failure artifacts are written under `output/playwright/`.
++
+ ## Verification
+
+ The full local verification order and disposable-database guard are documented in [Foundation verification](docs/verification/foundation.md). `pnpm test` owns the destructive persistence suite and requires the disposable `orbit_task3_test` database. `pnpm test:e2e` does not run that suite: it runs API/worker checks first, then starts all three runtime processes on isolated ports `3100` and `3101` for the Playwright login, liveness, seeded-authenticated-shell, and admin user-management smoke. Do not point the smoke at ports `3000` or `3001`; those are the default developer ports and may already be serving unrelated local processes.
+diff --git a/apps/web/e2e/admin-bd-performance.spec.ts b/apps/web/e2e/admin-bd-performance.spec.ts
+new file mode 100644
+index 0000000..acea4ec
+--- /dev/null
++++ b/apps/web/e2e/admin-bd-performance.spec.ts
+@@ -0,0 +1,38 @@
++import { expect, test } from "@playwright/test";
++import { assertPerformancePorts, auditBrowser, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
++
++test.describe("Admin BD performance workflow", () => {
++  test("reviews leaderboard state, drill-downs, baseline, reassignment queue, and future rule history", async ({ page }, testInfo) => {
++    assertPerformancePorts(testInfo.project.use.baseURL);
++    const adminPassword = requiredE2eCredential("ORBIT_E2E_ADMIN_PASSWORD");
++    const audit = auditBrowser(page);
++    await signIn(page, "admin@orbit.local", adminPassword);
++
++    await expect(page.getByLabel("BD team performance KPIs")).toBeVisible();
++    await page.getByRole("link", { name: "7 days" }).click();
++    await expect(page).toHaveURL(/performancePeriod=7d/);
++    await expect(page.getByRole("link", { name: "Today" })).toBeVisible();
++    await expect(page.getByRole("link", { name: "30 days" })).toBeVisible();
++    await page.getByRole("link", { name: "Qualified applications" }).click();
++    await expect(page).toHaveURL(/performanceMetric=QUALIFIED_APPLICATIONS/);
++    await expect(page.getByLabel("Performance score drill-down")).toBeVisible();
++    await expect(page.getByLabel("Building baseline")).toBeVisible();
++    await expect(page.getByLabel("Admin reassignment queue")).toBeVisible();
++
++    await page.goto("/admin/performance");
++    await expect(page.getByRole("heading", { name: "Performance rules" })).toBeVisible();
++    const effectiveFrom = new Date(Date.now() + 48 * 60 * 60 * 1000);
++    const localDateTime = `${effectiveFrom.getUTCFullYear()}-${String(effectiveFrom.getUTCMonth() + 1).padStart(2, "0")}-${String(effectiveFrom.getUTCDate()).padStart(2, "0")}T12:00`;
++    await page.locator("#rule-effective-from").fill(localDateTime);
++    await page.getByRole("button", { name: "Preview impact" }).click();
++    await expect(page.getByLabel("Performance rule impact preview")).toBeVisible();
++    await page.locator("#confirm-rule-impact").check();
++    const saveResponse = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/performance/rules"));
++    await page.getByRole("button", { name: "Save future version" }).click();
++    expect((await saveResponse).ok()).toBeTruthy();
++    await expect(page.getByRole("status")).toContainText("Future-effective performance rules saved.");
++    await expect(page.getByRole("heading", { name: "Rule version history" })).toBeVisible();
++    await saveBrowserScreenshot(page, testInfo, "admin-performance");
++    audit.expectClean();
++  });
++});
+diff --git a/apps/web/e2e/bd-performance.spec.ts b/apps/web/e2e/bd-performance.spec.ts
+new file mode 100644
+index 0000000..3396740
+--- /dev/null
++++ b/apps/web/e2e/bd-performance.spec.ts
+@@ -0,0 +1,54 @@
++import { expect, test } from "@playwright/test";
++import { assertPerformancePorts, auditBrowser, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
++
++test.describe("BD performance workflow", () => {
++  test("shows target progress, score coverage, peer-safe metrics, and interview actions", async ({ page }, testInfo) => {
++    assertPerformancePorts(testInfo.project.use.baseURL);
++    const bdPassword = requiredE2eCredential("ORBIT_E2E_BD_PASSWORD");
++    const audit = auditBrowser(page);
++    await signIn(page, "maya.bd@orbit.local", bdPassword);
++
++    await page.getByLabel("Add application").click();
++    await expect(page).toHaveURL(/\/leads\?new=application/);
++    await expect(page.getByRole("form", { name: "Add application" })).toBeVisible();
++    await page.goto("/");
++
++    await expect(page.getByLabel("BD work queue")).toBeVisible();
++    const qualifiedApplications = page.getByLabel(/Qualified applications today:/);
++    await expect(qualifiedApplications).toBeVisible();
++    await expect(page.getByLabel(/Remaining target:/)).toBeVisible();
++    await qualifiedApplications.click();
++    await expect(page).toHaveURL(/\/leads$/);
++    await page.goto("/");
++    const personalPerformance = page.getByLabel("Personal BD performance");
++    await expect(personalPerformance).toBeVisible();
++    await expect(personalPerformance.getByText(/coverage$/)).toBeVisible();
++    await personalPerformance.getByRole("link", { name: "View your application details" }).click();
++    await expect(page).toHaveURL(/performanceMetric=QUALIFIED_APPLICATIONS/);
++    await expect(page.getByLabel("Performance score drill-down")).toBeVisible();
++    await page.goto("/");
++
++    const teamRanking = page.getByLabel("BD team ranking");
++    await expect(teamRanking).toBeVisible();
++    await expect(teamRanking).toContainText("Record health");
++    await expect(teamRanking).toContainText("Duplicate rate");
++    await expect(teamRanking).not.toContainText("Recruiter email");
++    await expect(teamRanking).not.toContainText("Override reason");
++
++    const section = page.getByLabel("BD operations");
++    await expect(section.getByRole("link", { name: "Edit" }).first()).toBeVisible();
++    await expect(section.getByRole("link", { name: "Open application" }).first()).toBeVisible();
++    await expect(section.getByRole("link", { name: "Open calendar" }).last()).toBeVisible();
++    await section.getByRole("link", { name: "Edit" }).first().click();
++    await expect(page).toHaveURL(/\/leads\/[^/]+\/interviews\?edit=/);
++    await page.goto("/");
++    await section.getByRole("link", { name: "Open application" }).first().click();
++    await expect(page).toHaveURL(/\/leads\/[^/]+$/);
++    await page.goto("/");
++    await section.getByRole("link", { name: "Open calendar" }).last().click();
++    await expect(page).toHaveURL(/\/calendar\?date=/);
++    await expect(page.getByLabel("Calendar view")).toBeVisible();
++    await saveBrowserScreenshot(page, testInfo, "bd-performance");
++    audit.expectClean();
++  });
++});
+diff --git a/apps/web/e2e/duplicate-review.spec.ts b/apps/web/e2e/duplicate-review.spec.ts
+new file mode 100644
+index 0000000..b4a23cb
+--- /dev/null
++++ b/apps/web/e2e/duplicate-review.spec.ts
+@@ -0,0 +1,110 @@
++import { expect, test } from "@playwright/test";
++import { assertPerformancePorts, auditBrowser, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
++
++type IntakeResponse = { data?: { duplicate?: { classification?: string; qualifiedCredit?: boolean; reviewId?: string | null }; lead?: { appliedDate?: string } } };
++type DuplicateReviewResponse = { data?: { status?: string; provisionalCreditGranted?: boolean; lead?: { qualifiedCredit?: boolean; duplicateClassification?: string } } };
++
++async function fillApplication(page: import("@playwright/test").Page, input: { company: string; title: string; url: string }) {
++  const form = page.getByRole("form", { name: "Add application" });
++  await form.getByLabel("Job title").fill(input.title);
++  await form.getByLabel("Company").fill(input.company);
++  await form.getByLabel("JD link").fill(input.url);
++  await form.getByLabel("Recruiter name").fill("Orbit E2E Recruiter");
++  await form.getByLabel("Recruiter email").fill("orbit-e2e-recruiter@example.test");
++}
++
++async function submitIntake(page: import("@playwright/test").Page) {
++  const response = page.waitForResponse((candidate) => candidate.request().method() === "POST" && candidate.url().includes("/api/v1/leads/intake"))
++    .then(async (candidate) => ({ body: await candidate.json() as IntakeResponse, status: candidate.status() }));
++  await page.getByRole("button", { name: "Add application" }).last().click();
++  return response;
++}
++
++test.describe("Duplicate review workflow", () => {
++  test("rejects incomplete intake and preserves duplicate credit decisions through Admin review", async ({ page }, testInfo) => {
++    assertPerformancePorts(testInfo.project.use.baseURL);
++    const bdPassword = requiredE2eCredential("ORBIT_E2E_BD_PASSWORD");
++    const adminPassword = requiredE2eCredential("ORBIT_E2E_ADMIN_PASSWORD");
++    const audit = auditBrowser(page);
++    const runId = `${Date.now()}-${testInfo.retry}`;
++    const approved = { company: `Orbit E2E Approved ${runId}`, title: `Platform Engineer Approved ${runId}`, url: `https://jobs.example.test/roles/${runId}/approved?utm_source=orbit#details` };
++    const rejected = { company: `Orbit E2E Rejected ${runId}`, title: `Platform Engineer Rejected ${runId}`, url: `https://jobs.example.test/roles/${runId}/rejected?utm_source=orbit#details` };
++
++    await signIn(page, "maya.bd@orbit.local", bdPassword);
++    const incomplete = await page.evaluate(async (apiOrigin) => {
++      const response = await fetch(`${apiOrigin}/api/v1/leads/intake`, {
++        method: "POST",
++        credentials: "include",
++        headers: { "content-type": "application/json" },
++        body: JSON.stringify({ profileId: "not-a-profile", companyName: "", jobTitle: "", rawUrl: "invalid", recruiterName: "", recruiterEmail: "" }),
++      });
++      return { status: response.status, body: await response.json() };
++    }, process.env.ORBIT_E2E_API_ORIGIN ?? "http://localhost:3101");
++    expect(incomplete.status).toBe(400);
++    audit.allowResponse("/api/v1/leads/intake");
++
++    await page.goto("/leads?new=application");
++    await fillApplication(page, approved);
++    const ordinary = await submitIntake(page);
++    expect(ordinary.status).toBe(201);
++    const ordinaryBody = ordinary.body;
++    expect(ordinaryBody.data?.duplicate).toMatchObject({ classification: "NONE", qualifiedCredit: true });
++    expect(ordinaryBody.data?.lead?.appliedDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
++
++    await page.goto("/leads?new=application");
++    await fillApplication(page, { ...approved, url: `https://jobs.example.test/roles/${runId}/approved/?utm_medium=email` });
++    const confirmed = await submitIntake(page);
++    expect(confirmed.status).toBe(201);
++    const confirmedBody = confirmed.body;
++    expect(confirmedBody.data?.duplicate).toMatchObject({ classification: "CONFIRMED", qualifiedCredit: false, reviewId: null });
++
++    await page.goto("/leads?new=application");
++    await fillApplication(page, { ...approved, url: `https://jobs.example.test/roles/${runId}/approved-other` });
++    const likelyConflict = await submitIntake(page);
++    expect(likelyConflict.status).toBe(409);
++    audit.allowResponse("/api/v1/leads/intake");
++    audit.allowConsole("status: 409");
++    audit.allowConsole("status of 409");
++    await expect(page.getByText("Likely duplicate", { exact: true })).toBeVisible();
++    await page.getByLabel("Override reason").fill("Different requisition and recruiter instruction.");
++    const provisional = await submitIntake(page);
++    expect(provisional.status).toBe(201);
++    const provisionalBody = provisional.body;
++    expect(provisionalBody.data?.duplicate).toMatchObject({ classification: "LIKELY", qualifiedCredit: true });
++    expect(provisionalBody.data?.duplicate?.reviewId).toBeTruthy();
++
++    await page.goto("/leads?new=application");
++    await fillApplication(page, rejected);
++    expect((await submitIntake(page)).status).toBe(201);
++    await page.goto("/leads?new=application");
++    await fillApplication(page, { ...rejected, url: `https://jobs.example.test/roles/${runId}/rejected-other` });
++    expect((await submitIntake(page)).status).toBe(409);
++    audit.allowResponse("/api/v1/leads/intake");
++    await page.getByLabel("Override reason").fill("Different requisition and recruiter instruction.");
++    const rejectedProvisional = await submitIntake(page);
++    expect(rejectedProvisional.status).toBe(201);
++    expect(rejectedProvisional.body.data?.duplicate).toMatchObject({ classification: "LIKELY", qualifiedCredit: true });
++
++    await page.context().clearCookies();
++    await signIn(page, "admin@orbit.local", adminPassword);
++    await page.goto("/admin/performance");
++    const approvedReview = page.locator("article").filter({ hasText: `${approved.company} · ${approved.title}` });
++    await expect(approvedReview).toBeVisible();
++    await approvedReview.getByLabel("Decision reason").fill("Verified as a different requisition.");
++    const approval = page.waitForResponse(async (response) => response.request().method() === "POST" && response.url().includes("/performance/duplicate-reviews/") && (await response.json() as DuplicateReviewResponse).data?.lead?.qualifiedCredit === true);
++    await approvedReview.getByRole("button", { name: "Approve" }).click();
++    expect((await approval).ok()).toBeTruthy();
++    await expect(page.getByRole("status")).toContainText("Duplicate override approved.");
++
++    const rejectedReview = page.locator("article").filter({ hasText: `${rejected.company} · ${rejected.title}` });
++    await expect(rejectedReview).toBeVisible();
++    await rejectedReview.getByLabel("Decision reason").fill("Confirmed same candidate and requisition.");
++    const rejection = page.waitForResponse(async (response) => response.request().method() === "POST" && response.url().includes("/performance/duplicate-reviews/") && (await response.json() as DuplicateReviewResponse).data?.lead?.qualifiedCredit === false);
++    await rejectedReview.getByRole("button", { name: "Reject" }).click();
++    expect((await rejection).ok()).toBeTruthy();
++    await expect(page.getByRole("status")).toContainText("Duplicate override rejected.");
++    await expect(page.getByText(`${rejected.company} · ${rejected.title}`)).toHaveCount(0);
++    await saveBrowserScreenshot(page, testInfo, "duplicate-review");
++    audit.expectClean();
++  });
++});
+diff --git a/apps/web/e2e/performance-helpers.ts b/apps/web/e2e/performance-helpers.ts
+new file mode 100644
+index 0000000..cf120f7
+--- /dev/null
++++ b/apps/web/e2e/performance-helpers.ts
+@@ -0,0 +1,76 @@
++import { expect, type Page, type TestInfo } from "@playwright/test";
++
++function origin(value: string, label: string): URL {
++  try {
++    return new URL(value);
++  } catch {
++    throw new Error(`${label} must be an absolute URL.`);
++  }
++}
++
++export function requiredE2eCredential(name: "ORBIT_E2E_ADMIN_PASSWORD" | "ORBIT_E2E_BD_PASSWORD"): string {
++  const value = process.env[name];
++  expect(value, `${name} must be set from your local environment before running browser checks.`).toBeTruthy();
++  return value!;
++}
++
++export function assertPerformancePorts(baseURL: string | undefined) {
++  const web = origin(baseURL ?? "http://localhost:3100", "Playwright base URL");
++  const api = origin(process.env.ORBIT_E2E_API_ORIGIN ?? "http://localhost:3101", "ORBIT_E2E_API_ORIGIN");
++  expect(web.hostname).toBe("localhost");
++  expect(web.port).toBe("3100");
++  expect(api.hostname).toBe("localhost");
++  expect(api.port).toBe("3101");
++  expect([web.port, api.port]).not.toContain("3000");
++  expect([web.port, api.port]).not.toContain("3001");
++}
++
++export async function signIn(page: Page, email: string, password: string) {
++  await page.goto("/login");
++  await page.getByLabel("Work email").fill(email);
++  await page.getByLabel("Password").fill(password);
++  await page.getByRole("button", { name: "Sign in to Orbit" }).click();
++  await expect(page).toHaveURL("/");
++}
++
++export function auditBrowser(page: Page) {
++  const consoleErrors: string[] = [];
++  const failedResponses: string[] = [];
++  const appOrigins = new Set([
++    origin(page.url() === "about:blank" ? "http://localhost:3100" : page.url(), "Browser page").origin,
++    origin(process.env.ORBIT_E2E_API_ORIGIN ?? "http://localhost:3101", "ORBIT_E2E_API_ORIGIN").origin,
++  ]);
++
++  page.on("console", (message) => {
++    if (message.type() !== "error") return;
++    const text = message.text();
++    if (text.includes("cz-shortcut-listen")) return;
++    consoleErrors.push(text);
++  });
++  page.on("response", (response) => {
++    const origin = new URL(response.url()).origin;
++    if (!appOrigins.has(origin) || response.status() < 400) return;
++    failedResponses.push(`${response.status()} ${response.request().method()} ${response.url()}`);
++  });
++
++  return {
++    allowResponse(fragment: string) {
++      const index = failedResponses.findIndex((entry) => entry.includes(fragment));
++      if (index >= 0) failedResponses.splice(index, 1);
++    },
++    allowConsole(fragment: string) {
++      for (let index = consoleErrors.length - 1; index >= 0; index -= 1) {
++        if (consoleErrors[index]?.includes(fragment)) consoleErrors.splice(index, 1);
++      }
++    },
++    expectClean() {
++      expect(consoleErrors, `app-owned console errors:\n${consoleErrors.join("\n")}`).toEqual([]);
++      expect(failedResponses, `unexpected app HTTP failures:\n${failedResponses.join("\n")}`).toEqual([]);
++    },
++  };
++}
++
++export async function saveBrowserScreenshot(page: Page, testInfo: TestInfo, label: string) {
++  const safeName = `${testInfo.titlePath.join("-")}-${label}`.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
++  await page.screenshot({ fullPage: true, path: testInfo.outputPath(`${safeName}.png`) });
++}
+diff --git a/apps/web/playwright.config.ts b/apps/web/playwright.config.ts
+index a061aee..cea1a45 100644
+--- a/apps/web/playwright.config.ts
++++ b/apps/web/playwright.config.ts
+@@ -12,9 +12,11 @@ export default defineConfig({
+   forbidOnly: Boolean(process.env.CI),
+   retries: process.env.CI ? 2 : 0,
+   reporter: process.env.CI ? "github" : "line",
++  outputDir: resolve(workspaceRoot, "output/playwright/test-results"),
+   use: {
+     baseURL: webOrigin,
+     trace: "retain-on-failure",
++    screenshot: "only-on-failure",
+   },
+   projects: [
+     {
+@@ -32,6 +34,7 @@ export default defineConfig({
+         process.env.DATABASE_URL ?? "postgresql://orbit:orbit@localhost:5432/orbit",
+       NEXT_PUBLIC_API_BASE_URL: `${apiOrigin}/api/v1`,
+       NEXT_PUBLIC_APP_BASE_URL: webOrigin,
++      ORBIT_DEMO_PASSWORD: process.env.ORBIT_DEMO_PASSWORD ?? "",
+       ORBIT_SEED_ADMIN_PASSWORD: process.env.ORBIT_SEED_ADMIN_PASSWORD ?? "",
+       PORT: new URL(webOrigin).port,
+       REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
+diff --git a/packages/database/prisma/seed-demo.ts b/packages/database/prisma/seed-demo.ts
+index 102b0ca..3dbd09b 100644
+--- a/packages/database/prisma/seed-demo.ts
++++ b/packages/database/prisma/seed-demo.ts
+@@ -1,7 +1,7 @@
+ import { argon2id, hash } from "argon2";
+ import { database } from "../src/client";
+
+-const DEMO_PASSWORD = process.env.ORBIT_DEMO_PASSWORD ?? "OrbitDemo123!";
++const DEMO_PASSWORD = process.env.ORBIT_DEMO_PASSWORD;
+ const ids = {
+   bd: "10000000-0000-4000-8000-000000000001",
+   closer: "10000000-0000-4000-8000-000000000002",
+@@ -24,6 +24,7 @@ const ids = {
+ };
+
+ async function main() {
++  if (!DEMO_PASSWORD) throw new Error("ORBIT_DEMO_PASSWORD must be set before running the disposable demo seed.");
+   const passwordHash = await hash(DEMO_PASSWORD, { type: argon2id });
+   const admin = await database.user.findUnique({ where: { email: "admin@orbit.local" } });
+   if (!admin) throw new Error("Run the normal admin seed first");
+@@ -78,7 +79,7 @@ async function main() {
+   await database.notification.upsert({ where: { id: ids.notification }, create: { id: ids.notification, idempotencyKey: "demo-offer-ready", recipientId: closer.id, type: "IN_APP", title: "Demo offer ready for review", message: "Northstar Labs offer is ready for Avery Chen.", relatedEntityType: "offer", relatedEntityId: ids.offer }, update: { readAt: null, recipientId: closer.id } });
+   await database.activityEvent.upsert({ where: { id: ids.activity }, create: { id: ids.activity, actorId: admin.id, actorNameSnapshot: admin.displayName, actorRoleSnapshot: admin.role, profileId: ids.profile, leadId: ids.leadInterview, entityType: "demo_workspace", entityId: ids.profile, action: "demo.seeded", metadata: { bdId: bd.id, closerId: closer.id } }, update: { actorId: admin.id, metadata: { bdId: bd.id, closerId: closer.id } } });
+
+-  console.log(JSON.stringify({ bd: { name: bd.displayName, email: bd.email }, closer: { name: closer.displayName, email: closer.email }, password: DEMO_PASSWORD, profileId: ids.profile, leadIds: [ids.leadApplied, ids.leadInterview, ids.leadOffer] }, null, 2));
++  console.log(JSON.stringify({ bd: { name: bd.displayName, email: bd.email }, closer: { name: closer.displayName, email: closer.email }, profileId: ids.profile, leadIds: [ids.leadApplied, ids.leadInterview, ids.leadOffer] }, null, 2));
+ }
+
+ main().catch((error: unknown) => { console.error(error); process.exitCode = 1; }).finally(async () => { await database.$disconnect(); });
+diff --git a/packages/database/prisma/seed.ts b/packages/database/prisma/seed.ts
+index 9d59617..ffbcd49 100644
+--- a/packages/database/prisma/seed.ts
++++ b/packages/database/prisma/seed.ts
+@@ -12,7 +12,7 @@ async function main() {
+   const passwordChangedAt = new Date();
+   const passwordHash = await hash(seedPassword, { type: argon2id });
+
+-  await database.user.upsert({
++  const admin = await database.user.upsert({
+     where: { email: "admin@orbit.local" },
+     create: {
+       displayName: "Orbit Administrator",
+@@ -31,6 +31,18 @@ async function main() {
+       timezone: "UTC",
+     },
+   });
++
++  const activeRule = await database.performanceRuleSet.findFirst({
++    where: { effectiveFrom: { lte: new Date() }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }] },
++  });
++  if (!activeRule) {
++    await database.performanceRuleSet.create({
++      data: {
++        effectiveFrom: new Date("2020-01-01T00:00:00.000Z"),
++        createdById: admin.id,
++      },
++    });
++  }
+ }
+
+ main()
