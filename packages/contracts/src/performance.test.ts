@@ -206,6 +206,7 @@ describe("performance contracts", () => {
           maturedOutcomeScorePercent: 25,
           balancedScore: 68.2,
           scoreCoverage: "COMPLETE",
+          scoreCoveragePercent: 100,
         },
         quality: {
           recordHealthRate: 100,
@@ -218,6 +219,26 @@ describe("performance contracts", () => {
         },
       }),
     ).toMatchObject({ bdName: "Ada Lovelace", rank: 1, eligible: true });
+  });
+
+  it("requires a numeric score-coverage value alongside its categorical status", () => {
+    const kpi = {
+      qualifiedApplications: 1,
+      targetApplications: 1,
+      rawTargetAttainmentPercent: 100,
+      effectiveTargetAttainmentPercent: 100,
+      recruiterResponses: 0,
+      interviewsScheduled: 0,
+      interviewsNeedingScheduling: 0,
+      followUpSlaCompliancePercent: null,
+      maturedOutcomeScorePercent: null,
+      balancedScore: 100,
+      scoreCoverage: "PROVISIONAL",
+    };
+
+    expect(schema("performanceKpiSchema").safeParse(kpi).success).toBe(false);
+    expect(schema("performanceKpiSchema").parse({ ...kpi, scoreCoveragePercent: 45 }))
+      .toMatchObject({ scoreCoverage: "PROVISIONAL", scoreCoveragePercent: 45 });
   });
 
   it("rejects drill-down statuses that do not belong to the selected metric", () => {

@@ -125,7 +125,7 @@ export const updatePerformanceRuleInputSchema = z
 const bdTargetScheduleInputShape = {
   bdId: uuidSchema,
   dailyTarget: z.number().int().positive().default(70),
-  effectiveFrom: dateTimeSchema,
+  effectiveFrom: dateTimeSchema.optional(),
   effectiveTo: dateTimeSchema.optional(),
   auditMetadata: z.record(z.string(), z.unknown()).optional(),
 };
@@ -207,12 +207,12 @@ export const performanceHolidaySchema = z.strictObject({
 export const bdTargetScheduleInputSchema = z
   .strictObject(bdTargetScheduleInputShape)
   .refine(
-    ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
+    ({ effectiveFrom, effectiveTo }) => !effectiveTo || !effectiveFrom || effectiveFrom < effectiveTo,
     { message: "Effective period must end after it starts", path: ["effectiveTo"] },
   );
 
 export const updateBdTargetScheduleInputSchema = z
-  .strictObject({ ...bdTargetScheduleInputShape, expectedVersion: z.number().int().positive() })
+  .strictObject({ ...bdTargetScheduleInputShape, effectiveFrom: dateTimeSchema, expectedVersion: z.number().int().positive() })
   .refine(
     ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
     { message: "Effective period must end after it starts", path: ["effectiveTo"] },
@@ -275,6 +275,7 @@ export const performanceApprovedLeaveListQuerySchema = optionalBdFilterSchema;
 export const bdTargetScheduleSchema = z
   .strictObject({
     ...bdTargetScheduleInputShape,
+    effectiveFrom: dateTimeSchema,
     id: uuidSchema,
     effectiveTo: dateTimeSchema.nullable(),
     createdById: uuidSchema,
@@ -383,6 +384,7 @@ export const performanceKpiSchema = z.strictObject({
   maturedOutcomeScorePercent: nonnegativeNumberSchema.nullable(),
   balancedScore: nonnegativeNumberSchema.nullable(),
   scoreCoverage: z.enum(["COMPLETE", "PARTIAL_MEASUREMENT", "PROVISIONAL", "INSUFFICIENT_DATA"]),
+  scoreCoveragePercent: percentageSchema,
 });
 
 export const performanceQualityIndicatorsSchema = z.strictObject({
@@ -419,6 +421,19 @@ export const bdPeerSummarySchema = z.strictObject({
   recordHealthRate: percentageSchema.nullable(),
   adminAuditPassRate: percentageSchema.nullable(),
   duplicateRate: percentageSchema.nullable(),
+});
+
+/** Self-only eligibility state; it is never included in BD peer rows. */
+export const bdPerformanceEligibilitySchema = z.strictObject({
+  eligible: z.boolean(),
+  eligibilityProgress: percentageSchema,
+  ineligibilityReason: z.enum([
+    "INSUFFICIENT_ELIGIBLE_WORKING_DAYS",
+    "INITIAL_MATURITY_WINDOW_NOT_ELAPSED",
+    "ADMIN_OVERRIDE_PROVISIONAL",
+  ]).nullable(),
+  estimatedEligibilityDate: dateTimeSchema.nullable(),
+  warnings: z.array(z.enum(["LOW_APPLICATION_SAMPLE", "LOW_OUTCOME_SAMPLE", "ADMIN_OVERRIDE_PROVISIONAL"])),
 });
 
 export const performanceLeadSummarySchema = z.strictObject({
@@ -574,6 +589,7 @@ export const bdPerformanceResponseSchema = z.strictObject({
   rank: z.number().int().positive().nullable(),
   peerLeaderboard: z.array(bdPeerSummarySchema),
   quality: performanceQualityIndicatorsSchema,
+  eligibility: bdPerformanceEligibilitySchema,
 });
 
 export type PerformanceRuleSet = z.infer<typeof performanceRuleSchema>;
@@ -599,6 +615,7 @@ export type PerformanceKpi = z.infer<typeof performanceKpiSchema>;
 export type PerformanceQualityIndicators = z.infer<typeof performanceQualityIndicatorsSchema>;
 export type PerformanceLeaderboardRow = z.infer<typeof performanceLeaderboardRowSchema>;
 export type BdPeerSummary = z.infer<typeof bdPeerSummarySchema>;
+export type BdPerformanceEligibility = z.infer<typeof bdPerformanceEligibilitySchema>;
 export type PerformanceRulePreview = z.infer<typeof performanceRulePreviewSchema>;
 export type PerformanceDrilldownQuery = z.infer<typeof performanceDrilldownQuerySchema>;
 export type PerformanceDrilldownResponse = z.infer<typeof performanceDrilldownResponseSchema>;

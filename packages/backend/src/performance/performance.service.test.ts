@@ -28,6 +28,35 @@ describe("PerformanceService", () => {
     expect(outcomeStage("RESPONSE_RECEIVED", [{ roundType: "TECHNICAL" }])).toBe("INTERVIEW");
   });
 
+  it("retains the highest historical positive outcome after a lead is closed", () => {
+    expect(outcomeStage("CLOSED", [], [{ toStatus: "RESPONSE_RECEIVED" }])).toBe("POSITIVE_REPLY");
+    expect(outcomeStage("CLOSED", [], [{ toStatus: "RESPONSE_RECEIVED" }, { toStatus: "INTERVIEWING" }])).toBe("INTERVIEW");
+  });
+
+  it("lets a BD drill into only their own performance records", async () => {
+    const database: any = {
+      jobLead: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
+      user: { findMany: vi.fn().mockResolvedValue([]) },
+      outboxEvent: { upsert: vi.fn().mockResolvedValue(undefined) },
+      $transaction: async (work: any) => work(database),
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never);
+
+    await expect(service.getMyPerformanceDrilldown(bd, {
+      metric: "QUALIFIED_APPLICATIONS",
+      bdId: admin.id,
+      from: "2026-09-01T00:00:00.000Z",
+      to: "2026-09-30T00:00:00.000Z",
+    })).resolves.toEqual([]);
+
+    expect(database.jobLead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ createdById: bd.id }),
+    }));
+  });
+
   it("does not expose the Admin team performance read to a BD", async () => {
     const service = new PerformanceService({} as never, { assertRole: vi.fn() } as never);
 
@@ -229,7 +258,7 @@ describe("PerformanceService", () => {
         createdById: bd.id,
         appliedDate: { gte: new Date("2026-09-01T00:00:00.000Z"), lte: new Date("2026-09-30T00:00:00.000Z") },
       }),
-      include: { interviews: { where: { startsAt: { lte: new Date("2026-09-30T00:00:00.000Z") } } } },
+      include: { interviews: { where: { startsAt: { lte: new Date("2026-09-30T00:00:00.000Z") } } }, statusTransitions: true, offers: true },
     }));
   });
 
@@ -649,7 +678,7 @@ describe("PerformanceService", () => {
       where: expect.objectContaining({
         qualifiedCredit: true, status: "RESPONSE_RECEIVED", createdById: bd.id,
         appliedDate: { gte: new Date("2026-09-01T00:00:00.000Z"), lte: new Date("2026-09-30T00:00:00.000Z") },
-        interviews: { none: {} },
+        interviews: { none: { startsAt: { lte: new Date("2026-09-30T00:00:00.000Z") } } },
       }),
     }));
   });

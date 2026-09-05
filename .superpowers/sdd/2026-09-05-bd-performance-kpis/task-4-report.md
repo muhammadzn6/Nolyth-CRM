@@ -105,3 +105,20 @@ The local `orbit` database still has the pre-existing migration-history drift. T
 - Disposable PostgreSQL persistence tests: **7 passed**.
 - TypeScript checks passed for backend, API, contracts, database, and worker.
 - Prisma schema validation and `git diff --check` passed.
+
+## Final KPI projection correction
+
+- Added numeric `scoreCoveragePercent` to every KPI projection while retaining the categorical score-coverage status.
+- Building Baseline rows now calculate an estimated eligibility date from the later of the tenth eligible working day and the initial maturity date.
+- Outcome scoring and recruiter-response KPI/drill-down logic retain the highest historical stage from lead transitions, interview milestones, and offers after a lead is closed.
+- Creating a first individual BD target may omit `effectiveFrom`; Orbit resolves it to the next eligible working day using the Admin business calendar and holidays.
+- Scheduling drill-downs now treat only interviews within the reporting window as scheduled, matching `INTERVIEWS_NEEDING_SCHEDULING` KPI calculations.
+- BD performance responses now include a self-only eligibility projection: eligibility, Building Baseline progress, reason, estimate, and low-sample warnings.
+- Added `GET /performance/me/drilldown`; it always forces the requesting BD ID server-side and cannot disclose another BD's records.
+
+### Final KPI projection verification
+
+- Task 4 focused suite: **125 passed**.
+- Disposable PostgreSQL persistence suite: **7 passed**.
+- TypeScript checks passed for contracts, backend, API, and database.
+- Prisma validation and `git diff --check` passed.

@@ -80,6 +80,12 @@ export class PerformanceController {
       .then((response) => parseResponse(bdPerformanceResponseSchema, response));
   }
 
+  @Get("me/drilldown") myDrilldown(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    return this.performance
+      .getMyPerformanceDrilldown(this.actor(request), parse(performanceDrilldownQuerySchema, query))
+      .then((response) => parseResponse(performanceDrilldownResponseSchema, response));
+  }
+
   @Get("admin/drilldown") drilldown(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
     return this.performance
       .getAdminPerformanceDrilldown(this.actor(request), parse(performanceDrilldownQuerySchema, query))

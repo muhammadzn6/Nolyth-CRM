@@ -24,7 +24,7 @@ import { AuthorizationError, ConflictError, NotFoundError, StaleVersionError, Va
 import type { Actor } from "../identity/session.service";
 import { addBusinessHours, businessCalendarDate, calculateProratedDailyTarget, isEligibleWorkingDay, nextEligibleWorkingDay } from "./business-hours";
 import { evaluateEligibility } from "./eligibility";
-import { getMaturityCohort } from "./maturity";
+import { getMaturityCohort, maturityDate } from "./maturity";
 import { rankLeaderboard } from "./leaderboard";
 import { calculateBalancedScore, calculateEffectiveAttainment, calculateOutcomeScore } from "./score";
 
@@ -142,20 +142,22 @@ function hasValidRecruiterEmail(value: unknown): boolean {
   return Boolean(match?.[1]);
 }
 
-export function outcomeStage(status: unknown, interviews: readonly Record<string, unknown>[] = []): "NONE" | "POSITIVE_REPLY" | "SCREENING" | "INTERVIEW" | "OFFER" {
-  switch (status) {
-    case "OFFER_RECEIVED":
-    case "OFFER_ACCEPTED":
-    case "PLACED":
-    case "STARTED": return "OFFER";
+export function outcomeStage(
+  status: unknown,
+  interviews: readonly Record<string, unknown>[] = [],
+  transitions: readonly Record<string, unknown>[] = [],
+  offers: readonly Record<string, unknown>[] = [],
+): "NONE" | "POSITIVE_REPLY" | "SCREENING" | "INTERVIEW" | "OFFER" {
+  const statuses = [status, ...transitions.map((transition) => transition.toStatus)];
+  if (offers.length > 0) return "OFFER";
+  if (statuses.some((candidate) => ["OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"].includes(String(candidate)))) {
+    return "OFFER";
   }
   if (interviews.some((round) => !["PRE_SCREEN", "RECRUITER", "HR"].includes(String(round.roundType)))) return "INTERVIEW";
   if (interviews.some((round) => ["PRE_SCREEN", "RECRUITER", "HR"].includes(String(round.roundType)))) return "SCREENING";
-  switch (status) {
-    case "INTERVIEWING": return "INTERVIEW";
-    case "RESPONSE_RECEIVED": return "POSITIVE_REPLY";
-    default: return "NONE";
-  }
+  if (statuses.includes("INTERVIEWING")) return "INTERVIEW";
+  if (statuses.includes("RESPONSE_RECEIVED")) return "POSITIVE_REPLY";
+  return "NONE";
 }
 
 export class PerformanceService {
@@ -279,6 +281,13 @@ export class PerformanceService {
           duplicateRate: row.quality.duplicateRate,
         };
       }),
+      eligibility: {
+        eligible: self.eligible,
+        eligibilityProgress: self.eligibilityProgress,
+        ineligibilityReason: self.ineligibilityReason,
+        estimatedEligibilityDate: iso(self.estimatedEligibilityDate),
+        warnings: self.warnings,
+      },
     };
   }
 
@@ -307,7 +316,7 @@ export class PerformanceService {
     const parsed = bdTargetScheduleInputSchema.safeParse(input);
     if (!parsed.success) throw invalid(parsed.error.issues);
     await this.assertActiveBd(parsed.data.bdId);
-    const effectiveFrom = new Date(parsed.data.effectiveFrom);
+    const effectiveFrom = parsed.data.effectiveFrom ? new Date(parsed.data.effectiveFrom) : await this.nextTargetChangeBoundary(this.now());
     if (effectiveFrom < this.now()) throw new ConflictError("BD target changes cannot rewrite historical performance");
     const created = await this.database.$transaction(async (transaction) => {
       await this.assertTargetWindowAvailable(transaction, parsed.data.bdId, effectiveFrom, parsed.data.effectiveTo ? new Date(parsed.data.effectiveTo) : null);
@@ -872,20 +881,32 @@ export class PerformanceService {
     await this.evaluateOverdueSlas();
     const parsed = performanceDrilldownQuerySchema.safeParse(query);
     if (!parsed.success) throw invalid(parsed.error.issues);
-    const from = new Date(parsed.data.from);
-    const to = new Date(parsed.data.to);
-    if (parsed.data.metric === "DUPLICATE_REVIEWS") {
+    return this.performanceDrilldown(parsed.data);
+  }
+
+  async getMyPerformanceDrilldown(actor: Actor, query: unknown) {
+    if (!actor.isActive || actor.role !== "BD") throw new AuthorizationError();
+    const parsed = performanceDrilldownQuerySchema.safeParse(query);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    await this.evaluateOverdueSlas();
+    return this.performanceDrilldown({ ...parsed.data, bdId: actor.id });
+  }
+
+  private async performanceDrilldown(parsed: ReturnType<typeof performanceDrilldownQuerySchema.parse>) {
+    const from = new Date(parsed.from);
+    const to = new Date(parsed.to);
+    if (parsed.metric === "DUPLICATE_REVIEWS") {
       const reviews = await this.database.duplicateReview.findMany?.({
-        where: { status: parsed.data.status, createdAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}) },
+        where: { status: parsed.status, createdAt: { gte: from, lte: to }, ...(parsed.bdId ? { createdById: parsed.bdId } : {}) },
         include: { lead: true }, orderBy: { createdAt: "desc" },
       }) ?? [];
       return reviews.map((review) => ({ kind: "DUPLICATE_REVIEW" as const, review: this.duplicateReviewWithLead(review) }));
     }
-    if (parsed.data.metric === "FOLLOW_UP_SLA") {
+    if (parsed.metric === "FOLLOW_UP_SLA") {
       const followUps = await this.database.performanceFollowUp.findMany?.({
         where: {
-          recruiterRespondedAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { ownerId: parsed.data.bdId } : {}),
-          ...(parsed.data.status ? { status: parsed.data.status } : {}),
+          recruiterRespondedAt: { gte: from, lte: to }, ...(parsed.bdId ? { ownerId: parsed.bdId } : {}),
+          ...(parsed.status ? { status: parsed.status } : {}),
         },
         include: { lead: true }, orderBy: { recruiterRespondedAt: "desc" },
       }) ?? [];
@@ -897,52 +918,54 @@ export class PerformanceService {
         return Boolean(completedAt || (dueAt && dueAt <= observedAt));
       }).map((followUp) => ({ kind: "FOLLOW_UP" as const, followUp: this.followUpWithLead(followUp) }));
     }
-    if (parsed.data.metric === "REASSIGNMENTS") {
+    if (parsed.metric === "REASSIGNMENTS") {
       const followUps = await this.database.performanceFollowUp.findMany?.({
-      where: { reassignedAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { originalOwnerId: parsed.data.bdId } : {}), ...(parsed.data.status ? { status: parsed.data.status } : {}) },
+      where: { reassignedAt: { gte: from, lte: to }, ...(parsed.bdId ? { originalOwnerId: parsed.bdId } : {}), ...(parsed.status ? { status: parsed.status } : {}) },
       include: { lead: true }, orderBy: { reassignedAt: "desc" },
       }) ?? [];
       return followUps.map((followUp) => ({ kind: "FOLLOW_UP" as const, followUp: this.followUpWithLead(followUp) }));
     }
-    if (parsed.data.metric === "RECRUITER_RESPONSES") {
+    if (parsed.metric === "RECRUITER_RESPONSES") {
       const leads = await this.database.jobLead.findMany?.({
         where: {
           qualifiedCredit: true,
           appliedDate: { gte: from, lte: to },
-          ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}),
+          ...(parsed.bdId ? { createdById: parsed.bdId } : {}),
         },
-        include: { interviews: { where: { startsAt: { lte: to } } } }, orderBy: { appliedDate: "desc" },
+        include: { interviews: { where: { startsAt: { lte: to } } }, statusTransitions: true, offers: true }, orderBy: { appliedDate: "desc" },
       }) ?? [];
       return leads.filter((lead) => outcomeStage(
         lead.status,
         Array.isArray(lead.interviews) ? lead.interviews as Record<string, unknown>[] : [],
+        Array.isArray(lead.statusTransitions) ? lead.statusTransitions as Record<string, unknown>[] : [],
+        Array.isArray(lead.offers) ? lead.offers as Record<string, unknown>[] : [],
       ) !== "NONE").map((lead) => ({ kind: "LEAD" as const, lead: this.leadSummary(lead) }));
     }
-    if (parsed.data.metric === "INTERVIEWS_SCHEDULED") {
+    if (parsed.metric === "INTERVIEWS_SCHEDULED") {
       const interviews = await this.database.interviewRound.findMany?.({
-      where: { startsAt: { gte: from, lte: to }, status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, ...(parsed.data.bdId ? { lead: { createdById: parsed.data.bdId } } : {}) },
+      where: { startsAt: { gte: from, lte: to }, status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, ...(parsed.bdId ? { lead: { createdById: parsed.bdId } } : {}) },
       include: { lead: true }, orderBy: { startsAt: "asc" },
       }) ?? [];
       return interviews.map((interview) => ({ kind: "INTERVIEW" as const, interview: this.interviewSummary(interview) }));
     }
-    if (parsed.data.metric === "INTERVIEWS_NEEDING_SCHEDULING") {
+    if (parsed.metric === "INTERVIEWS_NEEDING_SCHEDULING") {
       const leads = await this.database.jobLead.findMany?.({
       where: {
         qualifiedCredit: true,
         appliedDate: { gte: from, lte: to },
         status: "RESPONSE_RECEIVED",
-        ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}),
-        interviews: { none: {} },
+        ...(parsed.bdId ? { createdById: parsed.bdId } : {}),
+        interviews: { none: { startsAt: { lte: to } } },
       },
       orderBy: { updatedAt: "desc" },
       }) ?? [];
       return leads.map((lead) => ({ kind: "LEAD" as const, lead: this.leadSummary(lead) }));
     }
-    if (parsed.data.metric === "OUTCOMES") {
+    if (parsed.metric === "OUTCOMES") {
       const [leads, rules] = await Promise.all([
         this.database.jobLead.findMany?.({
-          where: { qualifiedCredit: true, appliedDate: { gte: from, lte: to }, ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}) },
-          include: { interviews: true }, orderBy: { appliedDate: "desc" },
+          where: { qualifiedCredit: true, appliedDate: { gte: from, lte: to }, ...(parsed.bdId ? { createdById: parsed.bdId } : {}) },
+          include: { interviews: true, statusTransitions: true, offers: true }, orderBy: { appliedDate: "desc" },
         }) ?? [],
         this.rulesForPeriod(from, to),
       ]);
@@ -957,7 +980,7 @@ export class PerformanceService {
       }).map((lead) => ({ kind: "LEAD" as const, lead: this.leadSummary(lead) }));
     }
     const leads = await this.database.jobLead.findMany?.({
-      where: { qualifiedCredit: true, appliedDate: { gte: from, lte: to }, ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}) },
+      where: { qualifiedCredit: true, appliedDate: { gte: from, lte: to }, ...(parsed.bdId ? { createdById: parsed.bdId } : {}) },
       orderBy: { appliedDate: "desc" },
     }) ?? [];
     return leads.map((lead) => ({ kind: "LEAD" as const, lead: this.leadSummary(lead) }));
@@ -1004,6 +1027,8 @@ export class PerformanceService {
           company: { select: { canonicalName: true } },
           sourceRef: { select: { name: true } },
           contacts: { where: { role: "RECRUITER", isPrimary: true }, include: { contact: { select: { name: true, email: true } } } },
+          statusTransitions: true,
+          offers: true,
         },
       }) ?? [],
       this.database.interviewRound.findMany?.({ where: { lead: { createdById: String(bd.id) }, startsAt: { lte: to } } }) ?? [],
@@ -1095,6 +1120,12 @@ export class PerformanceService {
     const interviewsByLead = new Map<string, Record<string, unknown>[]>();
     for (const interview of interviews) interviewsByLead.set(String(interview.leadId), [...(interviewsByLead.get(String(interview.leadId)) ?? []), interview]);
     const ruleForLead = (lead: Record<string, unknown>) => this.ruleAt(rules, asDate(lead.appliedDate) ?? to);
+    const highestOutcomeForLead = (lead: Record<string, unknown>) => outcomeStage(
+      lead.status,
+      interviewsByLead.get(String(lead.id)) ?? [],
+      Array.isArray(lead.statusTransitions) ? lead.statusTransitions as Record<string, unknown>[] : [],
+      Array.isArray(lead.offers) ? lead.offers as Record<string, unknown>[] : [],
+    );
     const initialRule = this.ruleAt(rules, bdStartedAt);
     const initialMaturityElapsed = getMaturityCohort({
       appliedAt: bdStartedAt,
@@ -1107,7 +1138,7 @@ export class PerformanceService {
     const followUpSlaCompliancePercent = eligibleFollowUps.length ? (metFollowUps / eligibleFollowUps.length) * 100 : null;
     const maturedOutcomeScorePercent = !initialMaturityElapsed ? null : matured.length === 0 ? 0 : matured.reduce((sum, lead) => {
       const appliedRule = ruleForLead(lead);
-      return sum + calculateOutcomeScore([{ highestStage: outcomeStage(lead.status, interviewsByLead.get(String(lead.id)) ?? []) }], {
+      return sum + calculateOutcomeScore([{ highestStage: highestOutcomeForLead(lead) }], {
         POSITIVE_REPLY: number(appliedRule.positiveReplyPoints, 1), SCREENING: number(appliedRule.screeningPoints, 2), INTERVIEW: number(appliedRule.interviewPoints, 3), OFFER: number(appliedRule.offerPoints, 5),
       });
     }, 0) / matured.length;
@@ -1127,11 +1158,11 @@ export class PerformanceService {
     });
     const performance = {
       qualifiedApplications: qualified, targetApplications: Math.round(targetApplications), rawTargetAttainmentPercent: Math.round(rawTargetAttainmentPercent * 10) / 10,
-      effectiveTargetAttainmentPercent, recruiterResponses: qualifiedLeads.filter((lead) => outcomeStage(lead.status, interviewsByLead.get(String(lead.id)) ?? []) !== "NONE").length,
+      effectiveTargetAttainmentPercent, recruiterResponses: qualifiedLeads.filter((lead) => highestOutcomeForLead(lead) !== "NONE").length,
       interviewsScheduled: interviews.filter((interview) => asDate(interview.startsAt) && asDate(interview.startsAt)! >= from && asDate(interview.startsAt)! <= to && ["SCHEDULED", "RESCHEDULE_REQUIRED"].includes(String(interview.status))).length,
       interviewsNeedingScheduling: qualifiedLeads.filter((lead) => lead.status === "RESPONSE_RECEIVED" && !(interviewsByLead.get(String(lead.id))?.length)).length,
       followUpSlaCompliancePercent: followUpSlaCompliancePercent === null ? null : Math.round(followUpSlaCompliancePercent * 10) / 10,
-      maturedOutcomeScorePercent, balancedScore: balanced.score, scoreCoverage: balanced.status,
+      maturedOutcomeScorePercent, balancedScore: balanced.score, scoreCoverage: balanced.status, scoreCoveragePercent: balanced.coveragePercent,
     };
     const qualityResult = this.qualityIndicators(leads, qualityEvents, duplicateReviews);
     return {
@@ -1139,7 +1170,7 @@ export class PerformanceService {
       performance, warnings: eligibility.warnings,
       ineligibilityReason: eligibility.reasons[0] ?? null,
       eligibilityProgress: Math.min(100, Math.round((eligibleWorkingDays / 10) * 100)),
-      estimatedEligibilityDate: null,
+      estimatedEligibilityDate: this.estimatedEligibilityDate(bdStartedAt, rules, schedule, initialRule),
       currentDailyTarget: number(this.targetAt(targets, now)?.dailyTarget, number(this.ruleAt(rules, now).defaultDailyTarget, 70)),
       quality: qualityResult.values,
       qualityCounts: qualityResult.counts,
@@ -1162,6 +1193,9 @@ export class PerformanceService {
       maturedOutcomeScorePercent: outcomeValues.length ? Math.round((outcomeValues.reduce((sum, value) => sum + value, 0) / outcomeValues.length) * 10) / 10 : null,
       balancedScore: scoreValues.length ? Math.round((scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length) * 10) / 10 : null,
       scoreCoverage: rows.every((row) => (row as { scoreCoverage: string }).scoreCoverage === "COMPLETE") ? "COMPLETE" : rows.length ? "PARTIAL_MEASUREMENT" : "INSUFFICIENT_DATA",
+      scoreCoveragePercent: rows.length
+        ? Math.round(rows.reduce((sum, row) => sum + number((row as { scoreCoveragePercent?: unknown }).scoreCoveragePercent), 0) / rows.length * 10) / 10
+        : 0,
     };
   }
 
@@ -1333,6 +1367,36 @@ export class PerformanceService {
         return Boolean(start && start <= at && (!end || end > at));
       })
       .sort((left, right) => number(asDate(right.effectiveFrom)?.getTime()) - number(asDate(left.effectiveFrom)?.getTime()))[0];
+  }
+
+  private estimatedEligibilityDate(
+    startedAt: Date,
+    rules: readonly Record<string, unknown>[],
+    baseSchedule: {
+      timeZone: string;
+      workingDays: number[];
+      workday: { startHour: number; endHour: number };
+      holidays?: Date[];
+      leaves?: Array<{ startsAt: Date; endsAt: Date; availableHours?: { startHour: number; endHour: number } }>;
+    },
+    initialRule: Record<string, unknown>,
+  ): Date | null {
+    if (Number.isNaN(startedAt.getTime())) return null;
+    let count = 0;
+    const day = new Date(Date.UTC(startedAt.getUTCFullYear(), startedAt.getUTCMonth(), startedAt.getUTCDate()));
+    for (let attempts = 0; attempts < 11 * 366; attempts += 1, day.setUTCDate(day.getUTCDate() + 1)) {
+      const rule = this.ruleAt(rules, day);
+      const schedule = {
+        ...baseSchedule,
+        timeZone: String(rule.businessCalendarTimeZone ?? baseSchedule.timeZone),
+        workingDays: Array.isArray(rule.workingDays) ? rule.workingDays.map(Number) : baseSchedule.workingDays,
+        workday: { startHour: number(rule.workdayStartHour, baseSchedule.workday.startHour), endHour: number(rule.workdayEndHour, baseSchedule.workday.endHour) },
+      };
+      if (!isEligibleWorkingDay(day, schedule)) continue;
+      count += 1;
+      if (count === 10) return new Date(Math.max(day.getTime(), maturityDate(startedAt, number(initialRule.maturityWindowDays, 21)).getTime()));
+    }
+    return null;
   }
 
   private assertAdmin(actor: Actor) {
