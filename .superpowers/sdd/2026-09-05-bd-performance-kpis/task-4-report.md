@@ -4,6 +4,14 @@
 
 Complete. The final controller contract boundary pass is committed after the SLA/workflow correction pass.
 
+### Final production scheduler, qualified scheduling KPI, and record-quality pass
+
+- The existing worker runtime is now explicitly covered as the production overdue-SLA trigger: it evaluates once at worker startup and on each polling interval, while the worker-application wiring test verifies the real evaluator is connected. Read-time evaluation remains a safety net, not the only trigger.
+- `INTERVIEWS_NEEDING_SCHEDULING` now counts only `qualifiedCredit: true` recruiter-response applications, exactly matching its drill-down cohort. Confirmed duplicates cannot inflate the KPI.
+- Record Health now requires all approved facts: a standardized company mapping that matches the saved company, correctly detected platform/source, primary recruiter contact with a valid email/domain, usable required values, and no unresolved Admin correction requirement.
+- Generic `lead.updated` activity is no longer treated as a correction. Correction Rate counts only the explicit `performance.record_corrected` audit event.
+- Added the Admin-only `POST /performance/records/:leadId/audit` workflow with `PASSED`, `CORRECTION_REQUIRED`, and `CORRECTED` outcomes. A correction requires a prior audit failure and writes immutable activity/audit data. The strict shared response contract prevents private audit details from leaking into peer-safe views.
+
 ### Final controller contract boundary pass
 
 - Every performance controller response is now parsed through its strict shared contract: Admin performance, BD performance, drill-downs, rule reads, rule previews and updates, duplicate-review queue and decisions, and follow-up reassignment.
@@ -57,7 +65,8 @@ Complete. The final controller contract boundary pass is committed after the SLA
 
 ## Verification
 
-- `npx vitest run apps/api/src/modules/performance/performance.controller.test.ts packages/backend/src/performance/performance.service.test.ts packages/backend/src/performance/score.test.ts packages/backend/src/performance/eligibility.test.ts packages/backend/src/performance/maturity.test.ts packages/backend/src/performance/business-hours.test.ts packages/backend/src/leads/collaboration.service.test.ts packages/backend/src/leads/application-intake.test.ts packages/contracts/src/performance.test.ts` — 97 tests pass.
+- `npx vitest run apps/api/src/modules/performance/performance.controller.test.ts packages/backend/src/performance/performance.service.test.ts packages/backend/src/performance/score.test.ts packages/backend/src/performance/eligibility.test.ts packages/backend/src/performance/maturity.test.ts packages/backend/src/performance/business-hours.test.ts packages/backend/src/leads/collaboration.service.test.ts packages/backend/src/leads/application-intake.test.ts packages/contracts/src/performance.test.ts apps/worker/src/main.test.ts apps/worker/src/worker.module.test.ts` — 109 tests pass.
+- `DATABASE_URL=<disposable orbit_task3_test URL> npx vitest run packages/database/src/performance-rules.test.ts` — 6 tests pass.
 - Backend, API, contracts, and database TypeScript checks pass.
 - Local Prisma schema validation passes.
 - `git diff --check` passes.

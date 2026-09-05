@@ -229,6 +229,22 @@ export const updateDuplicateReviewInputSchema = z.strictObject({
   expectedVersion: z.number().int().positive(),
 });
 
+export const performanceRecordAuditInputSchema = z.strictObject({
+  outcome: z.enum(["PASSED", "CORRECTION_REQUIRED", "CORRECTED"]),
+  reason: textSchema,
+});
+
+export const performanceRecordAuditSchema = z.strictObject({
+  leadId: uuidSchema,
+  outcome: z.enum(["PASSED", "CORRECTION_REQUIRED", "CORRECTED"]),
+  action: z.enum([
+    "performance.record_audit_passed",
+    "performance.record_audit_failed",
+    "performance.record_corrected",
+  ]),
+  occurredAt: dateTimeSchema,
+});
+
 /** Role-scoped date range for KPI reads. `bdId` is accepted only by Admin endpoints. */
 export const performancePeriodQuerySchema = z
   .strictObject({
@@ -481,6 +497,7 @@ export type PerformanceApprovedLeave = z.infer<typeof performanceApprovedLeaveSc
 export type UpdateBdTargetScheduleInput = z.infer<typeof updateBdTargetScheduleInputSchema>;
 export type DuplicateReview = z.infer<typeof duplicateReviewSchema>;
 export type UpdateDuplicateReviewInput = z.infer<typeof updateDuplicateReviewInputSchema>;
+export type PerformanceRecordAuditInput = z.infer<typeof performanceRecordAuditInputSchema>;
 export type PerformancePeriodQuery = z.infer<typeof performancePeriodQuerySchema>;
 export type ReassignPerformanceFollowUpInput = z.infer<typeof reassignPerformanceFollowUpInputSchema>;
 export type PerformanceRuleMutation = z.infer<typeof performanceRuleMutationSchema>;

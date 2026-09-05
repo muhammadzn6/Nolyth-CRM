@@ -171,6 +171,12 @@ const preview = {
   },
   impacts: [{ bdId: bd.id, currentTargetApplications: 70, proposedTargetApplications: 70, targetDelta: 0 }],
 };
+const auditRecord = {
+  leadId: lead.id,
+  outcome: "PASSED" as const,
+  action: "performance.record_audit_passed" as const,
+  occurredAt: date,
+};
 
 describe("PerformanceController", () => {
   it("validates admin performance filters before reaching the service", async () => {
@@ -193,6 +199,17 @@ describe("PerformanceController", () => {
     expect(service.reviewDuplicateOverride).toHaveBeenCalledWith(admin, "10000000-0000-4000-8000-000000000002", expect.objectContaining({ status: "APPROVED" }));
   });
 
+  it("validates and returns the explicit Admin record-audit action", async () => {
+    const service = { auditLeadRecord: vi.fn().mockResolvedValue(auditRecord) };
+    const controller = new PerformanceController(service as unknown as PerformanceService);
+
+    await expect(controller.auditRecord(lead.id, { outcome: "PASSED", reason: "All required record fields are verified." }, request())).resolves.toEqual(auditRecord);
+    expect(service.auditLeadRecord).toHaveBeenCalledWith(admin, lead.id, {
+      outcome: "PASSED",
+      reason: "All required record fields are verified.",
+    });
+  });
+
   it("validates every performance endpoint response against its shared contract", async () => {
     const service = {
       getAdminBdPerformance: vi.fn().mockResolvedValue({ period, team: performance, leaderboard: [leaderboardRow], buildingBaseline: [], quality }),
@@ -204,6 +221,7 @@ describe("PerformanceController", () => {
       getDuplicateReviewQueue: vi.fn().mockResolvedValue([review]),
       reviewDuplicateOverride: vi.fn().mockResolvedValue(review),
       reassignFollowUp: vi.fn().mockResolvedValue(followUp),
+      auditLeadRecord: vi.fn().mockResolvedValue(auditRecord),
     };
     const controller = new PerformanceController(service as unknown as PerformanceService);
 
@@ -216,6 +234,7 @@ describe("PerformanceController", () => {
     await expect(controller.reviewQueue(request())).resolves.toEqual([review]);
     await expect(controller.review(review.id, { status: "APPROVED", reviewReason: "Verified reposting", expectedVersion: 1 }, request())).resolves.toEqual(review);
     await expect(controller.reassign(followUp.id, { newOwnerId: bd.id, expectedVersion: 1 }, request())).resolves.toEqual(followUp);
+    await expect(controller.auditRecord(lead.id, { outcome: "PASSED", reason: "Verified." }, request())).resolves.toEqual(auditRecord);
   });
 
   it("rejects a private peer field from the BD performance response", async () => {
@@ -246,6 +265,7 @@ describe("PerformanceController", () => {
       getDuplicateReviewQueue: vi.fn().mockResolvedValue([{ ...review, internalReviewerNotes: "private" }]),
       reviewDuplicateOverride: vi.fn().mockResolvedValue({ ...review, internalReviewerNotes: "private" }),
       reassignFollowUp: vi.fn().mockResolvedValue({ ...followUp, internalOwnerEmail: "private@orbit.test" }),
+      auditLeadRecord: vi.fn().mockResolvedValue({ ...auditRecord, internalAuditNotes: "private" }),
     };
     const controller = new PerformanceController(service as unknown as PerformanceService);
 
@@ -258,6 +278,7 @@ describe("PerformanceController", () => {
     await expect(controller.reviewQueue(request())).rejects.toThrow();
     await expect(controller.review(review.id, { status: "APPROVED", reviewReason: "Verified reposting", expectedVersion: 1 }, request())).rejects.toThrow();
     await expect(controller.reassign(followUp.id, { newOwnerId: bd.id, expectedVersion: 1 }, request())).rejects.toThrow();
+    await expect(controller.auditRecord(lead.id, { outcome: "PASSED", reason: "Verified." }, request())).rejects.toThrow();
   });
 
   it("rejects a status that is invalid for a drill-down metric before calling the service", () => {

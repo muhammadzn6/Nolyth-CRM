@@ -97,6 +97,7 @@ describe("worker application wiring", () => {
       },
     };
     const email = { send: vi.fn().mockResolvedValue({ providerMessageId: "email-1" }) };
+    const performanceSlaEvaluator = { evaluateOverdueSlas: vi.fn().mockResolvedValue({ reassignmentOverdue: 0, reviewOverdue: 0 }) };
     const application = createWorkerApplication({
       config: { redisUrl: "redis://worker-redis:6379/2" },
       database: database as never,
@@ -108,6 +109,7 @@ describe("worker application wiring", () => {
           createInApp: vi.fn().mockResolvedValue({ notificationId: "notification-1" }),
         },
       },
+      performanceSlaEvaluator,
       pollIntervalMs: 60_000,
     });
 
@@ -127,6 +129,7 @@ describe("worker application wiring", () => {
       options: { connection: { url: "redis://worker-redis:6379/2" } },
     });
     expect(email.send).toHaveBeenCalledOnce();
+    expect(performanceSlaEvaluator.evaluateOverdueSlas).toHaveBeenCalledOnce();
     expect(lifecycle).toEqual([
       "outbox.ready",
       "outbox-dead-letter.ready",

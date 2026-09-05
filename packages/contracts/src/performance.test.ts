@@ -109,6 +109,22 @@ describe("performance contracts", () => {
     });
   });
 
+  it("requires an explicit auditable Admin record-review outcome", () => {
+    const audit = schema("performanceRecordAuditInputSchema");
+
+    expect(audit.parse({ outcome: "CORRECTION_REQUIRED", reason: "Recruiter email uses a placeholder." })).toEqual({
+      outcome: "CORRECTION_REQUIRED",
+      reason: "Recruiter email uses a placeholder.",
+    });
+    expect(audit.safeParse({ outcome: "PASSED", reason: "" }).success).toBe(false);
+    expect(schema("performanceRecordAuditSchema").parse({
+      leadId,
+      outcome: "PASSED",
+      action: "performance.record_audit_passed",
+      occurredAt: "2026-09-05T12:00:00.000Z",
+    })).toMatchObject({ leadId, outcome: "PASSED" });
+  });
+
   it("labels rule previews as target-and-configuration projections, not exact future scores", () => {
     expect(
       schema("performanceRulePreviewSchema").parse({

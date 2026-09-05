@@ -1,5 +1,6 @@
 import {
   performanceDrilldownQuerySchema,
+  performanceRecordAuditInputSchema,
   performancePeriodQuerySchema,
   performanceRuleInputSchema,
   performanceRuleMutationSchema,
@@ -112,6 +113,21 @@ function hasUsableJobUrl(value: unknown): boolean {
   }
 }
 
+function normalizedText(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ").toLocaleLowerCase() : "";
+}
+
+function jobUrlHost(value: unknown): string | null {
+  if (!hasUsableJobUrl(value)) return null;
+  return new URL(String(value)).hostname.replace(/^www\./, "").toLocaleLowerCase();
+}
+
+function hasValidRecruiterEmail(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const match = value.trim().match(/^[^\s@]+@([a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+)$/i);
+  return Boolean(match?.[1]);
+}
+
 export function outcomeStage(status: unknown, interviews: readonly Record<string, unknown>[] = []): "NONE" | "POSITIVE_REPLY" | "SCREENING" | "INTERVIEW" | "OFFER" {
   switch (status) {
     case "OFFER_RECEIVED":
@@ -161,6 +177,52 @@ export class PerformanceService {
       leaderboard: completed.filter((row) => row.eligible).map((row) => this.leaderboardRow(row)),
       buildingBaseline: completed.filter((row) => !row.eligible).map((row) => this.leaderboardRow(row)),
     };
+  }
+
+  async auditLeadRecord(actor: Actor, leadId: string, input: unknown) {
+    if (!actor.isActive || actor.role !== "ADMIN") throw new AuthorizationError();
+    this.authorization.assertRole(actor, ["ADMIN"]);
+    const parsed = performanceRecordAuditInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const lead = await this.database.jobLead.findUnique?.({ where: { id: leadId } });
+    if (!lead) throw new NotFoundError("The lead was not found");
+
+    const actions = {
+      PASSED: "performance.record_audit_passed",
+      CORRECTION_REQUIRED: "performance.record_audit_failed",
+      CORRECTED: "performance.record_corrected",
+    } as const;
+    const action = actions[parsed.data.outcome];
+    if (parsed.data.outcome === "CORRECTED") {
+      const history = await this.database.activityEvent.findMany?.({
+        where: { leadId, action: { in: ["performance.record_audit_failed", "performance.record_audit_passed", "performance.record_corrected"] } },
+        orderBy: { occurredAt: "asc" },
+      }) ?? [];
+      const lastFailure = [...history].reverse().find((event) => event.action === "performance.record_audit_failed");
+      const lastResolution = [...history].reverse().find((event) => ["performance.record_audit_passed", "performance.record_corrected"].includes(String(event.action)));
+      if (!lastFailure || (asDate(lastResolution?.occurredAt)?.getTime() ?? 0) >= (asDate(lastFailure.occurredAt)?.getTime() ?? Number.POSITIVE_INFINITY)) {
+        throw new ConflictError("Recording a correction requires a prior audit failure");
+      }
+    }
+    const occurredAt = this.now();
+    await this.database.activityEvent.create?.({
+      data: {
+        action,
+        actorId: actor.id,
+        actorNameSnapshot: actor.displayName,
+        actorRoleSnapshot: actor.role,
+        profileId: String(lead.profileId),
+        leadId,
+        entityType: "lead",
+        entityId: leadId,
+        oldSnapshot: null,
+        newSnapshot: { outcome: parsed.data.outcome, reason: parsed.data.reason },
+        metadata: { source: "admin_record_audit" },
+        requestId: null,
+        occurredAt,
+      },
+    });
+    return { leadId, outcome: parsed.data.outcome, action, occurredAt: occurredAt.toISOString() };
   }
 
   async getBdPerformance(actor: Actor, query: unknown) {
@@ -612,7 +674,14 @@ export class PerformanceService {
     const targetWindowFrom = now < from ? now : from;
     const targetWindowTo = now > to ? now : to;
     const [leads, interviews, followUps, targets, holidays, leaves, rules] = await Promise.all([
-      this.database.jobLead.findMany?.({ where: { createdById: String(bd.id), appliedDate: { gte: from, lte: to } } }) ?? [],
+      this.database.jobLead.findMany?.({
+        where: { createdById: String(bd.id), appliedDate: { gte: from, lte: to } },
+        include: {
+          company: { select: { canonicalName: true } },
+          sourceRef: { select: { name: true } },
+          contacts: { where: { role: "RECRUITER", isPrimary: true }, include: { contact: { select: { name: true, email: true } } } },
+        },
+      }) ?? [],
       this.database.interviewRound.findMany?.({ where: { lead: { createdById: String(bd.id) }, startsAt: { lte: to } } }) ?? [],
       this.database.performanceFollowUp.findMany?.({ where: { ownerId: String(bd.id), recruiterRespondedAt: { gte: from, lte: to } } }) ?? [],
       this.database.bdTargetSchedule.findMany?.({ where: { bdId: String(bd.id), effectiveFrom: { lte: targetWindowTo }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: targetWindowFrom } }] } }) ?? [],
@@ -623,7 +692,7 @@ export class PerformanceService {
     const leadIds = leads.map((lead) => String(lead.id));
     const [qualityEvents, duplicateReviews] = await Promise.all([
       leadIds.length
-        ? this.database.activityEvent.findMany?.({ where: { leadId: { in: leadIds }, action: { in: ["lead.updated", "performance.record_corrected", "performance.record_audit_passed", "performance.record_audit_failed"] } }, orderBy: { occurredAt: "asc" } }) ?? []
+        ? this.database.activityEvent.findMany?.({ where: { leadId: { in: leadIds }, action: { in: ["performance.record_corrected", "performance.record_audit_passed", "performance.record_audit_failed"] } }, orderBy: { occurredAt: "asc" } }) ?? []
         : [],
       leadIds.length
         ? this.database.duplicateReview.findMany?.({ where: { leadId: { in: leadIds } } }) ?? []
@@ -729,7 +798,7 @@ export class PerformanceService {
       qualifiedApplications: qualified, targetApplications: Math.round(targetApplications), rawTargetAttainmentPercent: Math.round(rawTargetAttainmentPercent * 10) / 10,
       effectiveTargetAttainmentPercent, recruiterResponses: qualifiedLeads.filter((lead) => outcomeStage(lead.status, interviewsByLead.get(String(lead.id)) ?? []) !== "NONE").length,
       interviewsScheduled: interviews.filter((interview) => asDate(interview.startsAt) && asDate(interview.startsAt)! >= from && asDate(interview.startsAt)! <= to && ["SCHEDULED", "RESCHEDULE_REQUIRED"].includes(String(interview.status))).length,
-      interviewsNeedingScheduling: leads.filter((lead) => lead.status === "RESPONSE_RECEIVED" && !(interviewsByLead.get(String(lead.id))?.length)).length,
+      interviewsNeedingScheduling: qualifiedLeads.filter((lead) => lead.status === "RESPONSE_RECEIVED" && !(interviewsByLead.get(String(lead.id))?.length)).length,
       followUpSlaCompliancePercent: followUpSlaCompliancePercent === null ? null : Math.round(followUpSlaCompliancePercent * 10) / 10,
       maturedOutcomeScorePercent, balancedScore: balanced.score, scoreCoverage: balanced.status,
     };
@@ -769,8 +838,40 @@ export class PerformanceService {
     reviews: readonly Record<string, unknown>[],
   ) {
     const total = leads.length;
-    const healthy = leads.filter((lead) => usableText(lead.companyName) && usableText(lead.jobTitle) && hasUsableJobUrl(lead.rawUrl)).length;
-    const corrections = new Set(events.filter((event) => ["lead.updated", "performance.record_corrected"].includes(String(event.action))).map((event) => String(event.leadId)));
+    const eventsByLead = new Map<string, Record<string, unknown>[]>();
+    for (const event of events) {
+      const key = String(event.leadId);
+      eventsByLead.set(key, [...(eventsByLead.get(key) ?? []), event]);
+    }
+    const needsCorrection = (leadId: string) => {
+      const history = eventsByLead.get(leadId) ?? [];
+      const lastFailure = [...history].reverse().find((event) => event.action === "performance.record_audit_failed");
+      const lastResolution = [...history].reverse().find((event) => ["performance.record_audit_passed", "performance.record_corrected"].includes(String(event.action)));
+      return Boolean(lastFailure && (asDate(lastResolution?.occurredAt)?.getTime() ?? 0) < (asDate(lastFailure.occurredAt)?.getTime() ?? Number.POSITIVE_INFINITY));
+    };
+    const hasStandardizedCompany = (lead: Record<string, unknown>) => {
+      const company = lead.company as Record<string, unknown> | undefined;
+      return Boolean(company && usableText(company.canonicalName) && normalizedText(company.canonicalName) === normalizedText(lead.companyName));
+    };
+    const hasDetectedPlatform = (lead: Record<string, unknown>) => {
+      const source = lead.sourceRef as Record<string, unknown> | undefined;
+      return Boolean(source && usableText(source.name) && normalizedText(source.name) === jobUrlHost(lead.rawUrl));
+    };
+    const hasRecruiter = (lead: Record<string, unknown>) => Array.isArray(lead.contacts) && lead.contacts.some((entry) => {
+      const link = entry as Record<string, unknown>;
+      const contact = link.contact as Record<string, unknown> | undefined;
+      return link.role === "RECRUITER" && link.isPrimary === true && Boolean(contact && usableText(contact.name) && hasValidRecruiterEmail(contact.email));
+    });
+    const healthy = leads.filter((lead) => (
+      usableText(lead.companyName)
+      && usableText(lead.jobTitle)
+      && hasUsableJobUrl(lead.rawUrl)
+      && hasStandardizedCompany(lead)
+      && hasDetectedPlatform(lead)
+      && hasRecruiter(lead)
+      && !needsCorrection(String(lead.id))
+    )).length;
+    const corrections = new Set(events.filter((event) => event.action === "performance.record_corrected").map((event) => String(event.leadId)));
     const latestAudit = new Map<string, Record<string, unknown>>();
     for (const event of events) {
       if (!["performance.record_audit_passed", "performance.record_audit_failed"].includes(String(event.action))) continue;

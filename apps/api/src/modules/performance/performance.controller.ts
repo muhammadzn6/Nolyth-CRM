@@ -10,6 +10,8 @@ import {
   duplicateReviewWithLeadSchema,
   performanceDrilldownResponseSchema,
   performanceDrilldownQuerySchema,
+  performanceRecordAuditInputSchema,
+  performanceRecordAuditSchema,
   performanceFollowUpWithLeadSchema,
   performancePeriodQuerySchema,
   performanceRuleInputSchema,
@@ -98,6 +100,12 @@ export class PerformanceController {
     return this.performance
       .reassignFollowUp(this.actor(request), parse(uuidSchema, followUpId), parse(reassignPerformanceFollowUpInputSchema, input))
       .then((response) => parseResponse(performanceFollowUpWithLeadSchema, response));
+  }
+
+  @Post("records/:leadId/audit") auditRecord(@Param("leadId") leadId: string, @Body() input: unknown, @Req() request: AuthenticatedRequest) {
+    return this.performance
+      .auditLeadRecord(this.actor(request), parse(uuidSchema, leadId), parse(performanceRecordAuditInputSchema, input))
+      .then((response) => parseResponse(performanceRecordAuditSchema, response));
   }
 
   private actor(request: AuthenticatedRequest) {

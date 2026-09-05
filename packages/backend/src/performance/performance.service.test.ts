@@ -37,6 +37,40 @@ describe("PerformanceService", () => {
     })).rejects.toEqual(new AuthorizationError());
   });
 
+  it("records Admin audit outcomes and rejects a correction without a prior audit failure", async () => {
+    const lead = { id: leadId, profileId: "10000000-0000-4000-8000-000000000005", jobTitle: "Platform Engineer" };
+    const database: any = {
+      jobLead: { findUnique: vi.fn().mockResolvedValue(lead) },
+      activityEvent: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+    const now = new Date("2026-09-05T12:00:00.000Z");
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => now);
+
+    await expect(service.auditLeadRecord(admin, leadId, {
+      outcome: "CORRECTED",
+      reason: "Updated recruiter email.",
+    })).rejects.toThrow("requires a prior audit failure");
+
+    database.activityEvent.findMany.mockResolvedValueOnce([
+      { leadId, action: "performance.record_audit_failed", occurredAt: new Date("2026-09-05T09:00:00.000Z") },
+    ]);
+    await expect(service.auditLeadRecord(admin, leadId, {
+      outcome: "CORRECTED",
+      reason: "Updated recruiter email.",
+    })).resolves.toEqual({
+      leadId,
+      outcome: "CORRECTED",
+      action: "performance.record_corrected",
+      occurredAt: now.toISOString(),
+    });
+    expect(database.activityEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: "performance.record_corrected", leadId, entityId: leadId }),
+    });
+  });
+
   it("removes qualified credit when an Admin rejects a pending duplicate override", async () => {
     const review = {
       id: reviewId,
@@ -576,10 +610,15 @@ describe("PerformanceService", () => {
     expect(result.currentDailyTarget).toBe(90);
   });
 
-  it("calculates auditable record-health and duplicate quality indicators for Admin and BD views", async () => {
-    const firstLead = { id: "10000000-0000-4000-8000-000000000021", appliedDate: new Date("2026-09-01T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED", companyName: "Orbit", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/1", duplicateClassification: "NONE" };
-    const correctedLead = { id: "10000000-0000-4000-8000-000000000022", appliedDate: new Date("2026-09-02T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED", companyName: "Unknown", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/2", duplicateClassification: "NONE" };
-    const duplicateLead = { id: "10000000-0000-4000-8000-000000000023", appliedDate: new Date("2026-09-03T00:00:00.000Z"), qualifiedCredit: false, status: "APPLIED", companyName: "Orbit", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/3", duplicateClassification: "CONFIRMED" };
+  it("calculates record health from standardized company, platform, recruiter, usable values, and audit correction facts", async () => {
+    const healthyRelations = {
+      company: { canonicalName: "Orbit" },
+      sourceRef: { name: "jobs.example.test" },
+      contacts: [{ role: "RECRUITER", isPrimary: true, contact: { name: "Jordan Lee", email: "jordan@recruiting.example" } }],
+    };
+    const firstLead = { id: "10000000-0000-4000-8000-000000000021", appliedDate: new Date("2026-09-01T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED", companyName: "Orbit", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/1", duplicateClassification: "NONE", ...healthyRelations };
+    const correctedLead = { id: "10000000-0000-4000-8000-000000000022", appliedDate: new Date("2026-09-02T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED", companyName: "Orbit", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/2", duplicateClassification: "NONE", ...healthyRelations, sourceRef: { name: "linkedin.com" } };
+    const duplicateLead = { id: "10000000-0000-4000-8000-000000000023", appliedDate: new Date("2026-09-03T00:00:00.000Z"), qualifiedCredit: false, status: "APPLIED", companyName: "Orbit", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/3", duplicateClassification: "CONFIRMED", ...healthyRelations };
     const database: any = {
       user: { findMany: vi.fn().mockResolvedValue([{ ...bd, createdAt: new Date("2026-08-01T00:00:00.000Z") }]) },
       jobLead: { findMany: vi.fn().mockResolvedValue([firstLead, correctedLead, duplicateLead]) },
@@ -600,12 +639,63 @@ describe("PerformanceService", () => {
     expect(result.quality).toEqual({
       recordHealthRate: 66.7,
       adminAuditPassRate: 50,
-      correctionRate: 33.3,
+      correctionRate: 0,
       confirmedDuplicateRate: 33.3,
       pendingOverrideRate: 33.3,
       rejectedOverrideRate: 33.3,
       duplicateRate: 33.3,
     });
     expect(result.peerLeaderboard[0]).toMatchObject({ recordHealthRate: 66.7, adminAuditPassRate: 50, duplicateRate: 33.3 });
+  });
+
+  it("flags broken company mapping, platform detection, and recruiter contact data in record health", async () => {
+    const base = {
+      appliedDate: new Date("2026-09-01T00:00:00.000Z"),
+      qualifiedCredit: true,
+      status: "APPLIED",
+      companyName: "Orbit",
+      jobTitle: "Engineer",
+      rawUrl: "https://jobs.example.test/1",
+      duplicateClassification: "NONE",
+      company: { canonicalName: "Orbit" },
+      sourceRef: { name: "jobs.example.test" },
+      contacts: [{ role: "RECRUITER", isPrimary: true, contact: { name: "Jordan Lee", email: "jordan@recruiting.example" } }],
+    };
+    const leads = [
+      { ...base, id: "10000000-0000-4000-8000-000000000041", company: { canonicalName: "Unmapped company" } },
+      { ...base, id: "10000000-0000-4000-8000-000000000042", sourceRef: { name: "other.example.test" } },
+      { ...base, id: "10000000-0000-4000-8000-000000000043", contacts: [{ role: "RECRUITER", isPrimary: true, contact: { name: "Jordan Lee", email: "not-an-email" } }] },
+    ];
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([{ ...bd, createdAt: new Date("2026-08-01T00:00:00.000Z") }]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue(leads) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([]) }, performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) }, performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) }, performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) }, performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+      activityEvent: { findMany: vi.fn().mockResolvedValue([]) }, duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database), outboxEvent: { upsert: vi.fn() },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+
+    const result = await service.getBdPerformance(bd, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+
+    expect(result.quality.recordHealthRate).toBe(0);
+  });
+
+  it("counts only qualified recruiter responses that still need an interview in the scheduling KPI", async () => {
+    const qualified = { id: "10000000-0000-4000-8000-000000000031", appliedDate: new Date("2026-09-01T00:00:00.000Z"), qualifiedCredit: true, status: "RESPONSE_RECEIVED" };
+    const duplicate = { id: "10000000-0000-4000-8000-000000000032", appliedDate: new Date("2026-09-01T00:00:00.000Z"), qualifiedCredit: false, status: "RESPONSE_RECEIVED", duplicateClassification: "CONFIRMED" };
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([{ ...bd, createdAt: new Date("2026-08-01T00:00:00.000Z") }]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue([qualified, duplicate]) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([]) }, performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) }, performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) }, performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) }, performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+      activityEvent: { findMany: vi.fn().mockResolvedValue([]) }, duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database), outboxEvent: { upsert: vi.fn() },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+
+    const result = await service.getBdPerformance(bd, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+
+    expect(result.performance.interviewsNeedingScheduling).toBe(1);
   });
 });
