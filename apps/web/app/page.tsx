@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import type { ReactElement } from "react";
 import {
   adminBdPerformanceResponseSchema,
+  bdPerformanceResponseSchema,
   performanceDrilldownQuerySchema,
   performanceDrilldownResponseSchema,
   performanceFollowUpWithLeadSchema,
@@ -13,8 +14,10 @@ import {
 import { loadWebEnv } from "@orbit/config";
 
 import { CloserDashboard } from "../components/dashboard/closer-dashboard";
+import { BdDashboard } from "../components/dashboard/bd-dashboard";
 import { DashboardOverview } from "../components/dashboard/dashboard-overview";
 import { AppShell } from "../components/layout/app-shell";
+import { ScoreDetails } from "../components/performance/score-details";
 import {
   ApiClientError,
   getCloserDashboard,
@@ -127,6 +130,9 @@ export default async function HomePage(props?: HomePageProps) {
     let adminPerformance;
     let performanceReassignments;
     let performanceDrilldown;
+    let bdPerformanceDrilldown;
+    let bdPerformance;
+    let bdTodayPerformance;
     let performanceReassignmentError: string | undefined;
     if (actor.role === "ADMIN") {
       try {
@@ -151,6 +157,26 @@ export default async function HomePage(props?: HomePageProps) {
         }
       }
     }
+    if (actor.role === "BD") {
+      try {
+        [bdPerformance, bdTodayPerformance] = await Promise.all([
+          readPerformance(`/performance/me?${new URLSearchParams(range)}`, bdPerformanceResponseSchema, cookie),
+          readPerformance(`/performance/me?${new URLSearchParams(performanceRange("day"))}`, bdPerformanceResponseSchema, cookie),
+        ]);
+        const drilldown = performanceDrilldownQuerySchema.safeParse({ ...range, metric });
+        if (drilldown.success) {
+          try {
+            bdPerformanceDrilldown = await readPerformance(`/performance/me/drilldown?${new URLSearchParams(Object.entries(drilldown.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
+          } catch {
+            bdPerformanceDrilldown = undefined;
+          }
+        }
+      } catch {
+        bdPerformance = undefined;
+        bdTodayPerformance = undefined;
+      }
+    }
+    if (actor.role === "BD" && bdPerformance) return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications?.items ?? []} openTasks={openTasks ?? []} interviews={calendar ?? []} performance={bdPerformance} todayPerformance={bdTodayPerformance} />{bdPerformanceDrilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={bdPerformanceDrilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
     return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} applications={applications?.items} openTasks={openTasks} adminPerformance={adminPerformance} performancePeriod={performancePeriod} performanceMetric={metric} performanceDrilldown={performanceDrilldown} performanceReassignments={performanceReassignments} performanceReassignmentError={performanceReassignmentError} performanceOwners={users?.filter((user) => user.role === "BD" && user.isActive)} onPerformanceReassign={submitPerformanceReassignment} /></AppShell>;
   } catch (reason) {
     return <AppShell actor={actor}><DashboardOverview actor={actor} error={reason instanceof ApiClientError ? reason.message : "Live dashboard data is temporarily unavailable."} /></AppShell>;
