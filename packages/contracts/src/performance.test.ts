@@ -108,6 +108,14 @@ describe("performance contracts", () => {
     }).success).toBe(false);
   });
 
+  it("rejects a client-controlled start date when creating a BD target", () => {
+    expect(schema("bdTargetScheduleInputSchema").safeParse({
+      bdId,
+      dailyTarget: 70,
+      effectiveFrom: "2026-10-01T00:00:00.000Z",
+    }).success).toBe(false);
+  });
+
   it("exposes pending duplicate reviews with provisional-credit and audit state", () => {
     expect(
       schema("duplicateReviewSchema").parse({
@@ -193,6 +201,7 @@ describe("performance contracts", () => {
         bdName: "  Ada Lovelace  ",
         rank: 1,
         eligible: true,
+        eligibilitySection: "OFFICIAL",
         qualifiedApplications: 72,
         performance: {
           qualifiedApplications: 72,

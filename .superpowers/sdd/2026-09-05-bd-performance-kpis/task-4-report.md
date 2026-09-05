@@ -122,3 +122,19 @@ The local `orbit` database still has the pre-existing migration-history drift. T
 - Disposable PostgreSQL persistence suite: **7 passed**.
 - TypeScript checks passed for contracts, backend, API, and database.
 - Prisma validation and `git diff --check` passed.
+
+## Final target ownership and leaderboard-exclusion correction
+
+- Target creation now owns `effectiveFrom` exclusively on the server. The create contract rejects client-supplied values and the service always uses the next eligible working-day boundary; target updates retain their existing versioned effective-date behavior.
+- Added a PostgreSQL GiST exclusion constraint over each BD's approved-leave `tstzrange`, while retaining the service-level overlap check for a clear validation response. A concurrent persistence regression proves that only one overlapping leave can be saved.
+- Added a PostgreSQL GiST exclusion constraint over each BD's active leaderboard-exception range. Revoked exceptions are intentionally excluded from the constraint so a later exception may replace a revoked one. A concurrent persistence regression proves that only one overlapping active exception can be saved.
+- `EXCLUDE` and `PROVISIONAL` are now distinct projections. Provisional BDs remain in Building Baseline with no numeric rank and an `ADMIN_OVERRIDE_PROVISIONAL` badge. Excluded BDs are omitted from both the official leaderboard and Building Baseline, returned in the explicit `excluded` collection with `ADMIN_EXCLUDED`, `eligibilitySection: EXCLUDED`, and the persisted exception type for display.
+- Extended strict Admin/BD response contracts with the explicit eligibility section and excluded collection, preventing the distinction from being lost at the API boundary.
+
+### Final target/exclusion verification
+
+- Focused API, service, scoring, eligibility, maturity, business-calendar, leaderboard, intake, contract, and worker suites passed: **127 tests**.
+- Direct TypeScript checks passed for contracts, backend, API, worker, and database packages.
+- Prisma schema validation passed.
+- The disposable `orbit_task3_test` database applied the new migration and passed **9** persistence tests, including both concurrent-overlap regressions.
+- `git diff --check` passed.

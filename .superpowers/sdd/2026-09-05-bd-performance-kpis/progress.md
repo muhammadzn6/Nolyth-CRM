@@ -74,3 +74,8 @@
 - Final drill-down correction: recruiter-response and follow-up-SLA drilldowns now use the exact KPI cohorts; duplicate-review decisions return the persisted post-update record. Reassignment history remains a separate explicit metric.
 - Verification: 88 focused service/controller/contract/performance tests plus 6 disposable PostgreSQL invariant tests, backend/API/contracts/database typechecks, local Prisma validation, and diff check passed.
 - Note: local `orbit` migration-history drift is pre-existing; Task 4 adds no migration.
+
+### Task 4 — final control-invariant correction
+
+- Final commit records server-owned target creation, GiST exclusion constraints for BD leave and active leaderboard-exception intervals, and distinct `EXCLUDE` and `PROVISIONAL` leaderboard projections.
+- Ruling: revoked leaderboard exceptions do not participate in the database interval constraint, because revocation ends their operational effect and a later exception must be permitted for the same period. Cost if wrong: an Admin would have to wait for the prior exception period to end before recording a replacement.

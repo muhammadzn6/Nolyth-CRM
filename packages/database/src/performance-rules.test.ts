@@ -220,4 +220,46 @@ describe("performance rule persistence", () => {
       }),
     ).resolves.toMatchObject({ bdId: secondBd.id });
   });
+
+  it("rejects concurrent overlapping approved leave for one BD", async () => {
+    const [admin, bd] = await Promise.all([
+      createUser("concurrent-leave-admin@orbit.test", "ADMIN"),
+      createUser("concurrent-leave-bd@orbit.test", "BD"),
+    ]);
+    const createLeave = () => database.performanceApprovedLeave.create({
+      data: {
+        bdId: bd.id,
+        approvedById: admin.id,
+        startsAt: new Date("2026-10-05T09:00:00.000Z"),
+        endsAt: new Date("2026-10-05T17:00:00.000Z"),
+      },
+    });
+
+    const results = await Promise.allSettled([createLeave(), createLeave()]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+  });
+
+  it("rejects concurrent overlapping active leaderboard exceptions for one BD", async () => {
+    const [admin, bd] = await Promise.all([
+      createUser("concurrent-exception-admin@orbit.test", "ADMIN"),
+      createUser("concurrent-exception-bd@orbit.test", "BD"),
+    ]);
+    const createException = () => database.performanceLeaderboardException.create({
+      data: {
+        bdId: bd.id,
+        type: "PROVISIONAL",
+        reason: "Data migration review.",
+        effectiveFrom: new Date("2026-10-05T09:00:00.000Z"),
+        expiresAt: new Date("2026-10-10T17:00:00.000Z"),
+        createdById: admin.id,
+      },
+    });
+
+    const results = await Promise.allSettled([createException(), createException()]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+  });
 });

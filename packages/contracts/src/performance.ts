@@ -125,7 +125,6 @@ export const updatePerformanceRuleInputSchema = z
 const bdTargetScheduleInputShape = {
   bdId: uuidSchema,
   dailyTarget: z.number().int().positive().default(70),
-  effectiveFrom: dateTimeSchema.optional(),
   effectiveTo: dateTimeSchema.optional(),
   auditMetadata: z.record(z.string(), z.unknown()).optional(),
 };
@@ -204,12 +203,7 @@ export const performanceHolidaySchema = z.strictObject({
   updatedAt: dateTimeSchema,
 });
 
-export const bdTargetScheduleInputSchema = z
-  .strictObject(bdTargetScheduleInputShape)
-  .refine(
-    ({ effectiveFrom, effectiveTo }) => !effectiveTo || !effectiveFrom || effectiveFrom < effectiveTo,
-    { message: "Effective period must end after it starts", path: ["effectiveTo"] },
-  );
+export const bdTargetScheduleInputSchema = z.strictObject(bdTargetScheduleInputShape);
 
 export const updateBdTargetScheduleInputSchema = z
   .strictObject({ ...bdTargetScheduleInputShape, effectiveFrom: dateTimeSchema, expectedVersion: z.number().int().positive() })
@@ -407,7 +401,8 @@ export const performanceLeaderboardRowSchema = z.strictObject({
   eligibilityProgress: percentageSchema.optional(),
   ineligibilityReason: textSchema.nullable().optional(),
   estimatedEligibilityDate: dateTimeSchema.nullable().optional(),
-  warnings: z.array(z.enum(["LOW_APPLICATION_SAMPLE", "LOW_OUTCOME_SAMPLE", "ADMIN_OVERRIDE_PROVISIONAL"])).default([]),
+  eligibilitySection: z.enum(["OFFICIAL", "BUILDING_BASELINE", "EXCLUDED"]),
+  warnings: z.array(z.enum(["LOW_APPLICATION_SAMPLE", "LOW_OUTCOME_SAMPLE", "ADMIN_OVERRIDE_PROVISIONAL", "ADMIN_EXCLUDED"])).default([]),
   adminException: performanceLeaderboardExceptionSchema.nullable().optional(),
   quality: performanceQualityIndicatorsSchema,
 });
@@ -431,9 +426,11 @@ export const bdPerformanceEligibilitySchema = z.strictObject({
     "INSUFFICIENT_ELIGIBLE_WORKING_DAYS",
     "INITIAL_MATURITY_WINDOW_NOT_ELAPSED",
     "ADMIN_OVERRIDE_PROVISIONAL",
+    "ADMIN_EXCLUDED",
   ]).nullable(),
   estimatedEligibilityDate: dateTimeSchema.nullable(),
-  warnings: z.array(z.enum(["LOW_APPLICATION_SAMPLE", "LOW_OUTCOME_SAMPLE", "ADMIN_OVERRIDE_PROVISIONAL"])),
+  eligibilitySection: z.enum(["OFFICIAL", "BUILDING_BASELINE", "EXCLUDED"]),
+  warnings: z.array(z.enum(["LOW_APPLICATION_SAMPLE", "LOW_OUTCOME_SAMPLE", "ADMIN_OVERRIDE_PROVISIONAL", "ADMIN_EXCLUDED"])),
 });
 
 export const performanceLeadSummarySchema = z.strictObject({
@@ -578,6 +575,7 @@ export const adminBdPerformanceResponseSchema = z.strictObject({
   team: performanceKpiSchema,
   leaderboard: z.array(performanceLeaderboardRowSchema),
   buildingBaseline: z.array(performanceLeaderboardRowSchema),
+  excluded: z.array(performanceLeaderboardRowSchema),
   quality: performanceQualityIndicatorsSchema,
 });
 

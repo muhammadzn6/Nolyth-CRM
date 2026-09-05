@@ -565,6 +565,7 @@ model PerformanceHoliday {
   @@map("performance_holidays")
 }
 
+/// PostgreSQL enforces non-overlapping leave intervals per BD with a GiST exclusion constraint.
 model PerformanceApprovedLeave {
   id            String   @id @default(uuid()) @db.Uuid
   bdId          String   @map("bd_id") @db.Uuid
@@ -587,6 +588,7 @@ model PerformanceApprovedLeave {
   @@map("performance_approved_leaves")
 }
 
+/// PostgreSQL enforces non-overlapping active exception intervals per BD with a GiST exclusion constraint.
 model PerformanceLeaderboardException {
   id               String                               @id @default(uuid()) @db.Uuid
   bdId             String                               @map("bd_id") @db.Uuid

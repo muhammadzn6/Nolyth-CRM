@@ -120,7 +120,7 @@ describe("PerformanceService", () => {
     };
     const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-05T12:00:00.000Z"));
 
-    await expect(service.createBdTargetSchedule(admin, { bdId: bd.id, dailyTarget: 80, effectiveFrom: "2026-10-01T00:00:00.000Z" })).resolves.toMatchObject({ dailyTarget: 80, version: 1 });
+    await expect(service.createBdTargetSchedule(admin, { bdId: bd.id, dailyTarget: 80 })).resolves.toMatchObject({ dailyTarget: 80, version: 1 });
     await expect(service.updateBdTargetSchedule(admin, target.id, { bdId: bd.id, dailyTarget: 85, effectiveFrom: "2026-10-01T00:00:00.000Z", expectedVersion: 1 })).resolves.toMatchObject({ id: target.id });
     await expect(service.deleteBdTargetSchedule(admin, target.id, { expectedVersion: 1 })).resolves.toBeUndefined();
     await expect(service.createPerformanceHoliday(admin, { holidayDate: "2026-09-23", name: "Pakistan Day" })).resolves.toMatchObject({ name: "Pakistan Day", version: 1 });
@@ -582,6 +582,17 @@ describe("PerformanceService", () => {
     const afterExpiry = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-10-02T12:00:00.000Z"));
     const normal = await afterExpiry.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
     expect(normal.leaderboard[0]).toMatchObject({ bdId: bd.id, adminException: null });
+
+    database.performanceLeaderboardException.findMany.mockResolvedValue([{ ...exception, type: "EXCLUDE" }]);
+    const excluded = await duringException.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+    expect(excluded.leaderboard).toHaveLength(0);
+    expect(excluded.buildingBaseline).toHaveLength(0);
+    expect(excluded.excluded[0]).toMatchObject({
+      rank: null,
+      eligibilitySection: "EXCLUDED",
+      warnings: expect.arrayContaining(["ADMIN_EXCLUDED"]),
+      adminException: { type: "EXCLUDE", active: true },
+    });
   });
 
   it("uses each effective rule segment for attainment and score weights", async () => {

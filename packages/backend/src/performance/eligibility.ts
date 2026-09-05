@@ -1,5 +1,5 @@
-export type EligibilityReason = "INSUFFICIENT_ELIGIBLE_WORKING_DAYS" | "INITIAL_MATURITY_WINDOW_NOT_ELAPSED" | "ADMIN_OVERRIDE_PROVISIONAL";
-export type EligibilityWarning = "LOW_APPLICATION_SAMPLE" | "LOW_OUTCOME_SAMPLE" | "ADMIN_OVERRIDE_PROVISIONAL";
+export type EligibilityReason = "INSUFFICIENT_ELIGIBLE_WORKING_DAYS" | "INITIAL_MATURITY_WINDOW_NOT_ELAPSED" | "ADMIN_OVERRIDE_PROVISIONAL" | "ADMIN_EXCLUDED";
+export type EligibilityWarning = "LOW_APPLICATION_SAMPLE" | "LOW_OUTCOME_SAMPLE" | "ADMIN_OVERRIDE_PROVISIONAL" | "ADMIN_EXCLUDED";
 
 export type EligibilityInput = {
   eligibleWorkingDays: number;
@@ -8,6 +8,7 @@ export type EligibilityInput = {
   maturedApplications: number;
   evaluatedAt: Date;
   adminOverride?: {
+    type?: "EXCLUDE" | "PROVISIONAL";
     reason: string;
     expiresAt: Date;
   };
@@ -16,7 +17,7 @@ export type EligibilityInput = {
 export type EligibilityResult = {
   eligible: boolean;
   rankable: boolean;
-  section: "OFFICIAL" | "BUILDING_BASELINE";
+  section: "OFFICIAL" | "BUILDING_BASELINE" | "EXCLUDED";
   reasons: EligibilityReason[];
   warnings: EligibilityWarning[];
 };
@@ -35,15 +36,20 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
     if (!input.adminOverride.reason.trim() || Number.isNaN(input.adminOverride.expiresAt.getTime())) {
       throw new Error("Admin overrides require a reason and expiry date");
     }
-    reasons.push("ADMIN_OVERRIDE_PROVISIONAL");
-    warnings.push("ADMIN_OVERRIDE_PROVISIONAL");
+    if (input.adminOverride.type === "EXCLUDE") {
+      reasons.push("ADMIN_EXCLUDED");
+      warnings.push("ADMIN_EXCLUDED");
+    } else {
+      reasons.push("ADMIN_OVERRIDE_PROVISIONAL");
+      warnings.push("ADMIN_OVERRIDE_PROVISIONAL");
+    }
   }
 
   const eligible = reasons.length === 0;
   return {
     eligible,
     rankable: eligible,
-    section: eligible ? "OFFICIAL" : "BUILDING_BASELINE",
+    section: eligible ? "OFFICIAL" : reasons.includes("ADMIN_EXCLUDED") ? "EXCLUDED" : "BUILDING_BASELINE",
     reasons,
     warnings,
   };

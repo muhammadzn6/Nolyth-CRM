@@ -70,6 +70,27 @@ describe("evaluateEligibility", () => {
     });
   });
 
+  it("marks an excluded BD separately from a provisional BD", () => {
+    expect(evaluateEligibility({
+      eligibleWorkingDays: 12,
+      initialMaturityElapsed: true,
+      qualifiedApplications: 25,
+      maturedApplications: 8,
+      evaluatedAt: new Date("2026-09-05T00:00:00.000Z"),
+      adminOverride: {
+        type: "EXCLUDE",
+        reason: "The BD is on a documented operational exception.",
+        expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+      },
+    })).toMatchObject({
+      eligible: false,
+      rankable: false,
+      section: "EXCLUDED",
+      reasons: ["ADMIN_EXCLUDED"],
+      warnings: ["ADMIN_EXCLUDED"],
+    });
+  });
+
   it("ignores expired Admin exceptions and applies an exception through its exact expiry", () => {
     const input = {
       eligibleWorkingDays: 12,

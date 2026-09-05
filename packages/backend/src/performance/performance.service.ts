@@ -178,7 +178,7 @@ export class PerformanceService {
     const ranked = rankLeaderboard(selected.map((row) => ({
       bdId: row.bdId,
       bdName: row.bdName,
-      rankable: row.eligible,
+      rankable: row.eligibilitySection === "OFFICIAL",
       balancedScore: row.performance.balancedScore,
       effectiveAttainmentPercent: row.performance.effectiveTargetAttainmentPercent,
       maturedOutcomeScorePercent: row.performance.maturedOutcomeScorePercent,
@@ -190,8 +190,9 @@ export class PerformanceService {
       period: { from: period.from, to: period.to },
       team: this.aggregateKpis(completed.map((row) => row.performance)),
       quality: this.aggregateQuality(completed.map((row) => row.quality)),
-      leaderboard: completed.filter((row) => row.eligible).map((row) => this.leaderboardRow(row)),
-      buildingBaseline: completed.filter((row) => !row.eligible).map((row) => this.leaderboardRow(row)),
+      leaderboard: completed.filter((row) => row.eligibilitySection === "OFFICIAL").map((row) => this.leaderboardRow(row)),
+      buildingBaseline: completed.filter((row) => row.eligibilitySection === "BUILDING_BASELINE").map((row) => this.leaderboardRow(row)),
+      excluded: completed.filter((row) => row.eligibilitySection === "EXCLUDED").map((row) => this.leaderboardRow(row)),
     };
   }
 
@@ -251,7 +252,7 @@ export class PerformanceService {
     const ranked = rankLeaderboard(adminView.map((row) => ({
       bdId: row.bdId,
       bdName: row.bdName,
-      rankable: row.eligible,
+      rankable: row.eligibilitySection === "OFFICIAL",
       balancedScore: row.performance.balancedScore,
       effectiveAttainmentPercent: row.performance.effectiveTargetAttainmentPercent,
       maturedOutcomeScorePercent: row.performance.maturedOutcomeScorePercent,
@@ -286,6 +287,7 @@ export class PerformanceService {
         eligibilityProgress: self.eligibilityProgress,
         ineligibilityReason: self.ineligibilityReason,
         estimatedEligibilityDate: iso(self.estimatedEligibilityDate),
+        eligibilitySection: self.eligibilitySection,
         warnings: self.warnings,
       },
     };
@@ -316,8 +318,7 @@ export class PerformanceService {
     const parsed = bdTargetScheduleInputSchema.safeParse(input);
     if (!parsed.success) throw invalid(parsed.error.issues);
     await this.assertActiveBd(parsed.data.bdId);
-    const effectiveFrom = parsed.data.effectiveFrom ? new Date(parsed.data.effectiveFrom) : await this.nextTargetChangeBoundary(this.now());
-    if (effectiveFrom < this.now()) throw new ConflictError("BD target changes cannot rewrite historical performance");
+    const effectiveFrom = await this.nextTargetChangeBoundary(this.now());
     const created = await this.database.$transaction(async (transaction) => {
       await this.assertTargetWindowAvailable(transaction, parsed.data.bdId, effectiveFrom, parsed.data.effectiveTo ? new Date(parsed.data.effectiveTo) : null);
       const row = await transaction.bdTargetSchedule.create?.({
@@ -1154,7 +1155,7 @@ export class PerformanceService {
       qualifiedApplications: qualified,
       maturedApplications: matured.length,
       evaluatedAt: now,
-      ...(activeException ? { adminOverride: { reason: String(activeException.reason), expiresAt: asDate(activeException.expiresAt) ?? now } } : {}),
+      ...(activeException ? { adminOverride: { type: String(activeException.type) === "EXCLUDE" ? "EXCLUDE" as const : "PROVISIONAL" as const, reason: String(activeException.reason), expiresAt: asDate(activeException.expiresAt) ?? now } } : {}),
     });
     const performance = {
       qualifiedApplications: qualified, targetApplications: Math.round(targetApplications), rawTargetAttainmentPercent: Math.round(rawTargetAttainmentPercent * 10) / 10,
@@ -1166,7 +1167,7 @@ export class PerformanceService {
     };
     const qualityResult = this.qualityIndicators(leads, qualityEvents, duplicateReviews);
     return {
-      bdId: String(bd.id), bdName: String(bd.displayName), rank: null, eligible: eligibility.eligible, qualifiedApplications: qualified,
+      bdId: String(bd.id), bdName: String(bd.displayName), rank: null, eligible: eligibility.eligible, eligibilitySection: eligibility.section, qualifiedApplications: qualified,
       performance, warnings: eligibility.warnings,
       ineligibilityReason: eligibility.reasons[0] ?? null,
       eligibilityProgress: Math.min(100, Math.round((eligibleWorkingDays / 10) * 100)),
@@ -1300,7 +1301,7 @@ export class PerformanceService {
       bdId: String(row.bdId), bdName: String(row.bdName), rank: typeof row.rank === "number" ? row.rank : null,
       eligible: Boolean(row.eligible), qualifiedApplications: number(row.qualifiedApplications), performance: row.performance,
       eligibilityProgress: number(row.eligibilityProgress), ineligibilityReason: typeof row.ineligibilityReason === "string" ? row.ineligibilityReason : null,
-      estimatedEligibilityDate: iso(row.estimatedEligibilityDate), warnings: Array.isArray(row.warnings) ? row.warnings : [], quality: row.quality,
+      estimatedEligibilityDate: iso(row.estimatedEligibilityDate), eligibilitySection: String(row.eligibilitySection), warnings: Array.isArray(row.warnings) ? row.warnings : [], quality: row.quality,
       adminException: row.adminException ?? null,
     };
   }
