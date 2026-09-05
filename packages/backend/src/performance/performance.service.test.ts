@@ -23,6 +23,31 @@ const reviewId = "10000000-0000-4000-8000-000000000003";
 const leadId = "10000000-0000-4000-8000-000000000004";
 
 describe("PerformanceService", () => {
+  it("returns uncapped BD work-queue totals while keeping bounded previews separate", async () => {
+    const leads = Array.from({ length: 127 }, (_, index) => ({
+      id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      currentOwnerId: bd.id,
+      status: index < 64 ? "RESPONSE_RECEIVED" : index < 103 ? "INTERVIEWING" : "APPLIED",
+      rawUrl: index % 2 ? "https://www.linkedin.com/jobs/view/1" : "https://jobs.example.com/role/2",
+    }));
+    const tasks = Array.from({ length: 64 }, (_, index) => ({ id: String(index), assigneeId: bd.id, status: "OPEN" }));
+    const database: any = {
+      jobLead: { findMany: vi.fn().mockResolvedValue(leads) },
+      task: { findMany: vi.fn().mockResolvedValue(tasks) },
+    };
+    const service = new PerformanceService(database, { assertRole: vi.fn() } as never);
+
+    await expect(service.getBdWorkQueue(bd)).resolves.toEqual({
+      recruiterResponses: 64,
+      activeApplications: 39,
+      openFollowUps: 64,
+      platformTotals: [
+        { platform: "jobs.example.com", count: 64 },
+        { platform: "linkedin.com", count: 63 },
+      ],
+    });
+  });
+
   it("derives Screening from a persisted recruiter or pre-screen round before a technical interview", () => {
     expect(outcomeStage("RESPONSE_RECEIVED", [{ roundType: "PRE_SCREEN" }])).toBe("SCREENING");
     expect(outcomeStage("RESPONSE_RECEIVED", [{ roundType: "TECHNICAL" }])).toBe("INTERVIEW");

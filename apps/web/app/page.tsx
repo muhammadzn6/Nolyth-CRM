@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 import {
   adminBdPerformanceResponseSchema,
   bdPerformanceResponseSchema,
+  bdWorkQueueSchema,
   performanceDrilldownQuerySchema,
   performanceDrilldownResponseSchema,
   performanceFollowUpWithLeadSchema,
@@ -27,7 +28,6 @@ import {
   listActivity,
   listLeads,
   listUsers,
-  listTasks,
 } from "../lib/api-client";
 import type { PerformancePeriod } from "../components/performance/bd-team-kpis";
 
@@ -115,6 +115,39 @@ export default async function HomePage(props?: HomePageProps) {
     }
   }
 
+  if (actor.role === "BD") {
+    const [applicationsResult, calendarResult, performanceResult, todayPerformanceResult, workQueueResult] = await Promise.allSettled([
+      listLeads({ limit: 6 }, cookie),
+      getCalendar({}, cookie),
+      readPerformance(`/performance/me?${new URLSearchParams(range)}`, bdPerformanceResponseSchema, cookie),
+      readPerformance(`/performance/me?${new URLSearchParams(performanceRange("day"))}`, bdPerformanceResponseSchema, cookie),
+      readPerformance("/performance/me/work-queue", bdWorkQueueSchema, cookie),
+    ]);
+    const applications = applicationsResult.status === "fulfilled" ? applicationsResult.value.items : [];
+    const calendar = calendarResult.status === "fulfilled" ? calendarResult.value : [];
+    const performance = performanceResult.status === "fulfilled" ? performanceResult.value : undefined;
+    const todayPerformance = todayPerformanceResult.status === "fulfilled" ? todayPerformanceResult.value : undefined;
+    const workQueue = workQueueResult.status === "fulfilled" ? workQueueResult.value : undefined;
+    const performanceAvailable = Boolean(performance && todayPerformance);
+    let drilldown;
+    if (performanceAvailable && metric) {
+      const parsed = performanceDrilldownQuerySchema.safeParse({ ...range, metric });
+      if (parsed.success) {
+        try {
+          drilldown = await readPerformance(`/performance/me/drilldown?${new URLSearchParams(Object.entries(parsed.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
+        } catch {
+          drilldown = undefined;
+        }
+      }
+    }
+    const errors = [
+      !performanceAvailable ? "Performance data is temporarily unavailable." : undefined,
+      !workQueue ? "Work-queue totals are temporarily unavailable." : undefined,
+      applicationsResult.status === "rejected" ? "Recent applications are temporarily unavailable." : undefined,
+    ].filter((value): value is string => Boolean(value));
+    return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications} error={errors.join(" ") || undefined} interviews={calendar} performance={performance} todayPerformance={todayPerformance} workQueue={workQueue} />{drilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={drilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
+  }
+
   try {
     const dashboard = await getDashboard(cookie);
     let recentActivity;
@@ -124,15 +157,12 @@ export default async function HomePage(props?: HomePageProps) {
     let applications;
     let openTasks;
     let users;
-    if (actor.role === "ADMIN" || actor.role === "BD") {
-      try { [applications, openTasks, users] = await Promise.all([listLeads({ limit: 100 }, cookie), actor.role === "BD" ? listTasks({ status: "OPEN" }, cookie) : Promise.resolve(undefined), listUsers(cookie)]); } catch { applications = undefined; openTasks = undefined; users = undefined; }
+    if (actor.role === "ADMIN") {
+      try { [applications, openTasks, users] = await Promise.all([listLeads({ limit: 100 }, cookie), Promise.resolve(undefined), listUsers(cookie)]); } catch { applications = undefined; openTasks = undefined; users = undefined; }
     }
     let adminPerformance;
     let performanceReassignments;
     let performanceDrilldown;
-    let bdPerformanceDrilldown;
-    let bdPerformance;
-    let bdTodayPerformance;
     let performanceReassignmentError: string | undefined;
     if (actor.role === "ADMIN") {
       try {
@@ -157,26 +187,6 @@ export default async function HomePage(props?: HomePageProps) {
         }
       }
     }
-    if (actor.role === "BD") {
-      try {
-        [bdPerformance, bdTodayPerformance] = await Promise.all([
-          readPerformance(`/performance/me?${new URLSearchParams(range)}`, bdPerformanceResponseSchema, cookie),
-          readPerformance(`/performance/me?${new URLSearchParams(performanceRange("day"))}`, bdPerformanceResponseSchema, cookie),
-        ]);
-        const drilldown = performanceDrilldownQuerySchema.safeParse({ ...range, metric });
-        if (drilldown.success) {
-          try {
-            bdPerformanceDrilldown = await readPerformance(`/performance/me/drilldown?${new URLSearchParams(Object.entries(drilldown.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
-          } catch {
-            bdPerformanceDrilldown = undefined;
-          }
-        }
-      } catch {
-        bdPerformance = undefined;
-        bdTodayPerformance = undefined;
-      }
-    }
-    if (actor.role === "BD" && bdPerformance) return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications?.items ?? []} openTasks={openTasks ?? []} interviews={calendar ?? []} performance={bdPerformance} todayPerformance={bdTodayPerformance} />{bdPerformanceDrilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={bdPerformanceDrilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
     return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} applications={applications?.items} openTasks={openTasks} adminPerformance={adminPerformance} performancePeriod={performancePeriod} performanceMetric={metric} performanceDrilldown={performanceDrilldown} performanceReassignments={performanceReassignments} performanceReassignmentError={performanceReassignmentError} performanceOwners={users?.filter((user) => user.role === "BD" && user.isActive)} onPerformanceReassign={submitPerformanceReassignment} /></AppShell>;
   } catch (reason) {
     return <AppShell actor={actor}><DashboardOverview actor={actor} error={reason instanceof ApiClientError ? reason.message : "Live dashboard data is temporarily unavailable."} /></AppShell>;

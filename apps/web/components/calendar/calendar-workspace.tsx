@@ -79,10 +79,13 @@ function itemDates(item: CalendarItem): { startsAt: string; endsAt: string; time
   return item.kind === "interview" ? item.value : item.value;
 }
 
-export function CalendarWorkspace({ actor, interviews, externalMeetings = [], embedded = false }: { actor: SessionUser; interviews: InterviewSummary[]; externalMeetings?: CloserDashboardExternalMeeting[]; embedded?: boolean }) {
+export function CalendarWorkspace({ actor, interviews, externalMeetings = [], embedded = false, initialDate }: { actor: SessionUser; interviews: InterviewSummary[]; externalMeetings?: CloserDashboardExternalMeeting[]; embedded?: boolean; initialDate?: string }) {
   const firstInterview = interviews[0] ? new Date(interviews[0].startsAt) : new Date();
   const [view, setView] = useState<View>("week");
-  const [anchor, setAnchor] = useState(firstInterview);
+  const [anchor, setAnchor] = useState(() => {
+    const selected = initialDate ? new Date(initialDate) : null;
+    return selected && !Number.isNaN(selected.getTime()) ? selected : firstInterview;
+  });
   const [status, setStatus] = useState("ALL");
   const [roundType, setRoundType] = useState("ALL");
   const [showCancelled, setShowCancelled] = useState(false);

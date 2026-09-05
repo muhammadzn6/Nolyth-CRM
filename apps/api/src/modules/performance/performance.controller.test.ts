@@ -181,6 +181,15 @@ const auditRecord = {
 };
 
 describe("PerformanceController", () => {
+  it("returns the authenticated BD's uncapped work-queue aggregate", async () => {
+    const aggregate = { recruiterResponses: 127, activeApplications: 103, openFollowUps: 64, platformTotals: [{ platform: "linkedin.com", count: 208 }] };
+    const service = { getBdWorkQueue: vi.fn().mockResolvedValue(aggregate) };
+    const controller = new PerformanceController(service as unknown as PerformanceService);
+
+    await expect(controller.myWorkQueue(request(bd))).resolves.toEqual(aggregate);
+    expect(service.getBdWorkQueue).toHaveBeenCalledWith(bd);
+  });
+
   it("validates admin performance filters before reaching the service", async () => {
     const service = { getAdminBdPerformance: vi.fn() };
     const controller = new PerformanceController(service as unknown as PerformanceService);

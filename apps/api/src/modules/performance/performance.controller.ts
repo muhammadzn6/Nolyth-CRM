@@ -7,6 +7,7 @@ import {
 import {
   adminBdPerformanceResponseSchema,
   bdPerformanceResponseSchema,
+  bdWorkQueueSchema,
   duplicateReviewWithLeadSchema,
   bdTargetScheduleInputSchema,
   bdTargetScheduleListQuerySchema,
@@ -81,6 +82,12 @@ export class PerformanceController {
     return this.performance
       .getBdPerformance(this.actor(request), period)
       .then((response) => parseResponse(bdPerformanceResponseSchema, response));
+  }
+
+  @Get("me/work-queue") myWorkQueue(@Req() request: AuthenticatedRequest) {
+    return this.performance
+      .getBdWorkQueue(this.actor(request))
+      .then((response) => parseResponse(bdWorkQueueSchema, response));
   }
 
   @Get("me/drilldown") myDrilldown(@Query() query: unknown, @Req() request: AuthenticatedRequest) {

@@ -49,6 +49,7 @@ export type PerformanceDatabase = {
   bdTargetSchedule: Store;
   performanceLeaderboardException: Store;
   interviewRound: Store;
+  task: Store;
   leadStatusTransition: Store;
   outboxEvent: Store;
   user: Store;
@@ -289,6 +290,37 @@ export class PerformanceService {
         eligibilitySection: self.eligibilitySection,
         warnings: self.warnings,
       },
+    };
+  }
+
+  async getBdWorkQueue(actor: Actor) {
+    if (!actor.isActive || actor.role !== "BD") throw new AuthorizationError();
+    const [leads, tasks] = await Promise.all([
+      this.database.jobLead.findMany?.({
+        where: { currentOwnerId: actor.id, archivedAt: null },
+        select: { status: true, rawUrl: true },
+      }) ?? [],
+      this.database.task.findMany?.({
+        where: { assigneeId: actor.id, status: "OPEN" },
+        select: { id: true },
+      }) ?? [],
+    ]);
+    const platformCounts = new Map<string, number>();
+    let recruiterResponses = 0;
+    let activeApplications = 0;
+    for (const lead of leads) {
+      if (lead.status === "RESPONSE_RECEIVED") recruiterResponses += 1;
+      if (["INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED"].includes(String(lead.status))) activeApplications += 1;
+      const platform = jobUrlHost(lead.rawUrl) ?? "Other";
+      platformCounts.set(platform, (platformCounts.get(platform) ?? 0) + 1);
+    }
+    return {
+      recruiterResponses,
+      activeApplications,
+      openFollowUps: tasks.length,
+      platformTotals: [...platformCounts.entries()]
+        .map(([platform, count]) => ({ platform, count }))
+        .sort((left, right) => right.count - left.count || left.platform.localeCompare(right.platform)),
     };
   }
 

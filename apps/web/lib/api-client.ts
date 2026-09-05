@@ -128,6 +128,7 @@ import {
   type CompanyCloserAssignment,
   bulkImportResultSchema,
   bdTargetScheduleInputSchema,
+  bdWorkQueueSchema,
   bdTargetScheduleSchema,
   duplicateReviewWithLeadSchema,
   performanceApprovedLeaveInputSchema,
@@ -144,6 +145,7 @@ import {
   updatePerformanceHolidayInputSchema,
   performanceVersionInputSchema,
   type BdTargetSchedule,
+  type BdWorkQueue,
   type PerformanceApprovedLeave,
   type PerformanceHoliday,
   type PerformanceRuleMutation,
@@ -182,6 +184,7 @@ export type CreatePerformanceApprovedLeave = Pick<
   "bdId" | "startsAt" | "endsAt" | "reason" | "availableStartHour" | "availableEndHour"
 >;
 export type { PerformanceRulePreview };
+export type { BdWorkQueue };
 type Schema<T> = {
   safeParse(data: unknown):
     | { success: true; data: T }
@@ -560,6 +563,10 @@ export async function listTasks(input: TaskListInput = {}, cookie?: string): Pro
   const parsed = taskSummarySchema.array().safeParse(data);
   if (!parsed.success) throw new ApiClientError("The API returned an invalid task list.", "INVALID_RESPONSE");
   return parsed.data;
+}
+
+export async function getBdWorkQueue(cookie?: string): Promise<BdWorkQueue> {
+  return parseResource(bdWorkQueueSchema, await read("/performance/me/work-queue", cookie), "BD work queue");
 }
 
 export async function completeTask(id: string, expectedVersion: number, notes?: string): Promise<TaskSummary> {

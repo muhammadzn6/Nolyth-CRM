@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import type { BdPerformanceResponse, InterviewSummary, LeadSummary, SessionUser, TaskSummary } from "@orbit/contracts";
+import type { BdPerformanceResponse, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
 import { describe, expect, it } from "vitest";
 
 import { BdDashboard } from "./bd-dashboard";
@@ -101,7 +101,7 @@ const interviews = [{
 
 describe("BD performance dashboard", () => {
   it("renders server-owned operational and personal performance values with interview quick actions", () => {
-    const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} openTasks={[] as TaskSummary[]} interviews={interviews} performance={performance} />);
+    const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} interviews={interviews} performance={performance} />);
 
     expect(html).toContain("Qualified applications today");
     expect(html).toContain("Remaining target");
@@ -117,6 +117,35 @@ describe("BD performance dashboard", () => {
     expect(html).toContain("Open calendar");
     expect(html).toContain("View your application details");
     expect(html).toContain("performanceMetric=QUALIFIED_APPLICATIONS");
+  });
+
+  it("uses the server work-queue totals instead of the bounded recent-preview arrays", () => {
+    const html = renderToStaticMarkup(<BdDashboard
+      actor={actor}
+      applications={applications}
+      interviews={interviews}
+      performance={performance}
+      todayPerformance={performance}
+      workQueue={{ recruiterResponses: 127, activeApplications: 103, openFollowUps: 64, platformTotals: [{ platform: "linkedin.com", count: 208 }] }}
+    />);
+
+    expect(html).toContain("127");
+    expect(html).toContain("103");
+    expect(html).toContain("64 tasks");
+    expect(html).toContain("208 total");
+  });
+
+  it("renders an explicit unavailable performance panel without deriving performance from previews", () => {
+    const html = renderToStaticMarkup(<BdDashboard
+      actor={actor}
+      applications={applications}
+      interviews={interviews}
+      error="Performance data is temporarily unavailable."
+    />);
+
+    expect(html).toContain("Performance data is temporarily unavailable.");
+    expect(html).toContain("Personal performance unavailable");
+    expect(html).toContain("Recent applications");
   });
 
   it("keeps peer summaries to the approved fields and has no peer detail links", () => {

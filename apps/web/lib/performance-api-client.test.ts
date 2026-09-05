@@ -4,6 +4,7 @@ import {
   deletePerformanceApprovedLeave,
   deletePerformanceHoliday,
   getDuplicateReviews,
+  getBdWorkQueue,
   getPerformanceRules,
   getPerformanceRuleHistory,
   previewPerformanceRules,
@@ -160,6 +161,23 @@ describe("performance API client", () => {
       requestId: "req_forbidden",
       status: 403,
     });
+  });
+
+  it("reads uncapped BD work-queue totals through the shared contract", async () => {
+    const queue = {
+      recruiterResponses: 127,
+      activeApplications: 103,
+      openFollowUps: 64,
+      platformTotals: [{ platform: "linkedin.com", count: 208 }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(success(queue));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getBdWorkQueue()).resolves.toEqual(queue);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.orbit.example/api/v1/performance/me/work-queue",
+      expect.objectContaining({ cache: "no-store" }),
+    );
   });
 
   it("uses versioned holiday and leave mutations and reads rule history through shared contracts", async () => {

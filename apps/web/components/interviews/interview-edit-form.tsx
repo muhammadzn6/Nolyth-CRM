@@ -59,7 +59,7 @@ export function InterviewEditForm({ round, onCancel }: { round: InterviewSummary
   </form>;
 }
 
-export function InterviewRoundCard({ actorRole, round }: { actorRole: string; round: InterviewSummary }) {
-  const [editing, setEditing] = useState(false);
+export function InterviewRoundCard({ actorRole, round, initiallyEditing = false }: { actorRole: string; round: InterviewSummary; initiallyEditing?: boolean }) {
+  const [editing, setEditing] = useState(initiallyEditing);
   return <Card className="p-5"><p className="text-xs font-bold uppercase tracking-[0.12em] text-primary">{round.roundType.replaceAll("_", " ")} · Round {round.roundNumber}</p><h2 className="mt-2 text-base font-bold text-foreground">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: round.timezone }).format(new Date(round.startsAt))}</h2><p className="mt-1 text-sm text-muted-foreground">{round.status.replaceAll("_", " ")} · {round.timezone}</p>{round.interviewer ? <p className="mt-2 text-sm text-foreground">{round.interviewer}</p> : null}{["ADMIN", "BD"].includes(actorRole) && round.status === "SCHEDULED" ? editing ? <InterviewEditForm onCancel={() => setEditing(false)} round={round} /> : <Button className="mt-4" size="sm" variant="secondary" onClick={() => setEditing(true)}>Edit interview</Button> : null}</Card>;
 }

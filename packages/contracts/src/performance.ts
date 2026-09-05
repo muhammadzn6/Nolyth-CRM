@@ -391,6 +391,14 @@ export const performanceQualityIndicatorsSchema = z.strictObject({
   duplicateRate: percentageSchema.nullable(),
 });
 
+/** Server-owned BD queue totals. Preview arrays must never be used as these totals. */
+export const bdWorkQueueSchema = z.strictObject({
+  recruiterResponses: nonnegativeIntegerSchema,
+  activeApplications: nonnegativeIntegerSchema,
+  openFollowUps: nonnegativeIntegerSchema,
+  platformTotals: z.array(z.strictObject({ platform: textSchema, count: nonnegativeIntegerSchema })),
+});
+
 export const performanceLeaderboardRowSchema = z.strictObject({
   bdId: uuidSchema,
   bdName: textSchema,
@@ -612,6 +620,7 @@ export type PerformanceFollowUpWithLead = z.infer<typeof performanceFollowUpWith
 export type PerformanceRuleMutation = z.infer<typeof performanceRuleMutationSchema>;
 export type PerformanceKpi = z.infer<typeof performanceKpiSchema>;
 export type PerformanceQualityIndicators = z.infer<typeof performanceQualityIndicatorsSchema>;
+export type BdWorkQueue = z.infer<typeof bdWorkQueueSchema>;
 export type PerformanceLeaderboardRow = z.infer<typeof performanceLeaderboardRowSchema>;
 export type BdPeerSummary = z.infer<typeof bdPeerSummarySchema>;
 export type BdPerformanceEligibility = z.infer<typeof bdPerformanceEligibilitySchema>;

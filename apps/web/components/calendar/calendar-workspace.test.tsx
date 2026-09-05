@@ -126,4 +126,10 @@ describe("CalendarWorkspace", () => {
     await act(async () => allCalendars?.click());
     expect(container.textContent).toContain("2 Orbit interviews in view");
   });
+
+  it("uses the supplied date as its initial calendar anchor", async () => {
+    await act(async () => root.render(<CalendarWorkspace actor={actor} interviews={[]} initialDate="2026-09-08T09:00:00.000Z" />));
+
+    expect(container.querySelector('[aria-label="Calendar view"]')?.textContent).toContain("Tue, Sep 8");
+  });
 });
