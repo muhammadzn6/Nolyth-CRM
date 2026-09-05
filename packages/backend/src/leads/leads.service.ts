@@ -6,6 +6,7 @@ import {
   createCompanySchema,
   createContactSchema,
   createLeadSchema,
+  createApplicationIntakeSchema,
   leadListQuerySchema,
   leadStatusTransitionSchema,
   restoreLeadSchema,
@@ -19,6 +20,8 @@ import {
   type CreateCompany,
   type CreateContact,
   type CreateLead,
+  type CreateApplicationIntake,
+  type ApplicationIntakeResult,
   type LeadListQuery,
   type LeadStatus,
   type LeadSummary,
@@ -63,6 +66,53 @@ const statusTransitions: Record<LeadStatus, readonly LeadStatus[]> = {
   STARTED: ["CLOSED"],
   CLOSED: [],
 };
+
+const linkedInTrackingParameters = new Set([
+  "trk",
+  "trackingid",
+  "refid",
+  "lipi",
+  "midtoken",
+  "ebp",
+  "recommendation",
+  "alternatechannel",
+  "origin",
+]);
+
+export type ApplicationDuplicateClassification = "NONE" | "LIKELY" | "CONFIRMED";
+
+export type ApplicationDuplicateInput = {
+  profileId: string;
+  companyId: string;
+  jobTitle: string;
+  normalizedJobUrl: string;
+};
+
+export function normalizeJobUrl(value: string): string {
+  const url = new URL(value);
+  url.hash = "";
+  const isLinkedIn = url.hostname === "linkedin.com" || url.hostname.endsWith(".linkedin.com");
+
+  for (const key of [...url.searchParams.keys()]) {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey.startsWith("utm_") || (isLinkedIn && linkedInTrackingParameters.has(normalizedKey))) {
+      url.searchParams.delete(key);
+    }
+  }
+
+  url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+  return url.toString();
+}
+
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function lookbackStart(now: Date, months: number): Date {
+  const start = new Date(now);
+  start.setUTCMonth(start.getUTCMonth() - months);
+  return start;
+}
 
 function invalid(issues: unknown): ValidationError {
   return new ValidationError("The request payload is invalid", issues);
@@ -233,6 +283,71 @@ export class LeadsService {
       if (typeof error === "object" && error && "code" in error && (error as { code: string }).code === "P2002") throw new ConflictError("An active lead with this URL already exists for the profile");
       throw error;
     }
+  }
+
+  async classifyApplicationDuplicate(
+    input: ApplicationDuplicateInput,
+    lookbackMonths = 6,
+  ): Promise<ApplicationDuplicateClassification> {
+    const saved = await this.database.jobLead.findMany({
+      where: {
+        profileId: input.profileId,
+        appliedDate: { gte: lookbackStart(this.now(), lookbackMonths) },
+      },
+    });
+    const confirmed = saved.some((lead) => {
+      const existingUrl = typeof lead.canonicalUrl === "string" ? lead.canonicalUrl : lead.rawUrl;
+      if (typeof existingUrl !== "string") return false;
+      try {
+        return normalizeJobUrl(existingUrl) === input.normalizedJobUrl;
+      } catch {
+        return false;
+      }
+    });
+    if (confirmed) return "CONFIRMED";
+
+    return saved.some((lead) =>
+      lead.companyId === input.companyId &&
+      typeof lead.jobTitle === "string" &&
+      normalizeText(lead.jobTitle) === normalizeText(input.jobTitle),
+    )
+      ? "LIKELY"
+      : "NONE";
+  }
+
+  async createApplicationIntake(actor: Actor, input: CreateApplicationIntake): Promise<ApplicationIntakeResult> {
+    if (!actor.isActive || actor.role !== "BD") throw new AuthorizationError();
+    const parsed = createApplicationIntakeSchema.safeParse(input); if (!parsed.success) throw invalid(parsed.error.issues);
+    await this.authorization.assertProfileAccess(actor, parsed.data.profileId);
+    const canonicalUrl = normalizeJobUrl(parsed.data.rawUrl);
+    const existingCompany = await this.database.company.findUnique({ where: { canonicalName: parsed.data.companyName } });
+    const duplicate = await this.classifyApplicationDuplicate({
+      profileId: parsed.data.profileId,
+      companyId: existingCompany ? String(existingCompany.id) : "",
+      jobTitle: parsed.data.jobTitle,
+      normalizedJobUrl: canonicalUrl,
+    });
+    if (duplicate === "LIKELY" && !parsed.data.duplicateOverrideReason) {
+      throw new ConflictError("This application looks like a likely duplicate. Add an override reason to save it.", {
+        duplicate: { classification: "LIKELY", requiresOverride: true },
+      });
+    }
+    const company = existingCompany ?? await this.database.company.create({ data: { canonicalName: parsed.data.companyName, createdById: actor.id } });
+    const sourceName = new URL(canonicalUrl).hostname.replace(/^www\./, "");
+    const source = await this.database.jobSource.findUnique({ where: { name: sourceName } }) ?? await this.database.jobSource.create({ data: { name: sourceName } });
+    const appliedDate = this.now();
+    const created = await this.database.jobLead.create({ data: { profileId: parsed.data.profileId, companyId: String(company.id), sourceId: String(source.id), createdById: actor.id, currentOwnerId: actor.id, companyName: String(company.canonicalName), jobTitle: parsed.data.jobTitle, rawUrl: parsed.data.rawUrl, appliedDate: new Date(`${appliedDate.toISOString().slice(0, 10)}T00:00:00.000Z`), canonicalUrl, canonicalHash: canonicalUrl.toLowerCase() } });
+    const contact = await this.database.contact.findFirst({ where: { companyId: String(company.id), email: parsed.data.recruiterEmail } }) ?? await this.database.contact.create({ data: { companyId: String(company.id), createdById: actor.id, name: parsed.data.recruiterName, email: parsed.data.recruiterEmail } });
+    await this.database.leadContact.create({ data: { leadId: String(created.id), contactId: String(contact.id), role: "RECRUITER", isPrimary: true } });
+    const review = duplicate === "LIKELY"
+      ? await this.database.duplicateReview.create({ data: { leadId: String(created.id), classification: "LIKELY", status: "PENDING", overrideReason: parsed.data.duplicateOverrideReason!, provisionalCreditGranted: true, createdById: actor.id } })
+      : null;
+    const qualifiedCredit = duplicate !== "CONFIRMED";
+    if (duplicate !== "NONE") {
+      await this.audit(actor, created, "lead.duplicate_detected", { classification: duplicate, normalizedJobUrl: canonicalUrl, qualifiedCredit, reviewId: review ? String(review.id) : null });
+    }
+    await this.audit(actor, created, "lead.created", { status: created.status, jobTitle: created.jobTitle, duplicateClassification: duplicate, qualifiedCredit });
+    return { lead: summary(created), duplicate: { classification: duplicate, qualifiedCredit, reviewId: review ? String(review.id) : null } };
   }
 
   async update(actor: Actor, id: string, input: UpdateLead, expectedVersion: number): Promise<LeadSummary> {

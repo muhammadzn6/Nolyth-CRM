@@ -26,6 +26,17 @@ function validLead() {
   };
 }
 
+function validApplicationIntake() {
+  return {
+    profileId,
+    companyName: "  Northstar Labs  ",
+    jobTitle: "  Staff Platform Engineer  ",
+    rawUrl: "  https://www.linkedin.com/jobs/view/1234567890/?utm_source=orbit#details  ",
+    recruiterName: "  Jordan Lee  ",
+    recruiterEmail: "  JORDAN@NORTHSTAR.EXAMPLE  ",
+  };
+}
+
 describe("company, contact, and lead contracts", () => {
   it("accepts a trimmed raw job URL while keeping canonical URL and hash server-owned", () => {
     expect(schema("createLeadSchema").parse(validLead())).toEqual({
@@ -43,6 +54,21 @@ describe("company, contact, and lead contracts", () => {
     expect(schema("createLeadSchema").safeParse({ ...validLead(), rawUrl: "not a URL" }).success).toBe(
       false,
     );
+  });
+
+  it("accepts a complete BD application intake without accepting a client supplied applied date", () => {
+    const intake = schema("createApplicationIntakeSchema");
+
+    expect(intake.parse(validApplicationIntake())).toEqual({
+      profileId,
+      companyName: "Northstar Labs",
+      jobTitle: "Staff Platform Engineer",
+      rawUrl: "https://www.linkedin.com/jobs/view/1234567890/?utm_source=orbit#details",
+      recruiterName: "Jordan Lee",
+      recruiterEmail: "jordan@northstar.example",
+    });
+    expect(intake.safeParse({ ...validApplicationIntake(), appliedDate: "2026-09-05" }).success).toBe(false);
+    expect(intake.safeParse({ ...validApplicationIntake(), recruiterEmail: "" }).success).toBe(false);
   });
 
   it.each(["profileId", "companyId", "currentOwnerId", "sourceId"])(

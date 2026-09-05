@@ -56,6 +56,8 @@ import {
   errorResponseSchema,
   loginRequestSchema,
   createLeadSchema,
+  createApplicationIntakeSchema,
+  applicationIntakeResultSchema,
   leadDetailSchema,
   leadListQuerySchema,
   leadSummarySchema,
@@ -89,6 +91,8 @@ import {
   type CreateCandidate,
   type CreateProfile,
   type CreateLead,
+  type CreateApplicationIntake,
+  type ApplicationIntakeResult,
   type LeadListQuery,
   type LeadSummary,
   type CreateUser,
@@ -169,6 +173,7 @@ export class ApiClientError extends Error {
     public readonly code: string,
     public readonly requestId?: string,
     public readonly status?: number,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = "ApiClientError";
@@ -185,7 +190,7 @@ async function readEnvelope(response: Response) {
 
   const parsed = errorResponseSchema.safeParse(body);
   if (parsed.success) {
-    throw new ApiClientError(parsed.data.error.message, parsed.data.error.code, parsed.data.meta.requestId, response.status);
+    throw new ApiClientError(parsed.data.error.message, parsed.data.error.code, parsed.data.meta.requestId, response.status, parsed.data.error.details);
   }
   throw new ApiClientError("Orbit could not complete the request.", "INVALID_RESPONSE", undefined, response.status);
 }
@@ -826,6 +831,11 @@ export async function getLead(id: string, cookie?: string): Promise<LeadDetail> 
 export async function createLead(input: CreateLead): Promise<LeadSummary> {
   const command = parseInput(createLeadSchema, input, "Enter valid lead details.");
   return parseResource(leadSummarySchema, await mutate("/leads", "POST", command), "lead");
+}
+
+export async function createApplicationIntake(input: CreateApplicationIntake): Promise<ApplicationIntakeResult> {
+  const command = parseInput(createApplicationIntakeSchema, input, "Enter valid application details.");
+  return parseResource(applicationIntakeResultSchema, await mutate("/leads/intake", "POST", command), "application");
 }
 
 export async function createCandidate(input: CreateCandidate): Promise<CandidateSummary> {

@@ -204,6 +204,16 @@ export const createLeadSchema = z
     path: ["compensationMax"],
   });
 
+export const createApplicationIntakeSchema = z.strictObject({
+  profileId: uuidSchema,
+  companyName: textSchema,
+  jobTitle: textSchema,
+  rawUrl: urlSchema,
+  recruiterName: textSchema,
+  recruiterEmail: emailSchema,
+  duplicateOverrideReason: textSchema.optional(),
+});
+
 const leadUpdateShape = {
   companyId: uuidSchema.optional(),
   sourceId: uuidSchema.optional(),
@@ -287,6 +297,17 @@ const leadRecordShape = {
 };
 
 export const leadSummarySchema = z.strictObject(leadRecordShape);
+
+export const applicationDuplicateStateSchema = z.strictObject({
+  classification: z.enum(["NONE", "LIKELY", "CONFIRMED"]),
+  qualifiedCredit: z.boolean(),
+  reviewId: uuidSchema.nullable(),
+});
+
+export const applicationIntakeResultSchema = z.strictObject({
+  lead: leadSummarySchema,
+  duplicate: applicationDuplicateStateSchema,
+});
 
 export const leadContactSummarySchema = z.strictObject({
   id: uuidSchema,
@@ -382,6 +403,9 @@ export type UpdateContact = z.infer<typeof updateContactSchema>;
 export type UpdateContactRequest = z.infer<typeof updateContactRequestSchema>;
 export type ContactListQuery = z.infer<typeof contactListQuerySchema>;
 export type CreateLead = z.infer<typeof createLeadSchema>;
+export type CreateApplicationIntake = z.infer<typeof createApplicationIntakeSchema>;
+export type ApplicationDuplicateState = z.infer<typeof applicationDuplicateStateSchema>;
+export type ApplicationIntakeResult = z.infer<typeof applicationIntakeResultSchema>;
 export type UpdateLead = z.infer<typeof updateLeadSchema>;
 export type UpdateLeadRequest = z.infer<typeof updateLeadRequestSchema>;
 export type LeadSummary = z.infer<typeof leadSummarySchema>;
