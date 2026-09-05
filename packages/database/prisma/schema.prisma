@@ -165,9 +165,7 @@ enum GoogleCalendarSyncStatus {
 }
 
 enum DuplicateClassification {
-  NONE
   LIKELY
-  CONFIRMED
 }
 
 enum DuplicateReviewStatus {
@@ -506,27 +504,14 @@ model PerformanceRuleSet {
   slowdownMultiplierPercent         Decimal                 @default(25) @map("slowdown_multiplier_percent") @db.Decimal(5, 2)
   createdById                       String                  @map("created_by_id") @db.Uuid
   auditMetadata                     Json?                   @map("audit_metadata")
+  workingDays                       Int[]                   @default([1, 2, 3, 4, 5]) @map("working_days")
   createdAt                         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                         DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
   version                           Int                     @default(1)
   createdBy                         User                    @relation("PerformanceRuleSetCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  workingDays                       PerformanceWorkingDay[]
-
   @@index([effectiveFrom, effectiveTo])
   @@index([createdById, createdAt])
   @@map("performance_rule_sets")
-}
-
-model PerformanceWorkingDay {
-  id        String             @id @default(uuid()) @db.Uuid
-  ruleSetId String             @map("rule_set_id") @db.Uuid
-  dayOfWeek Int                @map("day_of_week")
-  isWorking Boolean            @default(true) @map("is_working")
-  ruleSet   PerformanceRuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
-
-  @@unique([ruleSetId, dayOfWeek])
-  @@index([dayOfWeek, isWorking])
-  @@map("performance_working_days")
 }
 
 model BdTargetSchedule {

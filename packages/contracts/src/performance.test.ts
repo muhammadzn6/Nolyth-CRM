@@ -23,6 +23,7 @@ describe("performance contracts", () => {
     ).toMatchObject({
       effectiveFrom: "2026-09-08T00:00:00.000Z",
       defaultDailyTarget: 70,
+      workingDays: [1, 2, 3, 4, 5],
       followUpSlaBusinessHours: 48,
       adminReassignmentSlaBusinessHours: 2,
       maturityWindowDays: 21,
@@ -49,6 +50,7 @@ describe("performance contracts", () => {
         createdById: adminId,
         createdAt: "2026-09-05T00:00:00.000Z",
         updatedAt: "2026-09-05T00:00:00.000Z",
+        version: 1,
       }),
     ).toMatchObject({ bdId, dailyTarget: 70 });
   });
@@ -70,6 +72,7 @@ describe("performance contracts", () => {
         createdById: bdId,
         createdAt: "2026-09-05T00:00:00.000Z",
         updatedAt: "2026-09-05T00:00:00.000Z",
+        version: 1,
       }),
     ).toMatchObject({
       overrideReason: "The requisition was reposted with a new hiring manager.",
@@ -115,5 +118,130 @@ describe("performance contracts", () => {
         },
       }),
     ).toMatchObject({ bdName: "Ada Lovelace", rank: 1, eligible: true });
+  });
+
+  it("rejects invalid rule-set periods, weight totals, and duplicate working days", () => {
+    const ruleSet = schema("performanceRuleInputSchema");
+
+    expect(
+      ruleSet.safeParse({
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        effectiveTo: "2026-09-08T00:00:00.000Z",
+      }).success,
+    ).toBe(false);
+    expect(
+      ruleSet.safeParse({
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        applicationWeightPercent: 44,
+      }).success,
+    ).toBe(false);
+    expect(
+      ruleSet.safeParse({
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        workingDays: [1, 1],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("exposes persisted versions and requires them for performance updates", () => {
+    const rule = schema("performanceRuleSchema").parse({
+      id: reviewId,
+      effectiveFrom: "2026-09-08T00:00:00.000Z",
+      effectiveTo: null,
+      createdById: adminId,
+      createdAt: "2026-09-05T00:00:00.000Z",
+      updatedAt: "2026-09-05T00:00:00.000Z",
+      version: 1,
+    });
+    const target = schema("bdTargetScheduleSchema").parse({
+      id: reviewId,
+      bdId,
+      effectiveFrom: "2026-09-08T00:00:00.000Z",
+      effectiveTo: null,
+      createdById: adminId,
+      createdAt: "2026-09-05T00:00:00.000Z",
+      updatedAt: "2026-09-05T00:00:00.000Z",
+      version: 1,
+    });
+    const review = schema("duplicateReviewSchema").parse({
+      id: reviewId,
+      leadId,
+      classification: "LIKELY",
+      status: "PENDING",
+      overrideReason: "Reposted role",
+      reviewerId: null,
+      reviewReason: null,
+      reviewedAt: null,
+      expiresAt: null,
+      provisionalCreditGranted: true,
+      provisionalCreditResolvedAt: null,
+      createdById: bdId,
+      createdAt: "2026-09-05T00:00:00.000Z",
+      updatedAt: "2026-09-05T00:00:00.000Z",
+      version: 1,
+    });
+
+    expect(rule).toMatchObject({ version: 1 });
+    expect(target).toMatchObject({ version: 1 });
+    expect(review).toMatchObject({ version: 1 });
+    expect(
+      schema("updatePerformanceRuleInputSchema").safeParse({
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        expectedVersion: 0,
+      }).success,
+    ).toBe(false);
+    expect(
+      schema("updateBdTargetScheduleInputSchema").safeParse({
+        bdId,
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        expectedVersion: 1,
+      }).success,
+    ).toBe(true);
+    expect(
+      schema("updateDuplicateReviewInputSchema").safeParse({
+        status: "APPROVED",
+        reviewReason: "Verified reposting",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("uses persisted status and classification values in performance queries", () => {
+    const query = schema("performanceDrilldownQuerySchema");
+
+    expect(
+      query.safeParse({
+        from: "2026-08-06T00:00:00.000Z",
+        to: "2026-09-05T23:59:59.999Z",
+        metric: "REASSIGNMENTS",
+        status: "OVERDUE",
+      }).success,
+    ).toBe(false);
+    expect(
+      query.parse({
+        from: "2026-08-06T00:00:00.000Z",
+        to: "2026-09-05T23:59:59.999Z",
+        metric: "REASSIGNMENTS",
+        status: "ADMIN_REASSIGNMENT_OVERDUE",
+      }),
+    ).toMatchObject({ status: "ADMIN_REASSIGNMENT_OVERDUE" });
+    expect(
+      schema("duplicateReviewSchema").safeParse({
+        id: reviewId,
+        leadId,
+        classification: "CONFIRMED",
+        status: "PENDING",
+        overrideReason: "Reposted role",
+        reviewerId: null,
+        reviewReason: null,
+        reviewedAt: null,
+        expiresAt: null,
+        provisionalCreditGranted: true,
+        provisionalCreditResolvedAt: null,
+        createdById: bdId,
+        createdAt: "2026-09-05T00:00:00.000Z",
+        updatedAt: "2026-09-05T00:00:00.000Z",
+        version: 1,
+      }).success,
+    ).toBe(false);
   });
 });

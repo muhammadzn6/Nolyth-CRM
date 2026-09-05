@@ -16,6 +16,14 @@
 - The inherited diff stored duplicate classification on `JobLead`, contradicting the brief’s requirement not to change existing lead data. Duplicate-review state remains in the new review table; the required owner/date index remains because it is an index, not a lead data-field change.
 - Running `prisma format` would rewrite unrelated alignment throughout the existing schema. Its output was reverted and only the Task 1 declarations were retained; Prisma validation confirms the resulting schema is valid.
 
+## Follow-up review fixes
+
+- Added PostgreSQL half-open-range exclusion constraints so global rule periods cannot overlap and target periods cannot overlap for the same BD; adjacent periods remain valid.
+- Replaced child working-day rows with a database-persisted `working_days` array. It defaults atomically to Monday–Friday, preserves existing configured days during migration, and has database validation for non-empty, unique days in the Sunday–Saturday range.
+- Added persisted `version` fields to rule, target-schedule, and duplicate-review response schemas, plus expected-version update inputs for rules, target schedules, and duplicate-review decisions.
+- Aligned drill-down filtering with `ADMIN_REASSIGNMENT_OVERDUE` and narrowed `DuplicateClassification` to its only valid persisted value, `LIKELY`.
+- Added negative contract coverage for invalid periods, score weights, duplicate working days, stale update versions, obsolete status values, and invalid classifications. Added PostgreSQL integration coverage for defaults, invalid persisted working days, global/BD overlap rejection, and adjacent periods.
+
 ## Verification
 
 - `./node_modules/.bin/vitest run packages/contracts/src/performance.test.ts` — 1 file, 4 tests passed.
@@ -23,6 +31,15 @@
 - `packages/database/node_modules/.bin/prisma validate --schema packages/database/prisma/schema.prisma` — passed.
 - `packages/database/node_modules/.bin/prisma migrate status --schema packages/database/prisma/schema.prisma` — database schema is up to date (23 migrations).
 - `git diff --check` — passed.
+
+### Follow-up verification
+
+- `./node_modules/.bin/vitest run packages/contracts/src/performance.test.ts` — 1 file, 7 tests passed.
+- `DATABASE_URL=<disposable orbit_task3_test URL> ./node_modules/.bin/vitest run packages/database/src/performance-rules.test.ts` — 1 file, 4 tests passed after applying all 24 migrations to a reset disposable schema.
+- `./node_modules/.bin/tsc --project packages/contracts/tsconfig.json --noEmit` — passed.
+- `./node_modules/.bin/tsc --project packages/database/tsconfig.json --noEmit` — passed.
+- `packages/database/node_modules/.bin/prisma validate --schema packages/database/prisma/schema.prisma` — passed.
+- `packages/database/node_modules/.bin/prisma migrate status --schema packages/database/prisma/schema.prisma` — the configured local `orbit` database has the new migration pending and also contains pre-existing migration history drift (`20260724111622_auth_api_updated` exists in the database but not this checkout).
 
 ## Environment notes
 

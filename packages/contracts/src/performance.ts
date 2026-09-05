@@ -51,6 +51,7 @@ export const performanceRuleSchema = z
     id: uuidSchema,
     effectiveTo: dateTimeSchema.nullable(),
     createdById: uuidSchema,
+    version: z.number().int().positive(),
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
   })
@@ -64,15 +65,48 @@ export const performanceRuleSchema = z
     { message: "Effective period must end after it starts", path: ["effectiveTo"] },
   );
 
+export const updatePerformanceRuleInputSchema = z
+  .strictObject({ ...performanceRuleInputShape, expectedVersion: z.number().int().positive() })
+  .refine(
+    ({ applicationWeightPercent, followUpWeightPercent, outcomeWeightPercent }) =>
+      applicationWeightPercent + followUpWeightPercent + outcomeWeightPercent === 100,
+    { message: "Performance score weights must total 100 percent" },
+  )
+  .refine(
+    ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
+    { message: "Effective period must end after it starts", path: ["effectiveTo"] },
+  );
+
+const bdTargetScheduleInputShape = {
+  bdId: uuidSchema,
+  dailyTarget: z.number().int().positive().default(70),
+  effectiveFrom: dateTimeSchema,
+  effectiveTo: dateTimeSchema.optional(),
+  auditMetadata: z.record(z.string(), z.unknown()).optional(),
+};
+
+export const bdTargetScheduleInputSchema = z
+  .strictObject(bdTargetScheduleInputShape)
+  .refine(
+    ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
+    { message: "Effective period must end after it starts", path: ["effectiveTo"] },
+  );
+
+export const updateBdTargetScheduleInputSchema = z
+  .strictObject({ ...bdTargetScheduleInputShape, expectedVersion: z.number().int().positive() })
+  .refine(
+    ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
+    { message: "Effective period must end after it starts", path: ["effectiveTo"] },
+  );
+
 export const bdTargetScheduleSchema = z
   .strictObject({
+    ...bdTargetScheduleInputShape,
     id: uuidSchema,
-    bdId: uuidSchema,
-    dailyTarget: z.number().int().positive().default(70),
-    effectiveFrom: dateTimeSchema,
     effectiveTo: dateTimeSchema.nullable(),
     createdById: uuidSchema,
     auditMetadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    version: z.number().int().positive(),
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
   })
@@ -95,8 +129,15 @@ export const duplicateReviewSchema = z.strictObject({
   provisionalCreditResolvedAt: dateTimeSchema.nullable(),
   createdById: uuidSchema,
   auditMetadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  version: z.number().int().positive(),
   createdAt: dateTimeSchema,
   updatedAt: dateTimeSchema,
+});
+
+export const updateDuplicateReviewInputSchema = z.strictObject({
+  status: z.enum(["APPROVED", "REJECTED"]),
+  reviewReason: textSchema,
+  expectedVersion: z.number().int().positive(),
 });
 
 export const performanceKpiSchema = z.strictObject({
@@ -142,7 +183,7 @@ export const performanceDrilldownQuerySchema = z
       "DUPLICATE_REVIEWS",
       "REASSIGNMENTS",
     ]),
-    status: z.enum(["PENDING", "APPROVED", "REJECTED", "OPEN", "COMPLETED", "NEEDS_REASSIGNMENT", "OVERDUE"]).optional(),
+    status: z.enum(["PENDING", "APPROVED", "REJECTED", "OPEN", "COMPLETED", "NEEDS_REASSIGNMENT", "ADMIN_REASSIGNMENT_OVERDUE"]).optional(),
   })
   .refine(({ from, to }) => from < to, { message: "Period must end after it starts", path: ["to"] });
 
@@ -163,8 +204,11 @@ export const bdPerformanceResponseSchema = z.strictObject({
 });
 
 export type PerformanceRuleSet = z.infer<typeof performanceRuleSchema>;
+export type UpdatePerformanceRuleInput = z.infer<typeof updatePerformanceRuleInputSchema>;
 export type BdTargetSchedule = z.infer<typeof bdTargetScheduleSchema>;
+export type UpdateBdTargetScheduleInput = z.infer<typeof updateBdTargetScheduleInputSchema>;
 export type DuplicateReview = z.infer<typeof duplicateReviewSchema>;
+export type UpdateDuplicateReviewInput = z.infer<typeof updateDuplicateReviewInputSchema>;
 export type PerformanceKpi = z.infer<typeof performanceKpiSchema>;
 export type PerformanceLeaderboardRow = z.infer<typeof performanceLeaderboardRowSchema>;
 export type PerformanceDrilldownQuery = z.infer<typeof performanceDrilldownQuerySchema>;
