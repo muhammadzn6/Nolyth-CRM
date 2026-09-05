@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { database } from "./index";
+import { calculateProratedDailyTarget } from "../../backend/src/performance/business-hours";
 
 const databaseUrl = process.env.DATABASE_URL;
 const packageDirectory = fileURLToPath(new URL("..", import.meta.url));
@@ -49,6 +50,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await database.performanceApprovedLeave.deleteMany();
   await database.bdTargetSchedule.deleteMany();
   await database.performanceRuleSet.deleteMany();
   await database.user.deleteMany();
@@ -59,6 +61,36 @@ afterAll(async () => {
 });
 
 describe("performance rule persistence", () => {
+  it("persists reduced leave availability for a half-day target", async () => {
+    const [admin, bd] = await Promise.all([
+      createUser("leave-window-admin@orbit.test", "ADMIN"),
+      createUser("leave-window-bd@orbit.test", "BD"),
+    ]);
+    const leave = await database.performanceApprovedLeave.create({
+      data: {
+        bdId: bd.id,
+        approvedById: admin.id,
+        startsAt: new Date("2026-09-08T00:00:00.000Z"),
+        endsAt: new Date("2026-09-09T00:00:00.000Z"),
+        availableStartHour: 9,
+        availableEndHour: 13,
+      },
+    });
+    const persisted = await database.performanceApprovedLeave.findUniqueOrThrow({ where: { id: leave.id } });
+
+    expect(persisted).toMatchObject({ availableStartHour: 9, availableEndHour: 13 });
+    expect(calculateProratedDailyTarget(70, new Date("2026-09-08T12:00:00.000Z"), {
+      timeZone: "UTC",
+      workingDays: [1, 2, 3, 4, 5],
+      workday: { startHour: 9, endHour: 17 },
+      leaves: [{
+        startsAt: persisted.startsAt,
+        endsAt: persisted.endsAt,
+        availableHours: { startHour: persisted.availableStartHour!, endHour: persisted.availableEndHour! },
+      }],
+    })).toBe(35);
+  });
+
   it("persists Monday through Friday when a rule set is created without a schedule", async () => {
     const admin = await createUser("performance-admin@orbit.test", "ADMIN");
     const ruleSet = await createRuleSet(admin.id, new Date("2026-09-07T00:00:00.000Z"), null);

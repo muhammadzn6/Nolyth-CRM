@@ -42,6 +42,14 @@ function validateHours({ startHour, endHour }: WorkdayHours): void {
   }
 }
 
+export function validateApprovedLeaveAvailability(availableHours: WorkdayHours | undefined, workday: WorkdayHours): void {
+  if (!availableHours) return;
+  validateHours(availableHours);
+  if (availableHours.startHour < workday.startHour || availableHours.endHour > workday.endHour) {
+    throw new Error("Reduced leave availability must fall within the configured workday");
+  }
+}
+
 function assertValidTimeZone(timeZone: string): void {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone }).format();
@@ -57,6 +65,7 @@ function assertValidSchedule(schedule: BusinessHoursSchedule): void {
   if (schedule.workingDays.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
     throw new Error("Working days must be JavaScript weekday numbers");
   }
+  for (const leave of schedule.leaves ?? []) validateApprovedLeaveAvailability(leave.availableHours, schedule.workday);
 }
 
 function localParts(value: Date, timeZone: string): LocalDate & { hour: number; minute: number; second: number } {
@@ -114,14 +123,34 @@ function timeZoneOffsetMilliseconds(value: Date, timeZone: string): number {
   return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - value.getTime();
 }
 
+function compareLocalDateTimes(
+  left: LocalDate & { hour: number; minute: number; second: number },
+  right: LocalDate & { hour: number; minute: number; second: number },
+): number {
+  return compareLocalDates(left, right)
+    || left.hour - right.hour
+    || left.minute - right.minute
+    || left.second - right.second;
+}
+
 function localDateTime(value: LocalDate, hour: number, timeZone: string): Date {
   if (hour === 24) return localDateTime(addLocalDays(value, 1), 0, timeZone);
   const target = Date.UTC(value.year, value.month - 1, value.day, hour);
-  let result = new Date(target - timeZoneOffsetMilliseconds(new Date(target), timeZone));
+  const offsets = new Set([-36, -24, -12, 0, 12, 24, 36].map((hours) =>
+    timeZoneOffsetMilliseconds(new Date(target + hours * 3_600_000), timeZone),
+  ));
+  const wanted = { ...value, hour, minute: 0, second: 0 };
+  const candidates = [...offsets]
+    .map((offset) => new Date(target - offset))
+    .sort((left, right) => left.getTime() - right.getTime());
+  const exact = candidates.find((candidate) => compareLocalDateTimes(localParts(candidate, timeZone), wanted) === 0);
+  if (exact) return exact;
 
-  // A second pass resolves offsets that change between UTC midnight and the local workday (DST).
-  result = new Date(target - timeZoneOffsetMilliseconds(result, timeZone));
-  return result;
+  // A spring-forward gap has no exact wall-clock time. Resolve it to the first valid instant after the gap.
+  const afterGap = candidates.find((candidate) => compareLocalDateTimes(localParts(candidate, timeZone), wanted) > 0);
+  if (afterGap) return afterGap;
+
+  throw new Error("Could not resolve local time in configured IANA timezone");
 }
 
 function dayInterval(day: LocalDate, timeZone: string): Interval {
@@ -176,7 +205,6 @@ function availableIntervalsForDay(day: LocalDate, schedule: BusinessHoursSchedul
     if (!intersects(localDay, leaveInterval)) continue;
 
     if (leave.availableHours) {
-      validateHours(leave.availableHours);
       const reducedWindow = {
         start: localDateTime(day, leave.availableHours.startHour, schedule.timeZone),
         end: localDateTime(day, leave.availableHours.endHour, schedule.timeZone),
@@ -308,9 +336,15 @@ export type AdminReassignmentSlaInput = {
 
 export function calculateAdminReassignmentSla(input: AdminReassignmentSlaInput): {
   status: "OPEN" | "OVERDUE" | "REASSIGNED";
+  compliance: "MET" | "MISSED" | "PENDING";
+  breached: boolean;
   dueAt: Date;
 } {
   const dueAt = addBusinessHours(input.recruiterRespondedAt, input.requiredBusinessHours, input.schedule);
-  if (input.reassignedAt) return { status: "REASSIGNED", dueAt };
-  return { status: input.now > dueAt ? "OVERDUE" : "OPEN", dueAt };
+  if (input.reassignedAt) {
+    const compliance = input.reassignedAt <= dueAt ? "MET" : "MISSED";
+    return { status: "REASSIGNED", compliance, breached: compliance === "MISSED", dueAt };
+  }
+  const overdue = input.now > dueAt;
+  return { status: overdue ? "OVERDUE" : "OPEN", compliance: overdue ? "MISSED" : "PENDING", breached: overdue, dueAt };
 }

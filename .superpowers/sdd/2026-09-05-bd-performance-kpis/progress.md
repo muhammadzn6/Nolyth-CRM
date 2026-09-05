@@ -54,6 +54,8 @@
 
 ### Task 3 — complete
 
-- Pure business-calendar, maturity, scoring, eligibility, and leaderboard modules added without HTTP or database dependencies.
-- Verification: 25 focused performance tests, backend TypeScript check, and diff check passed.
-- Note: this layer evaluates schedules in UTC; Task 4 must normalize persisted rule/calendar times before using it.
+- Commits: `fed89cf`, `da23dad`, final Task 3 review-fix commit on the current branch
+- Review-fix scope: persisted IANA business calendar and local window, DST-aware calculations, explicit late-completion compliance, safe outcome-point invariants, leave-prorated capacity, expiry-aware eligibility, and null-score rank protection.
+- Verification: 41 performance/contract tests, 5 disposable PostgreSQL persistence tests, contracts/backend/database typechecks, Prisma validation, and diff check passed.
+- Ruling: the new persisted default is `UTC`, 09:00–17:00 to preserve the previous UTC calculation behavior while making the calendar explicit and configurable. Cost if wrong: new deployments keep UTC due dates until Admin configures the operational timezone.
+- Ruling: a persisted reduced leave window is constrained to a valid local-hour pair in contracts/database, then constrained to the effective rule's workday by the business-calendar engine. This keeps historical persistence rule-agnostic while ensuring Task 4 cannot use capacity outside the active calendar.

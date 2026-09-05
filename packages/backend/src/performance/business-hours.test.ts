@@ -65,6 +65,30 @@ describe("businessHoursBetween", () => {
     );
   });
 
+  it("starts a spring-forward work window at the first valid local instant", () => {
+    const springForwardSchedule: BusinessHoursSchedule = {
+      timeZone: "America/New_York",
+      workingDays: [0],
+      workday: { startHour: 2, endHour: 8 },
+    };
+
+    expect(addBusinessHours(new Date("2026-03-08T05:00:00.000Z"), 1, springForwardSchedule)).toEqual(
+      new Date("2026-03-08T08:00:00.000Z"),
+    );
+  });
+
+  it("uses the first occurrence of an ambiguous fall-back local hour", () => {
+    const fallBackSchedule: BusinessHoursSchedule = {
+      timeZone: "America/New_York",
+      workingDays: [0],
+      workday: { startHour: 1, endHour: 8 },
+    };
+
+    expect(addBusinessHours(new Date("2026-11-01T04:00:00.000Z"), 1, fallBackSchedule)).toEqual(
+      new Date("2026-11-01T06:00:00.000Z"),
+    );
+  });
+
   it("evaluates recurring work windows in the configured local timezone", () => {
     const karachiSchedule: BusinessHoursSchedule = {
       timeZone: "Asia/Karachi",
@@ -104,7 +128,7 @@ describe("isEligibleWorkingDay", () => {
       leaves: [{
         startsAt: new Date("2026-09-08T00:00:00.000Z"),
         endsAt: new Date("2026-09-09T00:00:00.000Z"),
-        availableHours: { startHour: 7, endHour: 13 },
+        availableHours: { startHour: 9, endHour: 13 },
       }],
     };
 
@@ -112,6 +136,17 @@ describe("isEligibleWorkingDay", () => {
     expect(calculateProratedDailyTarget(70, day, fullLeave)).toBe(0);
     expect(getEligibleWorkdayCapacity(day, halfDay)).toBe(0.5);
     expect(calculateProratedDailyTarget(70, day, halfDay)).toBe(35);
+  });
+
+  it("rejects reduced leave availability outside the configured workday", () => {
+    expect(() => calculateProratedDailyTarget(70, new Date("2026-09-08T12:00:00.000Z"), {
+      ...schedule,
+      leaves: [{
+        startsAt: new Date("2026-09-08T00:00:00.000Z"),
+        endsAt: new Date("2026-09-09T00:00:00.000Z"),
+        availableHours: { startHour: 8, endHour: 13 },
+      }],
+    })).toThrow("Reduced leave availability must fall within the configured workday");
   });
 });
 
@@ -163,11 +198,37 @@ describe("follow-up SLA timing", () => {
 
     expect(calculateAdminReassignmentSla({ ...input, now: new Date("2026-09-08T10:00:00.000Z") })).toEqual({
       status: "OPEN",
+      compliance: "PENDING",
+      breached: false,
       dueAt: new Date("2026-09-08T10:00:00.000Z"),
     });
     expect(calculateAdminReassignmentSla({ ...input, now: new Date("2026-09-08T10:00:00.001Z") })).toEqual({
       status: "OVERDUE",
+      compliance: "MISSED",
+      breached: true,
       dueAt: new Date("2026-09-08T10:00:00.000Z"),
+    });
+  });
+
+  it("marks Admin reassignment as met at the exact deadline and missed after it", () => {
+    const input = {
+      recruiterRespondedAt: new Date("2026-09-07T09:00:00.000Z"),
+      requiredBusinessHours: 2,
+      now: new Date("2026-09-07T12:00:00.000Z"),
+      schedule,
+    };
+
+    expect(calculateAdminReassignmentSla({ ...input, reassignedAt: new Date("2026-09-07T11:00:00.000Z") })).toMatchObject({
+      status: "REASSIGNED",
+      compliance: "MET",
+      breached: false,
+      dueAt: new Date("2026-09-07T11:00:00.000Z"),
+    });
+    expect(calculateAdminReassignmentSla({ ...input, reassignedAt: new Date("2026-09-07T11:00:00.001Z") })).toMatchObject({
+      status: "REASSIGNED",
+      compliance: "MISSED",
+      breached: true,
+      dueAt: new Date("2026-09-07T11:00:00.000Z"),
     });
   });
 

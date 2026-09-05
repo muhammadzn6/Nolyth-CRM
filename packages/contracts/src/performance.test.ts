@@ -58,6 +58,31 @@ describe("performance contracts", () => {
     ).toMatchObject({ bdId, dailyTarget: 70 });
   });
 
+  it("accepts a persisted reduced approved-leave window and rejects partial windows", () => {
+    const leave = schema("performanceApprovedLeaveInputSchema");
+
+    expect(leave.parse({
+      bdId,
+      startsAt: "2026-09-08T00:00:00.000Z",
+      endsAt: "2026-09-09T00:00:00.000Z",
+      availableStartHour: 9,
+      availableEndHour: 13,
+    })).toMatchObject({ availableStartHour: 9, availableEndHour: 13 });
+    expect(leave.safeParse({
+      bdId,
+      startsAt: "2026-09-08T00:00:00.000Z",
+      endsAt: "2026-09-09T00:00:00.000Z",
+      availableStartHour: 9,
+    }).success).toBe(false);
+    expect(leave.safeParse({
+      bdId,
+      startsAt: "2026-09-08T00:00:00.000Z",
+      endsAt: "2026-09-09T00:00:00.000Z",
+      availableStartHour: 13,
+      availableEndHour: 9,
+    }).success).toBe(false);
+  });
+
   it("exposes pending duplicate reviews with provisional-credit and audit state", () => {
     expect(
       schema("duplicateReviewSchema").parse({

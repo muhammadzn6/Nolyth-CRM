@@ -130,6 +130,49 @@ const bdTargetScheduleInputShape = {
   auditMetadata: z.record(z.string(), z.unknown()).optional(),
 };
 
+const leaveHourStartSchema = z.number().int().min(0).max(23);
+const leaveHourEndSchema = z.number().int().min(1).max(24);
+const performanceApprovedLeaveInputShape = {
+  bdId: uuidSchema,
+  startsAt: dateTimeSchema,
+  endsAt: dateTimeSchema,
+  reason: z.string().trim().min(1).nullable().optional(),
+  availableStartHour: leaveHourStartSchema.nullable().optional(),
+  availableEndHour: leaveHourEndSchema.nullable().optional(),
+};
+
+function validateApprovedLeaveWindow(
+  value: { startsAt: string; endsAt: string; availableStartHour?: number | null; availableEndHour?: number | null },
+) {
+  return value.startsAt < value.endsAt
+    && (value.availableStartHour == null) === (value.availableEndHour == null)
+    && (value.availableStartHour == null || value.availableStartHour < value.availableEndHour!);
+}
+
+export const performanceApprovedLeaveInputSchema = z
+  .strictObject(performanceApprovedLeaveInputShape)
+  .refine(validateApprovedLeaveWindow, {
+    message: "Approved leave must have a valid period and complete reduced availability window",
+    path: ["availableEndHour"],
+  });
+
+export const performanceApprovedLeaveSchema = z
+  .strictObject({
+    ...performanceApprovedLeaveInputShape,
+    id: uuidSchema,
+    availableStartHour: leaveHourStartSchema.nullable(),
+    availableEndHour: leaveHourEndSchema.nullable(),
+    approvedById: uuidSchema,
+    approvedAt: dateTimeSchema,
+    auditMetadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    createdAt: dateTimeSchema,
+    updatedAt: dateTimeSchema,
+  })
+  .refine(validateApprovedLeaveWindow, {
+    message: "Approved leave must have a valid period and complete reduced availability window",
+    path: ["availableEndHour"],
+  });
+
 export const bdTargetScheduleInputSchema = z
   .strictObject(bdTargetScheduleInputShape)
   .refine(
@@ -251,6 +294,7 @@ export const bdPerformanceResponseSchema = z.strictObject({
 export type PerformanceRuleSet = z.infer<typeof performanceRuleSchema>;
 export type UpdatePerformanceRuleInput = z.infer<typeof updatePerformanceRuleInputSchema>;
 export type BdTargetSchedule = z.infer<typeof bdTargetScheduleSchema>;
+export type PerformanceApprovedLeave = z.infer<typeof performanceApprovedLeaveSchema>;
 export type UpdateBdTargetScheduleInput = z.infer<typeof updateBdTargetScheduleInputSchema>;
 export type DuplicateReview = z.infer<typeof duplicateReviewSchema>;
 export type UpdateDuplicateReviewInput = z.infer<typeof updateDuplicateReviewInputSchema>;

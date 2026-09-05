@@ -561,6 +561,8 @@ model PerformanceApprovedLeave {
   bdId          String   @map("bd_id") @db.Uuid
   startsAt      DateTime @map("starts_at") @db.Timestamptz(6)
   endsAt        DateTime @map("ends_at") @db.Timestamptz(6)
+  availableStartHour Int? @map("available_start_hour")
+  availableEndHour   Int? @map("available_end_hour")
   reason        String?
   approvedById  String   @map("approved_by_id") @db.Uuid
   approvedAt    DateTime @default(now()) @map("approved_at") @db.Timestamptz(6)
