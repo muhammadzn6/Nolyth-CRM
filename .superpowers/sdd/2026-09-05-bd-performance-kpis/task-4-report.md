@@ -150,3 +150,15 @@ The local `orbit` database still has the pre-existing migration-history drift. T
 - Focused Task 4 suite: **129 passed** across API controller, performance, scoring, eligibility, maturity, business-hours, leaderboard, lead intake/collaboration, contract, and worker tests.
 - Direct TypeScript checks passed for contracts, backend, API, worker, and database packages.
 - Prisma schema validation and `git diff --check` passed.
+
+## Final reassigned follow-up SLA period correction
+
+- Follow-up SLA selection now uses the active owner's SLA start consistently in both the performance row and `FOLLOW_UP_SLA` drill-down.
+- Work that remains with its original owner is selected by `recruiterRespondedAt`; reassigned work is selected by `slaResumedAt`, with `reassignedAt` as the compatibility fallback for legacy records.
+- Added an adjacent-period regression: a recruiter response in August that is reassigned to a new BD in September now contributes to that BD's September SLA KPI and returns from the September drill-down.
+
+### Final reassigned follow-up SLA verification
+
+- Focused Task 4 suite: **130 passed**.
+- Direct TypeScript checks passed for contracts, backend, API, worker, and database packages.
+- Prisma schema validation and `git diff --check` passed.

@@ -904,10 +904,7 @@ export class PerformanceService {
     }
     if (parsed.metric === "FOLLOW_UP_SLA") {
       const followUps = await this.database.performanceFollowUp.findMany?.({
-        where: {
-          recruiterRespondedAt: { gte: from, lte: to }, ...(parsed.bdId ? { ownerId: parsed.bdId } : {}),
-          ...(parsed.status ? { status: parsed.status } : {}),
-        },
+        where: this.followUpSlaPeriodWhere(from, to, parsed.bdId, parsed.status),
         include: { lead: true }, orderBy: { recruiterRespondedAt: "desc" },
       }) ?? [];
       const observedAt = this.now();
@@ -1032,7 +1029,7 @@ export class PerformanceService {
         },
       }) ?? [],
       this.database.interviewRound.findMany?.({ where: { lead: { createdById: String(bd.id) }, startsAt: { lte: to } } }) ?? [],
-      this.database.performanceFollowUp.findMany?.({ where: { ownerId: String(bd.id), recruiterRespondedAt: { gte: from, lte: to } } }) ?? [],
+      this.database.performanceFollowUp.findMany?.({ where: this.followUpSlaPeriodWhere(from, to, String(bd.id)) }) ?? [],
       this.database.bdTargetSchedule.findMany?.({ where: { bdId: String(bd.id), effectiveFrom: { lte: targetWindowTo }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: targetWindowFrom } }] } }) ?? [],
       this.database.performanceHoliday.findMany?.({}) ?? [],
       this.database.performanceApprovedLeave.findMany?.({ where: { bdId: String(bd.id), startsAt: { lte: to }, endsAt: { gt: from } } }) ?? [],
@@ -1175,6 +1172,37 @@ export class PerformanceService {
       quality: qualityResult.values,
       qualityCounts: qualityResult.counts,
       adminException: activeException ? this.leaderboardExceptionSummary(activeException, now) : null,
+    };
+  }
+
+  private followUpSlaPeriodWhere(from: Date, to: Date, ownerId?: string, status?: string) {
+    const withinPeriod = { gte: from, lte: to };
+    const statusFilter = status ? { status } : {};
+
+    if (!ownerId) {
+      return {
+        ...statusFilter,
+        OR: [
+          { reassignedAt: null, recruiterRespondedAt: withinPeriod },
+          { slaResumedAt: withinPeriod },
+          { slaResumedAt: null, reassignedAt: withinPeriod },
+        ],
+      };
+    }
+
+    return {
+      ...statusFilter,
+      ownerId,
+      OR: [
+        { originalOwnerId: ownerId, recruiterRespondedAt: withinPeriod },
+        {
+          originalOwnerId: { not: ownerId },
+          OR: [
+            { slaResumedAt: withinPeriod },
+            { slaResumedAt: null, reassignedAt: withinPeriod },
+          ],
+        },
+      ],
     };
   }
 

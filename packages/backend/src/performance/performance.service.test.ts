@@ -299,9 +299,69 @@ describe("PerformanceService", () => {
     expect(database.performanceFollowUp.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         ownerId: replacementBdId,
-        recruiterRespondedAt: { gte: new Date("2026-09-01T00:00:00.000Z"), lte: new Date("2026-09-30T00:00:00.000Z") },
+        OR: expect.arrayContaining([
+          expect.objectContaining({ originalOwnerId: replacementBdId, recruiterRespondedAt: { gte: new Date("2026-09-01T00:00:00.000Z"), lte: new Date("2026-09-30T00:00:00.000Z") } }),
+          expect.objectContaining({ originalOwnerId: { not: replacementBdId } }),
+        ]),
       }),
     }));
+  });
+
+  it("counts reassigned follow-up SLA work in the replacement BD's current reporting period", async () => {
+    const replacementBd = {
+      ...bd,
+      id: "10000000-0000-4000-8000-000000000008",
+      displayName: "Replacement BD",
+      createdAt: new Date("2026-08-01T00:00:00.000Z"),
+    };
+    const reassignedFollowUp = {
+      id: "cross-period-follow-up",
+      ownerId: replacementBd.id,
+      originalOwnerId: bd.id,
+      status: "COMPLETED",
+      recruiterRespondedAt: new Date("2026-08-30T09:00:00.000Z"),
+      reassignedAt: new Date("2026-09-02T09:00:00.000Z"),
+      slaResumedAt: new Date("2026-09-02T09:00:00.000Z"),
+      slaDueAt: new Date("2026-09-04T09:00:00.000Z"),
+      completedAt: new Date("2026-09-03T09:00:00.000Z"),
+      breachedAt: null,
+    };
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([replacementBd]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue([]) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceFollowUp: {
+        findMany: vi.fn().mockImplementation(({ where }: { where: Record<string, unknown> }) => {
+          const ranges = Array.isArray(where.OR) ? where.OR : [];
+          const selectsResumedSla = JSON.stringify(ranges).includes('"slaResumedAt":{"gte":"2026-09-01T00:00:00.000Z","lte":"2026-09-30T00:00:00.000Z"}');
+          return Promise.resolve(selectsResumedSla ? [reassignedFollowUp] : []);
+        }),
+      },
+      bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      activityEvent: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+    vi.spyOn(service, "evaluateOverdueSlas").mockResolvedValue({ reassignmentOverdue: 0, reviewOverdue: 0 });
+    const period = { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" };
+
+    const performance = await service.getBdPerformance(replacementBd, period);
+    const drilldown = await service.getAdminPerformanceDrilldown(admin, {
+      ...period,
+      metric: "FOLLOW_UP_SLA",
+      bdId: replacementBd.id,
+    });
+
+    expect(performance.performance.followUpSlaCompliancePercent).toBe(100);
+    expect(drilldown).toEqual([
+      expect.objectContaining({
+        kind: "FOLLOW_UP",
+        followUp: expect.objectContaining({ id: reassignedFollowUp.id, ownerId: replacementBd.id }),
+      }),
+    ]);
   });
 
   it("pauses the original BD SLA and starts Admin reassignment SLA when a response arrives during leave", async () => {
