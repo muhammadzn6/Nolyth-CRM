@@ -244,8 +244,7 @@ export class PerformanceService {
 
   async getBdPerformance(actor: Actor, query: unknown) {
     if (!actor.isActive || actor.role !== "BD") throw new AuthorizationError();
-    const period = this.parsePeriod(query);
-    if (period.bdId && period.bdId !== actor.id) throw new AuthorizationError();
+    const { bdId: _bdId, ...period } = this.parsePeriod(query);
     const adminView = await this.getRowsForBdPeriod(period);
     const self = adminView.find((row) => row.bdId === actor.id);
     if (!self) throw new NotFoundError("The BD performance record was not found");

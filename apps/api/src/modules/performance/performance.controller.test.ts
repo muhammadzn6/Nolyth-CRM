@@ -241,6 +241,29 @@ describe("PerformanceController", () => {
     await expect(controller.auditRecord(lead.id, { outcome: "PASSED", reason: "Verified." }, request())).resolves.toEqual(auditRecord);
   });
 
+  it("ignores a BD-supplied bdId when reading the personal performance view", async () => {
+    const service = {
+      getBdPerformance: vi.fn().mockResolvedValue({
+        period,
+        currentDailyTarget: 70,
+        nextTargetChangeEffectiveAt: null,
+        performance,
+        rank: 2,
+        peerLeaderboard: [
+          { bdId: bd.id, bdName: bd.displayName, rank: 2, qualifiedApplications: 4, recordHealthRate: 100, adminAuditPassRate: null, duplicateRate: 0 },
+          { bdId: admin.id, bdName: admin.displayName, rank: 1, qualifiedApplications: 5, recordHealthRate: 100, adminAuditPassRate: null, duplicateRate: 0 },
+        ],
+        quality,
+        eligibility: { eligible: true, eligibilityProgress: 100, ineligibilityReason: null, estimatedEligibilityDate: null, eligibilitySection: "OFFICIAL", warnings: [] },
+      }),
+    };
+    const controller = new PerformanceController(service as unknown as PerformanceService);
+
+    await expect(controller.mine({ ...period, bdId: bd.id }, request(bd))).resolves.toMatchObject({ rank: 2 });
+
+    expect(service.getBdPerformance).toHaveBeenCalledWith(bd, period);
+  });
+
   it("routes Admin calendar controls and leaderboard exceptions through strict contracts", async () => {
     const target = { id: "10000000-0000-4000-8000-000000000071", bdId: bd.id, dailyTarget: 80, effectiveFrom: date, effectiveTo: null, createdById: admin.id, auditMetadata: null, version: 1, createdAt: date, updatedAt: date };
     const holiday = { id: "10000000-0000-4000-8000-000000000072", holidayDate: "2026-09-23", name: "Pakistan Day", createdById: admin.id, auditMetadata: null, version: 1, createdAt: date, updatedAt: date };

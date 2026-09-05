@@ -75,8 +75,9 @@ export class PerformanceController {
   }
 
   @Get("me") mine(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    const { bdId: _bdId, ...period } = parse(performancePeriodQuerySchema, query);
     return this.performance
-      .getBdPerformance(this.actor(request), parse(performancePeriodQuerySchema, query))
+      .getBdPerformance(this.actor(request), period)
       .then((response) => parseResponse(bdPerformanceResponseSchema, response));
   }
 

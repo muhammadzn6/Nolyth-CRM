@@ -553,11 +553,58 @@ describe("PerformanceService", () => {
     };
     const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T00:00:00.000Z"));
 
-    const result = await service.getBdPerformance(bd, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+    const result = await service.getBdPerformance(bd, {
+      from: "2026-09-01T00:00:00.000Z",
+      to: "2026-09-30T00:00:00.000Z",
+      bdId: bd.id,
+    });
 
+    expect(result.peerLeaderboard).toHaveLength(2);
     expect(result.peerLeaderboard[1]).toEqual(expect.objectContaining({ bdId: peer.id, qualifiedApplications: 0, duplicateRate: null }));
     expect(result.peerLeaderboard[1]).not.toHaveProperty("performance");
     expect(result.peerLeaderboard[1]).not.toHaveProperty("currentDailyTarget");
+  });
+
+  it("keeps the full team cohort and true rank when a BD supplies their own bdId", async () => {
+    const peer = { ...bd, id: "10000000-0000-4000-8000-000000000012", displayName: "Higher-scoring peer" };
+    const quality = { recordHealthRate: 100, adminAuditPassRate: 100, duplicateRate: 0 };
+    const row = (actor: typeof bd, score: number) => ({
+      bdId: actor.id,
+      bdName: actor.displayName,
+      currentDailyTarget: 70,
+      qualifiedApplications: 5,
+      performance: {
+        balancedScore: score,
+        effectiveTargetAttainmentPercent: score,
+        maturedOutcomeScorePercent: score,
+        followUpSlaCompliancePercent: score,
+      },
+      quality,
+      eligible: true,
+      eligibilityProgress: 100,
+      ineligibilityReason: null,
+      estimatedEligibilityDate: null,
+      eligibilitySection: "OFFICIAL" as const,
+      warnings: [],
+    });
+    const database: any = { bdTargetSchedule: { findFirst: vi.fn().mockResolvedValue(null) } };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never);
+    const getRowsForBdPeriod = vi.spyOn(service as any, "getRowsForBdPeriod").mockImplementation(async (query: any) =>
+      query.bdId ? [row(bd, 80)] : [row(bd, 80), row(peer, 90)],
+    );
+
+    const result = await service.getBdPerformance(bd, {
+      from: "2026-09-01T00:00:00.000Z",
+      to: "2026-09-30T00:00:00.000Z",
+      bdId: bd.id,
+    });
+
+    expect(getRowsForBdPeriod).toHaveBeenCalledWith({ from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+    expect(result.rank).toBe(2);
+    expect(result.peerLeaderboard).toEqual(expect.arrayContaining([
+      expect.objectContaining({ bdId: bd.id, rank: 2 }),
+      expect.objectContaining({ bdId: peer.id, rank: 1 }),
+    ]));
   });
 
   it("keeps active Admin leaderboard exceptions provisional and ignores expired exceptions", async () => {

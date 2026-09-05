@@ -138,3 +138,15 @@ The local `orbit` database still has the pre-existing migration-history drift. T
 - Prisma schema validation passed.
 - The disposable `orbit_task3_test` database applied the new migration and passed **9** persistence tests, including both concurrent-overlap regressions.
 - `git diff --check` passed.
+
+## Final BD cohort-scoping correction
+
+- `GET /performance/me` now accepts the existing period query shape for compatibility but discards any client-supplied `bdId` before calling the service.
+- `PerformanceService.getBdPerformance` independently discards `bdId`, so direct callers cannot restrict the team cohort either. The authenticated actor is always used to select the personal row, while ranking and peer summaries are always built from all active BDs in the requested period.
+- Added controller and service regressions proving a BD-supplied own `bdId` neither changes the forwarded personal scope nor reduces the peer cohort or improves the caller's rank.
+
+### Final BD cohort-scoping verification
+
+- Focused Task 4 suite: **129 passed** across API controller, performance, scoring, eligibility, maturity, business-hours, leaderboard, lead intake/collaboration, contract, and worker tests.
+- Direct TypeScript checks passed for contracts, backend, API, worker, and database packages.
+- Prisma schema validation and `git diff --check` passed.
