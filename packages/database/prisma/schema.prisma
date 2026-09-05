@@ -165,7 +165,9 @@ enum GoogleCalendarSyncStatus {
 }
 
 enum DuplicateClassification {
+  NONE
   LIKELY
+  CONFIRMED
 }
 
 enum DuplicateReviewStatus {
@@ -437,6 +439,8 @@ model JobLead {
   source               String                  @default("manual")
   canonicalUrl         String?                 @map("canonical_url")
   canonicalHash        String?                 @map("canonical_hash")
+  duplicateClassification DuplicateClassification @default(NONE) @map("duplicate_classification")
+  qualifiedCredit      Boolean                 @default(true) @map("qualified_credit")
   status               LeadStatus              @default(APPLIED)
   archiveReason        String?                 @map("archive_reason")
   archivedAt           DateTime?               @map("archived_at") @db.Timestamptz(6)
@@ -476,6 +480,7 @@ model JobLead {
   @@index([profileId, status, appliedDate])
   @@index([profileId, isImportant, appliedDate])
   @@index([profileId, canonicalHash])
+  @@index([duplicateClassification, qualifiedCredit])
   @@index([currentOwnerId, appliedDate])
   @@index([currentOwnerId])
   @@index([responsibleCloserId])

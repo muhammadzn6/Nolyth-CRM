@@ -76,6 +76,7 @@ function leadRecord(overrides: Record<string, unknown> = {}) {
 function intakeService(
   saved: Array<Record<string, unknown>> = [],
   now = new Date("2026-09-05T12:00:00.000Z"),
+  duplicateLookbackMonths?: number,
 ) {
   const jobLead = {
     findMany: vi.fn(async (args: { where: { profileId: string; appliedDate: { gte: Date } } }) => saved.filter((row) =>
@@ -100,11 +101,15 @@ function intakeService(
     leadContact: { create: vi.fn().mockResolvedValue(undefined) },
     duplicateReview: { create: vi.fn().mockResolvedValue({ id: "80000000-0000-4000-8000-000000000001" }) },
     activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
+    performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(duplicateLookbackMonths ? { duplicateLookbackMonths } : null) },
   };
+  const transaction = vi.fn(async (work: (tx: typeof database) => Promise<unknown>) => work(database));
+  Object.assign(database, { $transaction: transaction });
   const authorization = { assertProfileAccess: vi.fn().mockResolvedValue(undefined) };
   return {
     service: new LeadsService(database as never, authorization as never, () => now),
     database,
+    transaction,
   };
 }
 
@@ -195,8 +200,21 @@ describe("application intake duplicate classification", () => {
     await expect(service.classifyApplicationDuplicate(input)).resolves.toBe("NONE");
     await expect(service.classifyApplicationDuplicate(input, 7)).resolves.toBe("CONFIRMED");
     expect(jobLead.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      where: expect.objectContaining({ appliedDate: { gte: new Date("2026-03-05T12:00:00.000Z") } }),
+      where: expect.objectContaining({ appliedDate: { gte: new Date("2026-03-05T00:00:00.000Z") } }),
     }));
+  });
+
+  it("includes applications saved on the exact calendar-date lookback boundary", async () => {
+    const { service } = duplicateService([{
+      id: "30000000-0000-4000-8000-000000000005",
+      profileId,
+      companyId,
+      jobTitle: "Staff Platform Engineer",
+      canonicalUrl: input.normalizedJobUrl,
+      appliedDate: "2026-03-05T00:00:00.000Z",
+    }]);
+
+    await expect(service.classifyApplicationDuplicate(input)).resolves.toBe("CONFIRMED");
   });
 });
 
@@ -212,7 +230,7 @@ describe("application intake persistence", () => {
   });
 
   it("assigns the applied date server-side and returns an ordinary qualified intake state", async () => {
-    const { service, database } = intakeService([], new Date("2026-10-14T12:00:00.000Z"));
+    const { service, database, transaction } = intakeService([], new Date("2026-10-14T12:00:00.000Z"));
 
     const result = await service.createApplicationIntake(bd, intakeInput() as never) as unknown as {
       lead: { appliedDate: string; canonicalUrl: string | null; canonicalHash: string | null };
@@ -223,7 +241,10 @@ describe("application intake persistence", () => {
       appliedDate: new Date("2026-10-14T00:00:00.000Z"),
       canonicalUrl: "https://www.linkedin.com/jobs/view/1234567890",
       canonicalHash: "https://www.linkedin.com/jobs/view/1234567890",
+      duplicateClassification: "NONE",
+      qualifiedCredit: true,
     }) });
+    expect(transaction).toHaveBeenCalledTimes(1);
     expect(result.lead.appliedDate).toBe("2026-10-14");
     expect(result.duplicate).toEqual({ classification: "NONE", qualifiedCredit: true, reviewId: null });
   });
@@ -240,6 +261,10 @@ describe("application intake persistence", () => {
     };
 
     expect(database.jobLead.create).toHaveBeenCalledTimes(1);
+    expect(database.jobLead.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      duplicateClassification: "CONFIRMED",
+      qualifiedCredit: false,
+    }) });
     expect(database.duplicateReview.create).not.toHaveBeenCalled();
     expect(result.duplicate).toEqual({ classification: "CONFIRMED", qualifiedCredit: false, reviewId: null });
     expect(database.activityEvent.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -271,10 +296,57 @@ describe("application intake persistence", () => {
       overrideReason: "Different recruiter request",
       provisionalCreditGranted: true,
     }) });
+    expect(database.jobLead.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      duplicateClassification: "LIKELY",
+      qualifiedCredit: true,
+    }) });
     expect(result.duplicate).toEqual({
       classification: "LIKELY",
       qualifiedCredit: true,
       reviewId: "80000000-0000-4000-8000-000000000001",
     });
+  });
+
+  it("uses the effective Admin duplicate lookback rule during intake", async () => {
+    const { service } = intakeService([leadRecord({
+      id: "60000000-0000-4000-8000-000000000006",
+      canonicalUrl: "https://www.linkedin.com/jobs/view/1234567890",
+      appliedDate: "2026-03-04T00:00:00.000Z",
+    })], new Date("2026-09-05T12:00:00.000Z"), 7);
+
+    await expect(service.createApplicationIntake(bd, intakeInput() as never)).resolves.toMatchObject({
+      duplicate: { classification: "CONFIRMED", qualifiedCredit: false },
+    });
+  });
+
+  it("rolls back intake when recruiter linking fails", async () => {
+    const committedLeads: Array<Record<string, unknown>> = [];
+    const transactionState = {
+      jobLead: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => leadRecord(data)),
+      },
+      company: { findUnique: vi.fn().mockResolvedValue({ id: companyId, canonicalName: "Northstar Labs" }), create: vi.fn() },
+      jobSource: { findUnique: vi.fn().mockResolvedValue({ id: sourceId, name: "linkedin.com" }), create: vi.fn() },
+      contact: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "70000000-0000-4000-8000-000000000001" }) },
+      leadContact: { create: vi.fn().mockRejectedValue(new Error("link failed")) },
+      duplicateReview: { create: vi.fn() },
+      activityEvent: { create: vi.fn() },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const database = {
+      ...transactionState,
+      $transaction: vi.fn(async (work: (tx: typeof transactionState) => Promise<unknown>) => {
+        const result = await work(transactionState);
+        committedLeads.push({ id: "committed" });
+        return result;
+      }),
+    };
+    const authorization = { assertProfileAccess: vi.fn().mockResolvedValue(undefined) };
+    const service = new LeadsService(database as never, authorization as never, () => new Date("2026-09-05T12:00:00.000Z"));
+
+    await expect(service.createApplicationIntake(bd, intakeInput() as never)).rejects.toThrow("link failed");
+    expect(database.$transaction).toHaveBeenCalledTimes(1);
+    expect(committedLeads).toEqual([]);
   });
 });

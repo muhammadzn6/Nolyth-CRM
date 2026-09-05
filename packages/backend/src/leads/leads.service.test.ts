@@ -11,7 +11,37 @@ const closer = {
   isActive: true,
 };
 
+const bd = {
+  id: "10000000-0000-4000-8000-000000000002",
+  displayName: "BD User",
+  email: "bd@orbit.test",
+  role: "BD" as const,
+  isActive: true,
+};
+
 describe("LeadsService authorization", () => {
+  it("requires BDs to use strict application intake instead of generic lead creation", async () => {
+    const database = {
+      jobLead: { create: vi.fn() },
+      company: { findUnique: vi.fn() },
+      jobSource: { findUnique: vi.fn() },
+      activityEvent: { create: vi.fn() },
+    };
+    const authorization = { assertProfileAccess: vi.fn().mockResolvedValue(undefined) };
+    const service = new LeadsService(database as never, authorization as never);
+
+    await expect(service.create(bd, {
+      profileId: "50000000-0000-4000-8000-000000000001",
+      companyId: "60000000-0000-4000-8000-000000000001",
+      currentOwnerId: bd.id,
+      sourceId: "70000000-0000-4000-8000-000000000001",
+      jobTitle: "Platform Engineer",
+      rawUrl: "https://jobs.example.test/42",
+      appliedDate: "2026-09-05",
+    })).rejects.toEqual(new AuthorizationError());
+    expect(database.jobLead.create).not.toHaveBeenCalled();
+  });
+
   it("does not allow a closer to open an unassigned lead by URL", async () => {
     const lead = {
       id: "30000000-0000-4000-8000-000000000001",

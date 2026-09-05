@@ -109,9 +109,11 @@ function normalizeText(value: string): string {
 }
 
 function lookbackStart(now: Date, months: number): Date {
-  const start = new Date(now);
-  start.setUTCMonth(start.getUTCMonth() - months);
-  return start;
+  const rawMonth = now.getUTCMonth() - months;
+  const year = now.getUTCFullYear() + Math.floor(rawMonth / 12);
+  const month = ((rawMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(now.getUTCDate(), lastDay)));
 }
 
 function invalid(issues: unknown): ValidationError {
@@ -268,10 +270,9 @@ export class LeadsService {
   }
 
   async create(actor: Actor, input: CreateLead): Promise<LeadSummary> {
-    if (!actor.isActive || !["ADMIN", "BD"].includes(actor.role)) throw new AuthorizationError();
+    if (!actor.isActive || actor.role !== "ADMIN") throw new AuthorizationError();
     const parsed = createLeadSchema.safeParse(input); if (!parsed.success) throw invalid(parsed.error.issues);
     await this.authorization.assertProfileAccess(actor, parsed.data.profileId);
-    if (actor.role === "BD" && parsed.data.currentOwnerId !== actor.id) throw new AuthorizationError();
     const company = await this.database.company.findUnique({ where: { id: parsed.data.companyId } });
     const source = await this.database.jobSource.findUnique({ where: { id: parsed.data.sourceId } });
     if (!company || !source) throw new NotFoundError("The company or source was not found");
@@ -288,8 +289,9 @@ export class LeadsService {
   async classifyApplicationDuplicate(
     input: ApplicationDuplicateInput,
     lookbackMonths = 6,
+    database: LeadTransaction = this.database,
   ): Promise<ApplicationDuplicateClassification> {
-    const saved = await this.database.jobLead.findMany({
+    const saved = await database.jobLead.findMany({
       where: {
         profileId: input.profileId,
         appliedDate: { gte: lookbackStart(this.now(), lookbackMonths) },
@@ -320,34 +322,37 @@ export class LeadsService {
     const parsed = createApplicationIntakeSchema.safeParse(input); if (!parsed.success) throw invalid(parsed.error.issues);
     await this.authorization.assertProfileAccess(actor, parsed.data.profileId);
     const canonicalUrl = normalizeJobUrl(parsed.data.rawUrl);
-    const existingCompany = await this.database.company.findUnique({ where: { canonicalName: parsed.data.companyName } });
-    const duplicate = await this.classifyApplicationDuplicate({
-      profileId: parsed.data.profileId,
-      companyId: existingCompany ? String(existingCompany.id) : "",
-      jobTitle: parsed.data.jobTitle,
-      normalizedJobUrl: canonicalUrl,
-    });
-    if (duplicate === "LIKELY" && !parsed.data.duplicateOverrideReason) {
-      throw new ConflictError("This application looks like a likely duplicate. Add an override reason to save it.", {
-        duplicate: { classification: "LIKELY", requiresOverride: true },
-      });
-    }
-    const company = existingCompany ?? await this.database.company.create({ data: { canonicalName: parsed.data.companyName, createdById: actor.id } });
-    const sourceName = new URL(canonicalUrl).hostname.replace(/^www\./, "");
-    const source = await this.database.jobSource.findUnique({ where: { name: sourceName } }) ?? await this.database.jobSource.create({ data: { name: sourceName } });
     const appliedDate = this.now();
-    const created = await this.database.jobLead.create({ data: { profileId: parsed.data.profileId, companyId: String(company.id), sourceId: String(source.id), createdById: actor.id, currentOwnerId: actor.id, companyName: String(company.canonicalName), jobTitle: parsed.data.jobTitle, rawUrl: parsed.data.rawUrl, appliedDate: new Date(`${appliedDate.toISOString().slice(0, 10)}T00:00:00.000Z`), canonicalUrl, canonicalHash: canonicalUrl.toLowerCase() } });
-    const contact = await this.database.contact.findFirst({ where: { companyId: String(company.id), email: parsed.data.recruiterEmail } }) ?? await this.database.contact.create({ data: { companyId: String(company.id), createdById: actor.id, name: parsed.data.recruiterName, email: parsed.data.recruiterEmail } });
-    await this.database.leadContact.create({ data: { leadId: String(created.id), contactId: String(contact.id), role: "RECRUITER", isPrimary: true } });
-    const review = duplicate === "LIKELY"
-      ? await this.database.duplicateReview.create({ data: { leadId: String(created.id), classification: "LIKELY", status: "PENDING", overrideReason: parsed.data.duplicateOverrideReason!, provisionalCreditGranted: true, createdById: actor.id } })
-      : null;
-    const qualifiedCredit = duplicate !== "CONFIRMED";
-    if (duplicate !== "NONE") {
-      await this.audit(actor, created, "lead.duplicate_detected", { classification: duplicate, normalizedJobUrl: canonicalUrl, qualifiedCredit, reviewId: review ? String(review.id) : null });
-    }
-    await this.audit(actor, created, "lead.created", { status: created.status, jobTitle: created.jobTitle, duplicateClassification: duplicate, qualifiedCredit });
-    return { lead: summary(created), duplicate: { classification: duplicate, qualifiedCredit, reviewId: review ? String(review.id) : null } };
+    return this.database.$transaction(async (transaction) => {
+      const existingCompany = await transaction.company.findUnique({ where: { canonicalName: parsed.data.companyName } });
+      const lookbackMonths = await this.effectiveDuplicateLookbackMonths(transaction, appliedDate);
+      const duplicate = await this.classifyApplicationDuplicate({
+        profileId: parsed.data.profileId,
+        companyId: existingCompany ? String(existingCompany.id) : "",
+        jobTitle: parsed.data.jobTitle,
+        normalizedJobUrl: canonicalUrl,
+      }, lookbackMonths, transaction);
+      if (duplicate === "LIKELY" && !parsed.data.duplicateOverrideReason) {
+        throw new ConflictError("This application looks like a likely duplicate. Add an override reason to save it.", {
+          duplicate: { classification: "LIKELY", requiresOverride: true },
+        });
+      }
+      const company = existingCompany ?? await transaction.company.create({ data: { canonicalName: parsed.data.companyName, createdById: actor.id } });
+      const sourceName = new URL(canonicalUrl).hostname.replace(/^www\./, "");
+      const source = await transaction.jobSource.findUnique({ where: { name: sourceName } }) ?? await transaction.jobSource.create({ data: { name: sourceName } });
+      const qualifiedCredit = duplicate !== "CONFIRMED";
+      const created = await transaction.jobLead.create({ data: { profileId: parsed.data.profileId, companyId: String(company.id), sourceId: String(source.id), createdById: actor.id, currentOwnerId: actor.id, companyName: String(company.canonicalName), jobTitle: parsed.data.jobTitle, rawUrl: parsed.data.rawUrl, appliedDate: new Date(`${appliedDate.toISOString().slice(0, 10)}T00:00:00.000Z`), canonicalUrl, canonicalHash: canonicalUrl.toLowerCase(), duplicateClassification: duplicate, qualifiedCredit } });
+      const contact = await transaction.contact.findFirst({ where: { companyId: String(company.id), email: parsed.data.recruiterEmail } }) ?? await transaction.contact.create({ data: { companyId: String(company.id), createdById: actor.id, name: parsed.data.recruiterName, email: parsed.data.recruiterEmail } });
+      await transaction.leadContact.create({ data: { leadId: String(created.id), contactId: String(contact.id), role: "RECRUITER", isPrimary: true } });
+      const review = duplicate === "LIKELY"
+        ? await transaction.duplicateReview.create({ data: { leadId: String(created.id), classification: "LIKELY", status: "PENDING", overrideReason: parsed.data.duplicateOverrideReason!, provisionalCreditGranted: true, createdById: actor.id } })
+        : null;
+      if (duplicate !== "NONE") {
+        await this.audit(actor, created, "lead.duplicate_detected", { classification: duplicate, normalizedJobUrl: canonicalUrl, qualifiedCredit, reviewId: review ? String(review.id) : null }, transaction);
+      }
+      await this.audit(actor, created, "lead.created", { status: created.status, jobTitle: created.jobTitle, duplicateClassification: duplicate, qualifiedCredit }, transaction);
+      return { lead: summary(created), duplicate: { classification: duplicate, qualifiedCredit, reviewId: review ? String(review.id) : null } };
+    });
   }
 
   async update(actor: Actor, id: string, input: UpdateLead, expectedVersion: number): Promise<LeadSummary> {
@@ -427,7 +432,12 @@ export class LeadsService {
   private async assertEditor(actor: Actor, lead: Record<string, unknown>) { if (!actor.isActive || actor.role === "CLOSER" || (actor.role === "BD" && lead.currentOwnerId !== actor.id)) throw new AuthorizationError(); await this.authorization.assertProfileAccess(actor, String(lead.profileId)); }
   private async requireLead(id: string) { const lead = await this.database.jobLead.findUnique({ where: { id } }); if (!lead) throw new NotFoundError("The requested lead was not found"); return lead; }
   private async stale(id: string, expected: number) { const lead = await this.database.jobLead.findUnique({ where: { id } }); return lead ? new StaleVersionError(expected, Number(lead.version)) : new NotFoundError("The requested lead was not found"); }
-  private async audit(actor: Actor, lead: Record<string, unknown>, action: string, newSnapshot: Record<string, unknown>) { await this.database.activityEvent.create({ data: { action, actorId: actor.id, actorNameSnapshot: actor.displayName, actorRoleSnapshot: actor.role, profileId: String(lead.profileId), leadId: String(lead.id), entityType: "lead", entityId: String(lead.id), oldSnapshot: null, newSnapshot, metadata: null, requestId: null } }); }
+  private async effectiveDuplicateLookbackMonths(database: LeadTransaction, at: Date): Promise<number> {
+    const rule = await database.performanceRuleSet.findFirst({ where: { effectiveFrom: { lte: at }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }] }, orderBy: { effectiveFrom: "desc" } });
+    const value = Number(rule?.duplicateLookbackMonths);
+    return Number.isInteger(value) && value > 0 ? value : 6;
+  }
+  private async audit(actor: Actor, lead: Record<string, unknown>, action: string, newSnapshot: Record<string, unknown>, database: LeadTransaction = this.database) { await database.activityEvent.create({ data: { action, actorId: actor.id, actorNameSnapshot: actor.displayName, actorRoleSnapshot: actor.role, profileId: String(lead.profileId), leadId: String(lead.id), entityType: "lead", entityId: String(lead.id), oldSnapshot: null, newSnapshot, metadata: null, requestId: null } }); }
   private async auditRecord(actor: Actor, action: string, entityType: string, entityId: string, profileId: string | null, leadId: string | null, newSnapshot: Record<string, unknown>) { await this.database.activityEvent.create({ data: { action, actorId: actor.id, actorNameSnapshot: actor.displayName, actorRoleSnapshot: actor.role, profileId, leadId, entityType, entityId, oldSnapshot: null, newSnapshot, metadata: null, requestId: null } }); }
   private async requireCompany(id: string) { const company = await this.database.company.findUnique({ where: { id } }); if (!company) throw new NotFoundError("The requested company was not found"); return company; }
   private async staleCompany(id: string, expected: number) { const company = await this.database.company.findUnique({ where: { id } }); return company ? new StaleVersionError(expected, Number(company.version)) : new NotFoundError("The requested company was not found"); }

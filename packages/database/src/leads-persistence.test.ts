@@ -190,7 +190,7 @@ describe("company, contact, and lead persistence", () => {
     expect(persisted.ownershipTransfers).toHaveLength(1);
   });
 
-  it("rejects active canonical duplicates only within the same profile", async () => {
+  it("persists confirmed duplicates without qualified credit only within the same profile", async () => {
     const owner = await createUser("duplicate-owner@orbit.test", "BD");
     const [firstProfile, secondProfile] = await Promise.all([
       createProfile(owner.id, "First profile"),
@@ -217,11 +217,25 @@ describe("company, contact, and lead persistence", () => {
 
     await database.jobLead.create({ data: { ...leadData, profileId: firstProfile.id } });
     await expect(
-      database.jobLead.create({ data: { ...leadData, profileId: firstProfile.id } }),
-    ).rejects.toMatchObject({ code: "P2002" });
+      database.jobLead.create({
+        data: {
+          ...leadData,
+          duplicateClassification: "CONFIRMED",
+          profileId: firstProfile.id,
+          qualifiedCredit: false,
+        },
+      }),
+    ).resolves.toMatchObject({
+      duplicateClassification: "CONFIRMED",
+      qualifiedCredit: false,
+    });
     await expect(
       database.jobLead.create({ data: { ...leadData, profileId: secondProfile.id } }),
-    ).resolves.toMatchObject({ profileId: secondProfile.id });
+    ).resolves.toMatchObject({
+      duplicateClassification: "NONE",
+      profileId: secondProfile.id,
+      qualifiedCredit: true,
+    });
     await expect(
       database.jobLead.create({
         data: {
