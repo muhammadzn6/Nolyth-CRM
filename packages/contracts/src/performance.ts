@@ -608,6 +608,7 @@ export type UpdateDuplicateReviewInput = z.infer<typeof updateDuplicateReviewInp
 export type PerformanceRecordAuditInput = z.infer<typeof performanceRecordAuditInputSchema>;
 export type PerformancePeriodQuery = z.infer<typeof performancePeriodQuerySchema>;
 export type ReassignPerformanceFollowUpInput = z.infer<typeof reassignPerformanceFollowUpInputSchema>;
+export type PerformanceFollowUpWithLead = z.infer<typeof performanceFollowUpWithLeadSchema>;
 export type PerformanceRuleMutation = z.infer<typeof performanceRuleMutationSchema>;
 export type PerformanceKpi = z.infer<typeof performanceKpiSchema>;
 export type PerformanceQualityIndicators = z.infer<typeof performanceQualityIndicatorsSchema>;

@@ -59,6 +59,7 @@ function parseResponse<T>(schema: Pick<Schema<T>, "parse">, value: unknown): T {
 const nullablePerformanceRuleSchema = performanceRuleSchema.nullable();
 const performanceRuleHistorySchema = performanceRuleSchema.array();
 const duplicateReviewQueueSchema = duplicateReviewWithLeadSchema.array();
+const reassignmentQueueSchema = performanceFollowUpWithLeadSchema.array();
 const targetScheduleListSchema = bdTargetScheduleSchema.array();
 const holidayListSchema = performanceHolidaySchema.array();
 const leaveListSchema = performanceApprovedLeaveSchema.array();
@@ -204,6 +205,12 @@ export class PerformanceController {
     return this.performance
       .getDuplicateReviewQueue(this.actor(request))
       .then((response) => parseResponse(duplicateReviewQueueSchema, response));
+  }
+
+  @Get("admin/reassignment-queue") reassignmentQueue(@Req() request: AuthenticatedRequest) {
+    return this.performance
+      .getAdminReassignmentQueue(this.actor(request))
+      .then((response) => parseResponse(reassignmentQueueSchema, response));
   }
 
   @Post("duplicate-reviews/:reviewId") review(@Param("reviewId") reviewId: string, @Body() input: unknown, @Req() request: AuthenticatedRequest) {

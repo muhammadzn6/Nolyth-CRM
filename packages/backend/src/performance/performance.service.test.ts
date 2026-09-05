@@ -108,6 +108,47 @@ describe("PerformanceService", () => {
     expect(findMany).toHaveBeenCalledWith({ orderBy: { effectiveFrom: "asc" } });
   });
 
+  it("returns only open Admin reassignment work with its lead context", async () => {
+    const queued = {
+      id: "10000000-0000-4000-8000-000000000006",
+      leadId,
+      ownerId: bd.id,
+      originalOwnerId: bd.id,
+      status: "NEEDS_REASSIGNMENT",
+      recruiterRespondedAt: new Date("2026-09-05T09:00:00.000Z"),
+      slaStartedAt: new Date("2026-09-05T09:00:00.000Z"),
+      slaPausedAt: new Date("2026-09-05T10:00:00.000Z"),
+      slaResumedAt: null,
+      slaDueAt: null,
+      completedAt: null,
+      breachedAt: null,
+      adminReassignmentSlaStartedAt: new Date("2026-09-05T10:00:00.000Z"),
+      adminReassignmentSlaDueAt: new Date("2026-09-05T12:00:00.000Z"),
+      adminReassignmentBreachedAt: null,
+      reassignedAt: null,
+      reassignedById: null,
+      auditMetadata: null,
+      version: 1,
+      createdAt: new Date("2026-09-05T09:00:00.000Z"),
+      updatedAt: new Date("2026-09-05T10:00:00.000Z"),
+      lead: { id: leadId, profileId: "10000000-0000-4000-8000-000000000005", createdById: bd.id, currentOwnerId: bd.id, companyName: "Orbit", jobTitle: "Platform Engineer", appliedDate: new Date("2026-09-01T00:00:00.000Z"), status: "RESPONSE_RECEIVED" },
+    };
+    const database: any = {
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([queued]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const authorization = { assertRole: vi.fn() };
+    const service = new PerformanceService(database as never, authorization as never);
+
+    await expect(service.getAdminReassignmentQueue(admin)).resolves.toMatchObject([{ id: queued.id, status: "NEEDS_REASSIGNMENT", lead: { id: leadId } }]);
+    expect(authorization.assertRole).toHaveBeenCalledWith(admin, ["ADMIN"]);
+    expect(database.performanceFollowUp.findMany).toHaveBeenLastCalledWith({
+      where: { status: { in: ["NEEDS_REASSIGNMENT", "ADMIN_REASSIGNMENT_OVERDUE"] } },
+      include: { lead: true },
+      orderBy: { adminReassignmentSlaDueAt: "asc" },
+    });
+  });
+
   it("aggregates team quality from raw unequal-volume counts instead of BD percentages", () => {
     const service = new PerformanceService({} as never, { assertRole: vi.fn() } as never);
     const aggregate = (service as unknown as { aggregateQuality(rows: Array<Record<string, unknown>>): Record<string, number | null> }).aggregateQuality([

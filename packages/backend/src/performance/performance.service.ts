@@ -894,6 +894,18 @@ export class PerformanceService {
     return reviews.map((review) => this.duplicateReviewWithLead(review));
   }
 
+  async getAdminReassignmentQueue(actor: Actor) {
+    if (!actor.isActive || actor.role !== "ADMIN") throw new AuthorizationError();
+    this.authorization.assertRole(actor, ["ADMIN"]);
+    await this.evaluateOverdueSlas();
+    const followUps = await this.database.performanceFollowUp.findMany?.({
+      where: { status: { in: ["NEEDS_REASSIGNMENT", "ADMIN_REASSIGNMENT_OVERDUE"] } },
+      include: { lead: true },
+      orderBy: { adminReassignmentSlaDueAt: "asc" },
+    }) ?? [];
+    return followUps.map((followUp) => this.followUpWithLead(followUp));
+  }
+
   async getAdminPerformanceDrilldown(actor: Actor, query: unknown) {
     this.authorization.assertRole(actor, ["ADMIN"]);
     await this.evaluateOverdueSlas();

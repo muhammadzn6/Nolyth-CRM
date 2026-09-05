@@ -1,5 +1,16 @@
 import { headers } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { ReactElement } from "react";
+import {
+  adminBdPerformanceResponseSchema,
+  performanceDrilldownQuerySchema,
+  performanceDrilldownResponseSchema,
+  performanceFollowUpWithLeadSchema,
+  reassignPerformanceFollowUpInputSchema,
+  successResponseSchema,
+} from "@orbit/contracts";
+import { loadWebEnv } from "@orbit/config";
 
 import { CloserDashboard } from "../components/dashboard/closer-dashboard";
 import { DashboardOverview } from "../components/dashboard/dashboard-overview";
@@ -12,12 +23,80 @@ import {
   getDashboard,
   listActivity,
   listLeads,
+  listUsers,
   listTasks,
 } from "../lib/api-client";
+import type { PerformancePeriod } from "../components/performance/bd-team-kpis";
 
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
+type ResponseSchema<T> = { safeParse(value: unknown): { success: true; data: T } | { success: false } };
+type PageSearchParams = Promise<{ performancePeriod?: string | string[]; performanceMetric?: string | string[]; performanceBdId?: string | string[] }>;
+type HomePageProps = { searchParams: PageSearchParams };
+
+function selectedPeriod(value: string | string[] | undefined): PerformancePeriod {
+  return value === "day" || value === "7d" || value === "30d" ? value : "30d";
+}
+
+function performanceRange(period: PerformancePeriod) {
+  const to = new Date();
+  if (period === "day") {
+    const from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
+    return { from: from.toISOString(), to: to.toISOString() };
+  }
+  const days = period === "7d" ? 7 : 30;
+  return { from: new Date(to.getTime() - days * 24 * 60 * 60 * 1000).toISOString(), to: to.toISOString() };
+}
+
+function apiUrl(path: string): string {
+  return `${loadWebEnv({ NEXT_PUBLIC_APP_BASE_URL: process.env.NEXT_PUBLIC_APP_BASE_URL, NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL }).apiBaseUrl}${path}`;
+}
+
+async function readPerformance<T>(path: string, schema: ResponseSchema<T>, cookie?: string): Promise<T> {
+  const response = await fetch(apiUrl(path), { cache: "no-store", headers: cookie ? { cookie } : undefined });
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new ApiClientError("Performance data is temporarily unavailable.", "PERFORMANCE_UNAVAILABLE", undefined, response.status);
+  const envelope = successResponseSchema.safeParse(body);
+  if (!envelope.success) throw new ApiClientError("The API returned invalid performance data.", "INVALID_RESPONSE", undefined, response.status);
+  const parsed = schema.safeParse(envelope.data.data);
+  if (!parsed.success) throw new ApiClientError("The API returned invalid performance data.", "INVALID_RESPONSE", undefined, response.status);
+  return parsed.data;
+}
+
+async function submitPerformanceReassignment(formData: FormData) {
+  "use server";
+  const parsed = reassignPerformanceFollowUpInputSchema.safeParse({
+    newOwnerId: formData.get("newOwnerId"),
+    expectedVersion: Number(formData.get("expectedVersion")),
+  });
+  const followUpId = String(formData.get("followUpId") ?? "");
+  if (!parsed.success || !followUpId) throw new ApiClientError("Choose a valid BD owner.", "VALIDATION_ERROR");
+  const cookie = (await headers()).get("cookie") ?? undefined;
+  const response = await fetch(apiUrl(`/performance/follow-ups/${followUpId}/reassign`), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: loadWebEnv({ NEXT_PUBLIC_APP_BASE_URL: process.env.NEXT_PUBLIC_APP_BASE_URL, NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL }).appBaseUrl,
+      ...(cookie ? { cookie } : {}),
+    },
+    body: JSON.stringify(parsed.data),
+  });
+  const body: unknown = await response.json().catch(() => null);
+  const envelope = successResponseSchema.safeParse(body);
+  if (!response.ok || !envelope.success || !performanceFollowUpWithLeadSchema.safeParse(envelope.data.data).success) {
+    throw new ApiClientError("Orbit could not reassign this follow-up.", "PERFORMANCE_REASSIGNMENT_FAILED", undefined, response.status);
+  }
+  revalidatePath("/");
+}
+
+export default function HomePage(): Promise<ReactElement>;
+export default function HomePage(props: HomePageProps): Promise<ReactElement>;
+export default async function HomePage(props?: HomePageProps) {
+  const query = await props?.searchParams ?? {};
+  const performancePeriod = selectedPeriod(Array.isArray(query.performancePeriod) ? query.performancePeriod[0] : query.performancePeriod);
+  const range = performanceRange(performancePeriod);
+  const metric = Array.isArray(query.performanceMetric) ? query.performanceMetric[0] : query.performanceMetric;
+  const bdId = Array.isArray(query.performanceBdId) ? query.performanceBdId[0] : query.performanceBdId;
   const cookie = (await headers()).get("cookie") ?? undefined;
   const actor = await getCurrentActor(cookie);
   if (!actor) redirect("/login");
@@ -41,10 +120,31 @@ export default async function HomePage() {
     try { calendar = await getCalendar({}, cookie); } catch { calendar = undefined; }
     let applications;
     let openTasks;
-    if (actor.role === "BD") {
-      try { [applications, openTasks] = await Promise.all([listLeads({ limit: 100 }, cookie), listTasks({ status: "OPEN" }, cookie)]); } catch { applications = undefined; openTasks = undefined; }
+    let users;
+    let profiles;
+    if (actor.role === "ADMIN" || actor.role === "BD") {
+      try { [applications, openTasks, users, profiles] = await Promise.all([listLeads({ limit: 100 }, cookie), actor.role === "BD" ? listTasks({ status: "OPEN" }, cookie) : Promise.resolve(undefined), listUsers(cookie), actor.role === "BD" ? listProfiles({}, cookie) : Promise.resolve(undefined)]); } catch { applications = undefined; openTasks = undefined; users = undefined; profiles = undefined; }
     }
-    return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} applications={applications?.items} openTasks={openTasks} /></AppShell>;
+    let adminPerformance;
+    let performanceReassignments;
+    let performanceDrilldown;
+    if (actor.role === "ADMIN") {
+      try {
+        [adminPerformance, performanceReassignments] = await Promise.all([
+          readPerformance(`/performance/admin?${new URLSearchParams(range)}`, adminBdPerformanceResponseSchema, cookie),
+          readPerformance("/performance/admin/reassignment-queue", performanceFollowUpWithLeadSchema.array(), cookie),
+        ]);
+        const drilldown = performanceDrilldownQuerySchema.safeParse({ ...range, metric, ...(bdId ? { bdId } : {}) });
+        if (drilldown.success) {
+          performanceDrilldown = await readPerformance(`/performance/admin/drilldown?${new URLSearchParams(Object.entries(drilldown.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
+        }
+      } catch {
+        adminPerformance = undefined;
+        performanceReassignments = undefined;
+        performanceDrilldown = undefined;
+      }
+    }
+    return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} applications={applications?.items} openTasks={openTasks} calendarLeads={applications?.items} calendarClosers={users?.filter((user) => user.role === "CLOSER" && user.isActive)} profiles={profiles?.items} adminPerformance={adminPerformance} performancePeriod={performancePeriod} performanceMetric={metric} performanceDrilldown={performanceDrilldown} performanceReassignments={performanceReassignments} performanceOwners={users?.filter((user) => user.role === "BD" && user.isActive)} onPerformanceReassign={submitPerformanceReassignment} /></AppShell>;
   } catch (reason) {
     return <AppShell actor={actor}><DashboardOverview actor={actor} error={reason instanceof ApiClientError ? reason.message : "Live dashboard data is temporarily unavailable."} /></AppShell>;
   }
