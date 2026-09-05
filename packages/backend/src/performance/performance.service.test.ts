@@ -108,6 +108,30 @@ describe("PerformanceService", () => {
     expect(findMany).toHaveBeenCalledWith({ orderBy: { effectiveFrom: "asc" } });
   });
 
+  it("loads the latest open future rule for further scheduling after a refresh", async () => {
+    const active = {
+      id: "10000000-0000-4000-8000-000000000093",
+      effectiveFrom: new Date("2026-08-01T00:00:00.000Z"),
+      effectiveTo: new Date("2026-09-10T00:00:00.000Z"),
+      createdById: admin.id,
+      version: 2,
+    };
+    const scheduled = {
+      ...active,
+      id: "10000000-0000-4000-8000-000000000094",
+      effectiveFrom: new Date("2026-09-10T00:00:00.000Z"),
+      effectiveTo: null,
+      version: 1,
+    };
+    const findFirst = vi.fn().mockImplementation(({ where }: { where: { effectiveTo?: null } }) =>
+      Promise.resolve(where.effectiveTo === null ? scheduled : active),
+    );
+    const service = new PerformanceService({ performanceRuleSet: { findFirst } } as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-05T00:00:00.000Z"));
+
+    await expect(service.getPerformanceRules(admin)).resolves.toMatchObject({ id: scheduled.id, effectiveFrom: "2026-09-10T00:00:00.000Z" });
+    expect(findFirst).toHaveBeenCalledWith({ where: { effectiveTo: null }, orderBy: { effectiveFrom: "desc" } });
+  });
+
   it("returns only open Admin reassignment work with its lead context", async () => {
     const queued = {
       id: "10000000-0000-4000-8000-000000000006",

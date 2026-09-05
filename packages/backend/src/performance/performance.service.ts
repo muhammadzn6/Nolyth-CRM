@@ -295,7 +295,7 @@ export class PerformanceService {
   async getPerformanceRules(actor: Actor) {
     this.authorization.assertRole(actor, ["ADMIN"]);
     const rule = await this.database.performanceRuleSet.findFirst?.({
-      where: { effectiveFrom: { lte: this.now() }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: this.now() } }] },
+      where: { effectiveTo: null },
       orderBy: { effectiveFrom: "desc" },
     });
     return rule ? this.ruleSummary(rule) : null;

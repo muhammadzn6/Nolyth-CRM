@@ -120,11 +120,13 @@ describe("Admin BD performance components", () => {
     expect(html).toContain("Target attainment");
     expect(html).toContain("Recruiter responses");
     expect(html).toContain("Interviews scheduled");
+    expect(html).toContain("Interviews needing scheduling");
     expect(html).toContain("72");
     expect(html).toContain("102.9%");
     expect(html).toContain("performanceMetric=QUALIFIED_APPLICATIONS");
     expect(html).toContain("performanceMetric=RECRUITER_RESPONSES");
     expect(html).toContain("performanceMetric=INTERVIEWS_SCHEDULED");
+    expect(html).toContain("performanceMetric=INTERVIEWS_NEEDING_SCHEDULING");
   });
 
   it("renders official unique ranks, server-owned component values, coverage, warning, and tie-break details", () => {
@@ -156,6 +158,8 @@ describe("Admin BD performance components", () => {
 
     expect(html).toContain("Record health");
     expect(html).toContain("Audit pass");
+    expect(html).toContain("Correction rate");
+    expect(html).toContain("Confirmed duplicate rate");
     expect(html).toContain("Duplicate rate");
     expect(html).toContain("Pending override");
     expect(html).toContain("Rejected override");
@@ -173,6 +177,15 @@ describe("Admin BD performance components", () => {
     expect(html).toContain(`/leads/${leadId}`);
     expect(html).toContain("Reassign owner");
     expect(html).toContain("Mina Shah");
+  });
+
+  it("keeps a queue outage scoped to the reassignment panel", () => {
+    const html = renderToStaticMarkup(
+      <ReassignmentQueue error="Reassignment queue is temporarily unavailable. Refresh to try again." followUps={[]} owners={owners} onReassign={async () => undefined} />,
+    );
+
+    expect(html).toContain("Reassignment queue");
+    expect(html).toContain("Reassignment queue is temporarily unavailable. Refresh to try again.");
   });
 
   it("renders the exact Admin-authorized drill-down records", () => {

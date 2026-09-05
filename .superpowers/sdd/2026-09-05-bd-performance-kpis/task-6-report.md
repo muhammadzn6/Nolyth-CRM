@@ -35,3 +35,16 @@
 - The Task 5 shared typed performance reader is not yet present. To honor the Task 6 file boundary, the allowed server page performs a minimal schema-validated read of the existing Admin endpoints. Task 5 can later consolidate this route-local read into the shared API client.
 - Existing uncommitted calendar, layout, BD-entry, and dashboard edits were preserved and are outside the Task 6 commit.
 - Review the Admin role boundary, direct record drill-down links, server-owned values, responsive composition, and queue endpoint status filter. The generated review package contains the exact change range.
+
+## Review correction
+
+- Quality guardrails now render Correction Rate and Confirmed Duplicate Rate separately alongside the existing five informational indicators.
+- Scheduled interviews and interviews needing scheduling are separate KPI drill-downs, each linked to its exact server-authorized metric.
+- The core Admin performance response, drill-down, and reassignment queue now have independent failure boundaries. A queue outage leaves the KPI, leaderboard, quality, baseline, and score surfaces intact and shows a recoverable queue-only message.
+- The reassignment queue controller regression is now a standalone test and verifies both `NEEDS_REASSIGNMENT` and `ADMIN_REASSIGNMENT_OVERDUE` records.
+
+### Review correction verification
+
+- Focused web performance tests: 20 passed.
+- Backend performance service tests: 43 passed.
+- API performance controller tests: 12 passed.

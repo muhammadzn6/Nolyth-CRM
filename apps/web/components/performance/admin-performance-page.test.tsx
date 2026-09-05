@@ -14,7 +14,7 @@ vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ cookie
 vi.mock("next/navigation", () => ({ redirect: vi.fn(), revalidatePath: vi.fn() }));
 vi.mock("@orbit/config", () => ({ loadWebEnv: () => ({ appBaseUrl: "http://localhost:3100", apiBaseUrl: "http://localhost:3101/api/v1" }) }));
 vi.mock("../../components/layout/app-shell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }));
-vi.mock("../../components/dashboard/dashboard-overview", () => ({ DashboardOverview: ({ adminPerformance, performancePeriod, performanceReassignments = [] }: { adminPerformance?: AdminBdPerformanceResponse; performancePeriod?: string; performanceReassignments?: unknown[] }) => <p>{adminPerformance ? `admin-performance-${performancePeriod}-${performanceReassignments.length}` : "no-admin-performance"}</p> }));
+vi.mock("../../components/dashboard/dashboard-overview", () => ({ DashboardOverview: ({ adminPerformance, performancePeriod, performanceReassignments = [], performanceReassignmentError }: { adminPerformance?: AdminBdPerformanceResponse; performancePeriod?: string; performanceReassignments?: unknown[]; performanceReassignmentError?: string }) => <p>{adminPerformance ? `admin-performance-${performancePeriod}-${performanceReassignments.length}-${performanceReassignmentError ? "queue-error" : "queue-ready"}` : "no-admin-performance"}</p> }));
 vi.mock("../../components/dashboard/closer-dashboard", () => ({ CloserDashboard: () => <p>closer-dashboard</p> }));
 vi.mock("../../lib/api-client", () => ({
   ApiClientError: class ApiClientError extends Error {},
@@ -81,10 +81,21 @@ describe("Admin performance page data", () => {
   it("loads the Admin-authorized response for the selected period and passes it to the dashboard", async () => {
     const html = renderToStaticMarkup(await HomePage({ searchParams: Promise.resolve({ performancePeriod: "7d" }) }));
 
-    expect(html).toContain("admin-performance-7d-1");
+    expect(html).toContain("admin-performance-7d-1-queue-ready");
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/performance/admin?"), expect.objectContaining({ cache: "no-store" }));
     expect(fetchMock.mock.calls[0][0]).toContain("from=");
     expect(fetchMock.mock.calls[0][0]).toContain("to=");
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/performance/admin/reassignment-queue"))).toBe(true);
+  });
+
+  it("keeps Admin performance available when the reassignment queue cannot be read", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("reassignment-queue")) throw new Error("Queue unavailable");
+      return { ok: true, json: async () => ({ success: true, data: performance, meta: { requestId: "request" } }) };
+    });
+
+    const html = renderToStaticMarkup(await HomePage({ searchParams: Promise.resolve({ performancePeriod: "30d" }) }));
+
+    expect(html).toContain("admin-performance-30d-0-queue-error");
   });
 });

@@ -199,6 +199,8 @@ describe("PerformanceController", () => {
       request(),
     )).resolves.toMatchObject({ status: "APPROVED", reviewerId: admin.id });
     expect(service.reviewDuplicateOverride).toHaveBeenCalledWith(admin, "10000000-0000-4000-8000-000000000002", expect.objectContaining({ status: "APPROVED" }));
+  });
+
   it("returns the Admin reassignment queue through the shared follow-up contract", async () => {
     const queuedFollowUp = {
       ...followUp,
@@ -208,12 +210,15 @@ describe("PerformanceController", () => {
       adminReassignmentSlaStartedAt: date,
       adminReassignmentSlaDueAt: "2026-09-05T02:00:00.000Z",
     };
-    const service = { getAdminReassignmentQueue: vi.fn().mockResolvedValue([queuedFollowUp]) };
+    const overdueFollowUp = { ...queuedFollowUp, id: "10000000-0000-4000-8000-000000000007", status: "ADMIN_REASSIGNMENT_OVERDUE" as const };
+    const service = { getAdminReassignmentQueue: vi.fn().mockResolvedValue([queuedFollowUp, overdueFollowUp]) };
     const controller = new PerformanceController(service as unknown as PerformanceService);
 
-    await expect(controller.reassignmentQueue(request())).resolves.toMatchObject([{ id: followUp.id, status: "NEEDS_REASSIGNMENT", lead: { id: lead.id } }]);
+    await expect(controller.reassignmentQueue(request())).resolves.toMatchObject([
+      { id: followUp.id, status: "NEEDS_REASSIGNMENT", lead: { id: lead.id } },
+      { id: overdueFollowUp.id, status: "ADMIN_REASSIGNMENT_OVERDUE", lead: { id: lead.id } },
+    ]);
     expect(service.getAdminReassignmentQueue).toHaveBeenCalledWith(admin);
-  });
   });
 
   it("returns immutable performance rule history through the shared rule contract", async () => {

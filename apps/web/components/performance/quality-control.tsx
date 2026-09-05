@@ -8,6 +8,8 @@ export function QualityControl({ quality }: { quality: PerformanceQualityIndicat
   const indicators = [
     ["Record health", quality.recordHealthRate],
     ["Audit pass", quality.adminAuditPassRate],
+    ["Correction rate", quality.correctionRate],
+    ["Confirmed duplicate rate", quality.confirmedDuplicateRate],
     ["Duplicate rate", quality.duplicateRate],
     ["Pending override", quality.pendingOverrideRate],
     ["Rejected override", quality.rejectedOverrideRate],

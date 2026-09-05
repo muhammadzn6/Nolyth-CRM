@@ -39,8 +39,14 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
     {
       label: "Interviews scheduled",
       value: performance.interviewsScheduled.toLocaleString(),
-      detail: `${performance.interviewsNeedingScheduling.toLocaleString()} need scheduling`,
+      detail: "Scheduled interviews",
       metric: "INTERVIEWS_SCHEDULED",
+    },
+    {
+      label: "Interviews needing scheduling",
+      value: performance.interviewsNeedingScheduling.toLocaleString(),
+      detail: "Recruiter responses awaiting a calendar entry",
+      metric: "INTERVIEWS_NEEDING_SCHEDULING",
     },
   ] as const;
 
@@ -54,7 +60,7 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
         {(Object.keys(periodLabels) as PerformancePeriod[]).map((option) => <a aria-current={option === period ? "page" : undefined} className={`rounded-full px-3 py-1.5 font-semibold ${option === period ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`} href={`/?performancePeriod=${option}`} key={option}>{periodLabels[option]}</a>)}
       </nav>
     </header>
-    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {cards.map((card) => <a className="rounded-[22px] border border-border bg-card p-4 shadow-sm transition hover:border-primary/35 hover:bg-primary-soft" href={performanceHref(period, card.metric)} key={card.label}>
         <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
         <p className="mt-2 text-3xl font-bold tracking-[-0.05em] text-foreground">{card.value}</p>

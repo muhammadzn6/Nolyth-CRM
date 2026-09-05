@@ -121,30 +121,37 @@ export default async function HomePage(props?: HomePageProps) {
     let applications;
     let openTasks;
     let users;
-    let profiles;
     if (actor.role === "ADMIN" || actor.role === "BD") {
-      try { [applications, openTasks, users, profiles] = await Promise.all([listLeads({ limit: 100 }, cookie), actor.role === "BD" ? listTasks({ status: "OPEN" }, cookie) : Promise.resolve(undefined), listUsers(cookie), actor.role === "BD" ? listProfiles({}, cookie) : Promise.resolve(undefined)]); } catch { applications = undefined; openTasks = undefined; users = undefined; profiles = undefined; }
+      try { [applications, openTasks, users] = await Promise.all([listLeads({ limit: 100 }, cookie), actor.role === "BD" ? listTasks({ status: "OPEN" }, cookie) : Promise.resolve(undefined), listUsers(cookie)]); } catch { applications = undefined; openTasks = undefined; users = undefined; }
     }
     let adminPerformance;
     let performanceReassignments;
     let performanceDrilldown;
+    let performanceReassignmentError: string | undefined;
     if (actor.role === "ADMIN") {
       try {
-        [adminPerformance, performanceReassignments] = await Promise.all([
-          readPerformance(`/performance/admin?${new URLSearchParams(range)}`, adminBdPerformanceResponseSchema, cookie),
-          readPerformance("/performance/admin/reassignment-queue", performanceFollowUpWithLeadSchema.array(), cookie),
-        ]);
+        adminPerformance = await readPerformance(`/performance/admin?${new URLSearchParams(range)}`, adminBdPerformanceResponseSchema, cookie);
         const drilldown = performanceDrilldownQuerySchema.safeParse({ ...range, metric, ...(bdId ? { bdId } : {}) });
         if (drilldown.success) {
-          performanceDrilldown = await readPerformance(`/performance/admin/drilldown?${new URLSearchParams(Object.entries(drilldown.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
+          try {
+            performanceDrilldown = await readPerformance(`/performance/admin/drilldown?${new URLSearchParams(Object.entries(drilldown.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
+          } catch {
+            performanceDrilldown = undefined;
+          }
         }
       } catch {
         adminPerformance = undefined;
-        performanceReassignments = undefined;
-        performanceDrilldown = undefined;
+      }
+      if (adminPerformance) {
+        try {
+          performanceReassignments = await readPerformance("/performance/admin/reassignment-queue", performanceFollowUpWithLeadSchema.array(), cookie);
+        } catch {
+          performanceReassignments = [];
+          performanceReassignmentError = "Reassignment queue is temporarily unavailable. Refresh to try again.";
+        }
       }
     }
-    return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} applications={applications?.items} openTasks={openTasks} calendarLeads={applications?.items} calendarClosers={users?.filter((user) => user.role === "CLOSER" && user.isActive)} profiles={profiles?.items} adminPerformance={adminPerformance} performancePeriod={performancePeriod} performanceMetric={metric} performanceDrilldown={performanceDrilldown} performanceReassignments={performanceReassignments} performanceOwners={users?.filter((user) => user.role === "BD" && user.isActive)} onPerformanceReassign={submitPerformanceReassignment} /></AppShell>;
+    return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} applications={applications?.items} openTasks={openTasks} adminPerformance={adminPerformance} performancePeriod={performancePeriod} performanceMetric={metric} performanceDrilldown={performanceDrilldown} performanceReassignments={performanceReassignments} performanceReassignmentError={performanceReassignmentError} performanceOwners={users?.filter((user) => user.role === "BD" && user.isActive)} onPerformanceReassign={submitPerformanceReassignment} /></AppShell>;
   } catch (reason) {
     return <AppShell actor={actor}><DashboardOverview actor={actor} error={reason instanceof ApiClientError ? reason.message : "Live dashboard data is temporarily unavailable."} /></AppShell>;
   }

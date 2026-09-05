@@ -347,6 +347,37 @@ describe("PerformanceRulesForm", () => {
     }));
   });
 
+  it("uses the scheduled future rule after reload when scheduling its replacement", async () => {
+    const scheduled = {
+      ...rule,
+      id: "10000000-0000-4000-8000-000000000010",
+      effectiveFrom: "2026-09-15T00:00:00.000Z",
+      version: 1,
+      defaultDailyTarget: 75,
+    };
+    getPerformanceRulesMock.mockResolvedValue(scheduled);
+    getPerformanceRuleHistoryMock.mockResolvedValue([{ ...rule, effectiveTo: scheduled.effectiveFrom }, scheduled]);
+    updatePerformanceRulesMock.mockResolvedValue({ ...scheduled, effectiveFrom: "2026-09-20T00:00:00.000Z" });
+
+    await render();
+    expect(container.querySelector<HTMLInputElement>("#defaultDailyTarget")?.value).toBe("75");
+
+    await act(async () => {
+      change(container.querySelector<HTMLInputElement>("#rule-effective-from")!, "2026-09-20T00:00");
+      container.querySelector<HTMLButtonElement>("[data-action='preview-rules']")?.click();
+    });
+    await act(async () => {
+      container.querySelector<HTMLInputElement>("#confirm-rule-impact")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='save-rules']")?.click();
+    });
+
+    expect(updatePerformanceRulesMock).toHaveBeenCalledWith(expect.objectContaining({
+      id: scheduled.id,
+      expectedVersion: scheduled.version,
+      effectiveFrom: "2026-09-20T00:00:00.000Z",
+    }));
+  });
+
   it("edits BD targets and configures holidays and reduced leave", async () => {
     await render();
 
