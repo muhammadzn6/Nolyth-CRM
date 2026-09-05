@@ -10,6 +10,7 @@ export * from "./availability/availability.service";
 export * from "./offers/offers.service";
 export * from "./notifications/notifications.service";
 export * from "./analytics/analytics.service";
+export * from "./performance/performance.service";
 export * from "./closer-dashboard/closer-dashboard.service";
 export * from "./calendar/google-calendar.service";
 export * from "./identity/authorization.service";

@@ -228,6 +228,47 @@ export const updateDuplicateReviewInputSchema = z.strictObject({
   expectedVersion: z.number().int().positive(),
 });
 
+/** Role-scoped date range for KPI reads. `bdId` is accepted only by Admin endpoints. */
+export const performancePeriodQuerySchema = z
+  .strictObject({
+    from: dateTimeSchema,
+    to: dateTimeSchema,
+    bdId: uuidSchema.optional(),
+  })
+  .refine(({ from, to }) => from < to, { message: "Period must end after it starts", path: ["to"] });
+
+export const reassignPerformanceFollowUpInputSchema = z.strictObject({
+  newOwnerId: uuidSchema,
+  expectedVersion: z.number().int().positive(),
+});
+
+export const performanceRuleMutationSchema = z
+  .strictObject({
+    id: uuidSchema,
+    ...performanceRuleInputShape,
+    expectedVersion: z.number().int().positive(),
+  })
+  .refine(
+    ({ applicationWeightPercent, followUpWeightPercent, outcomeWeightPercent }) =>
+      applicationWeightPercent + followUpWeightPercent + outcomeWeightPercent === 100,
+    { message: "Performance score weights must total 100 percent" },
+  )
+  .refine(
+    ({ workdayStartHour, workdayEndHour }) => workdayStartHour < workdayEndHour,
+    { message: "Workday must end after it starts", path: ["workdayEndHour"] },
+  )
+  .refine(
+    ({ positiveReplyPoints, screeningPoints, interviewPoints, offerPoints }) =>
+      positiveReplyPoints <= screeningPoints
+      && screeningPoints <= interviewPoints
+      && interviewPoints <= offerPoints,
+    { message: "Outcome points must be positive and non-decreasing", path: ["offerPoints"] },
+  )
+  .refine(
+    ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
+    { message: "Effective period must end after it starts", path: ["effectiveTo"] },
+  );
+
 export const performanceKpiSchema = z.strictObject({
   qualifiedApplications: nonnegativeIntegerSchema,
   targetApplications: nonnegativeIntegerSchema,
@@ -298,6 +339,9 @@ export type PerformanceApprovedLeave = z.infer<typeof performanceApprovedLeaveSc
 export type UpdateBdTargetScheduleInput = z.infer<typeof updateBdTargetScheduleInputSchema>;
 export type DuplicateReview = z.infer<typeof duplicateReviewSchema>;
 export type UpdateDuplicateReviewInput = z.infer<typeof updateDuplicateReviewInputSchema>;
+export type PerformancePeriodQuery = z.infer<typeof performancePeriodQuerySchema>;
+export type ReassignPerformanceFollowUpInput = z.infer<typeof reassignPerformanceFollowUpInputSchema>;
+export type PerformanceRuleMutation = z.infer<typeof performanceRuleMutationSchema>;
 export type PerformanceKpi = z.infer<typeof performanceKpiSchema>;
 export type PerformanceLeaderboardRow = z.infer<typeof performanceLeaderboardRowSchema>;
 export type PerformanceDrilldownQuery = z.infer<typeof performanceDrilldownQuerySchema>;

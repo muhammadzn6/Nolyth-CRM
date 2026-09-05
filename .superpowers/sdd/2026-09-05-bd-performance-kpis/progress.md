@@ -43,6 +43,13 @@
 - Verification: focused intake/duplicate tests, PostgreSQL persistence tests, affected typechecks, Prisma validation, and diff checks passed.
 - Note: configured local `orbit` database has pre-existing migration-history drift; disposable migration verification passed.
 
+### Task 3 — complete
+
+- Commits: `fed89cf`, `da23dad`, `6777a90`, `d64e564`
+- Final review: approved; no remaining findings.
+- Verification: 49 performance/contract tests, 6 disposable PostgreSQL persistence tests, affected typechecks, Prisma validation, and diff checks passed.
+- Note: configured local `orbit` database has pre-existing migration-history drift; disposable migration verification passed.
+
 - Task 1: complete — `af8c4fc`, `9175b77`, and `2232b0a`; effective-date invariants, persisted defaults, concurrency versions, response contracts, and null audit metadata are covered by contract/database checks. Scoped fix review found no remaining Task 1 issues.
 
 ### Task 2 — complete
@@ -59,3 +66,9 @@
 - Verification: 41 performance/contract tests, 5 disposable PostgreSQL persistence tests, contracts/backend/database typechecks, Prisma validation, and diff check passed.
 - Ruling: the new persisted default is `UTC`, 09:00–17:00 to preserve the previous UTC calculation behavior while making the calendar explicit and configurable. Cost if wrong: new deployments keep UTC due dates until Admin configures the operational timezone.
 - Ruling: a persisted reduced leave window is constrained to a valid local-hour pair in contracts/database, then constrained to the effective rule's workday by the business-calendar engine. This keeps historical persistence rule-agnostic while ensuring Task 4 cannot use capacity outside the active calendar.
+
+### Task 4 — complete
+
+- Delivered role-safe Admin/BD performance reads, rules/review/reassignment APIs, authoritative pure-engine calculations, activity events, in-app notifications, and response-to-follow-up integration.
+- Verification: 17 focused service/controller/contract tests, backend/API/contracts typechecks, local Prisma validation, and diff check passed.
+- Note: local `orbit` migration-history drift is pre-existing; Task 4 adds no migration.

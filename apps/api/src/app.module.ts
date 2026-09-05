@@ -15,6 +15,7 @@ import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { CloserDashboardModule } from "./modules/closer-dashboard/closer-dashboard.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { ImportsModule } from "./modules/imports/imports.module";
+import { PerformanceModule } from "./modules/performance/performance.module";
 
-@Module({ imports: [HealthModule, IdentityModule, UsersModule, CandidatesModule, LeadsModule, TasksModule, InterviewsModule, DocumentsModule, AvailabilityModule, OffersModule, NotificationsModule, AnalyticsModule, CloserDashboardModule, CalendarModule, ImportsModule] })
+@Module({ imports: [HealthModule, IdentityModule, UsersModule, CandidatesModule, LeadsModule, TasksModule, InterviewsModule, DocumentsModule, AvailabilityModule, OffersModule, NotificationsModule, AnalyticsModule, CloserDashboardModule, CalendarModule, ImportsModule, PerformanceModule] })
 export class AppModule {}

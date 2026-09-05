@@ -306,4 +306,21 @@ describe("performance contracts", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("validates role-safe performance read and mutation requests", () => {
+    expect(schema("performancePeriodQuerySchema").parse({
+      from: "2026-08-06T00:00:00.000Z",
+      to: "2026-09-05T23:59:59.999Z",
+    })).toEqual({ from: "2026-08-06T00:00:00.000Z", to: "2026-09-05T23:59:59.999Z", bdId: undefined });
+    expect(schema("reassignPerformanceFollowUpInputSchema").parse({
+      newOwnerId: bdId,
+      expectedVersion: 2,
+    })).toEqual({ newOwnerId: bdId, expectedVersion: 2 });
+    expect(schema("performanceRuleMutationSchema").safeParse({
+      id: reviewId,
+      expectedVersion: 1,
+      effectiveFrom: "2026-09-08T00:00:00.000Z",
+      unexpected: true,
+    }).success).toBe(false);
+  });
 });
