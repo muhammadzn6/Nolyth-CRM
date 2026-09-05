@@ -100,6 +100,7 @@ function intakeService(
     },
     leadContact: { create: vi.fn().mockResolvedValue(undefined) },
     duplicateReview: { create: vi.fn().mockResolvedValue({ id: "80000000-0000-4000-8000-000000000001" }) },
+    performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
     activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
     performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(duplicateLookbackMonths ? { duplicateLookbackMonths } : null) },
   };

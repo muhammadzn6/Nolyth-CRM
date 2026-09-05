@@ -213,6 +213,7 @@ export const duplicateReviewSchema = z.strictObject({
   reviewReason: textSchema.nullable(),
   reviewedAt: dateTimeSchema.nullable(),
   expiresAt: dateTimeSchema.nullable(),
+  overdueAt: dateTimeSchema.nullable(),
   provisionalCreditGranted: z.boolean(),
   provisionalCreditResolvedAt: dateTimeSchema.nullable(),
   createdById: uuidSchema,
@@ -296,6 +297,62 @@ export const performanceLeaderboardRowSchema = z.strictObject({
   warnings: z.array(z.enum(["LOW_APPLICATION_SAMPLE", "LOW_OUTCOME_SAMPLE", "ADMIN_OVERRIDE_PROVISIONAL"])).default([]),
 });
 
+/** The only team-performance information a BD may see for another BD. */
+export const bdPeerSummarySchema = z.strictObject({
+  bdId: uuidSchema,
+  bdName: textSchema,
+  rank: z.number().int().positive().nullable(),
+  qualifiedApplications: nonnegativeIntegerSchema,
+  recordHealthRate: percentageSchema.nullable(),
+  adminAuditPassRate: percentageSchema.nullable(),
+  duplicateRate: percentageSchema.nullable(),
+});
+
+export const performanceRuleImpactSchema = z.strictObject({
+  bdId: uuidSchema,
+  currentTargetApplications: nonnegativeIntegerSchema,
+  proposedTargetApplications: nonnegativeIntegerSchema,
+  targetDelta: z.number().int(),
+});
+
+const performanceRuleProjectionConfigurationSchema = z.strictObject({
+  defaultDailyTarget: z.number().int().positive(),
+  workingDays: workingDaysSchema,
+  businessCalendarTimeZone: timeZoneSchema,
+  workdayStartHour: z.number().int().min(0).max(23),
+  workdayEndHour: z.number().int().min(1).max(24),
+  followUpSlaBusinessHours: z.number().int().positive(),
+  adminReassignmentSlaBusinessHours: z.number().int().positive(),
+  maturityWindowDays: z.number().int().positive(),
+  duplicateLookbackMonths: z.number().int().positive(),
+  applicationWeightPercent: percentageSchema,
+  followUpWeightPercent: percentageSchema,
+  outcomeWeightPercent: percentageSchema,
+  positiveReplyPoints: z.number().int().positive(),
+  screeningPoints: z.number().int().positive(),
+  interviewPoints: z.number().int().positive(),
+  offerPoints: z.number().int().positive(),
+  slowdownThresholdPercent: z.number().positive(),
+  slowdownMultiplierPercent: percentageSchema,
+});
+
+export const performanceRulePreviewSchema = z.strictObject({
+  effectiveFrom: dateTimeSchema,
+  effectiveTo: dateTimeSchema.nullable(),
+  affectedFrom: dateTimeSchema,
+  affectedTo: dateTimeSchema,
+  projection: z.strictObject({
+    kind: z.literal("TARGET_AND_CONFIGURATION"),
+    exactFutureScoresAvailable: z.literal(false),
+    unavailableExactScoreDimensions: z.array(z.enum(["QUALIFIED_APPLICATIONS", "FOLLOW_UP_COMPLETION", "RECRUITER_OUTCOMES", "BALANCED_SCORE"])),
+  }),
+  configuration: z.strictObject({
+    current: performanceRuleProjectionConfigurationSchema,
+    proposed: performanceRuleProjectionConfigurationSchema,
+  }),
+  impacts: z.array(performanceRuleImpactSchema),
+});
+
 export const performanceDrilldownQuerySchema = z
   .strictObject({
     from: dateTimeSchema,
@@ -329,7 +386,7 @@ export const bdPerformanceResponseSchema = z.strictObject({
   nextTargetChangeEffectiveAt: dateTimeSchema.nullable(),
   performance: performanceKpiSchema,
   rank: z.number().int().positive().nullable(),
-  peerLeaderboard: z.array(performanceLeaderboardRowSchema),
+  peerLeaderboard: z.array(bdPeerSummarySchema),
 });
 
 export type PerformanceRuleSet = z.infer<typeof performanceRuleSchema>;
@@ -344,6 +401,8 @@ export type ReassignPerformanceFollowUpInput = z.infer<typeof reassignPerformanc
 export type PerformanceRuleMutation = z.infer<typeof performanceRuleMutationSchema>;
 export type PerformanceKpi = z.infer<typeof performanceKpiSchema>;
 export type PerformanceLeaderboardRow = z.infer<typeof performanceLeaderboardRowSchema>;
+export type BdPeerSummary = z.infer<typeof bdPeerSummarySchema>;
+export type PerformanceRulePreview = z.infer<typeof performanceRulePreviewSchema>;
 export type PerformanceDrilldownQuery = z.infer<typeof performanceDrilldownQuerySchema>;
 export type AdminBdPerformanceResponse = z.infer<typeof adminBdPerformanceResponseSchema>;
 export type BdPerformanceResponse = z.infer<typeof bdPerformanceResponseSchema>;

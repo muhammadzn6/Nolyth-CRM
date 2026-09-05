@@ -95,6 +95,7 @@ describe("performance contracts", () => {
         reviewReason: null,
         reviewedAt: null,
         expiresAt: "2026-09-08T00:00:00.000Z",
+        overdueAt: null,
         provisionalCreditGranted: true,
         provisionalCreditResolvedAt: null,
         createdById: bdId,
@@ -106,6 +107,27 @@ describe("performance contracts", () => {
       overrideReason: "The requisition was reposted with a new hiring manager.",
       provisionalCreditGranted: true,
     });
+  });
+
+  it("labels rule previews as target-and-configuration projections, not exact future scores", () => {
+    expect(
+      schema("performanceRulePreviewSchema").parse({
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        effectiveTo: null,
+        affectedFrom: "2026-09-08T00:00:00.000Z",
+        affectedTo: "2026-10-08T00:00:00.000Z",
+        projection: {
+          kind: "TARGET_AND_CONFIGURATION",
+          exactFutureScoresAvailable: false,
+          unavailableExactScoreDimensions: ["QUALIFIED_APPLICATIONS", "FOLLOW_UP_COMPLETION", "RECRUITER_OUTCOMES", "BALANCED_SCORE"],
+        },
+        configuration: {
+          current: { defaultDailyTarget: 70, workingDays: [1, 2, 3, 4, 5], businessCalendarTimeZone: "UTC", workdayStartHour: 9, workdayEndHour: 17, followUpSlaBusinessHours: 48, adminReassignmentSlaBusinessHours: 2, maturityWindowDays: 21, duplicateLookbackMonths: 6, applicationWeightPercent: 45, followUpWeightPercent: 25, outcomeWeightPercent: 30, positiveReplyPoints: 1, screeningPoints: 2, interviewPoints: 3, offerPoints: 5, slowdownThresholdPercent: 120, slowdownMultiplierPercent: 25 },
+          proposed: { defaultDailyTarget: 80, workingDays: [1, 2, 3, 4, 5], businessCalendarTimeZone: "UTC", workdayStartHour: 9, workdayEndHour: 17, followUpSlaBusinessHours: 24, adminReassignmentSlaBusinessHours: 4, maturityWindowDays: 14, duplicateLookbackMonths: 3, applicationWeightPercent: 40, followUpWeightPercent: 30, outcomeWeightPercent: 30, positiveReplyPoints: 1, screeningPoints: 2, interviewPoints: 3, offerPoints: 5, slowdownThresholdPercent: 125, slowdownMultiplierPercent: 20 },
+        },
+        impacts: [],
+      }),
+    ).toMatchObject({ projection: { exactFutureScoresAvailable: false } });
   });
 
   it("validates leaderboard drill-down requests and KPI response rows", () => {
@@ -220,6 +242,7 @@ describe("performance contracts", () => {
       reviewReason: null,
       reviewedAt: null,
       expiresAt: null,
+      overdueAt: null,
       provisionalCreditGranted: true,
       provisionalCreditResolvedAt: null,
       createdById: bdId,

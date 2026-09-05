@@ -587,6 +587,7 @@ model DuplicateReview {
   reviewReason                String?                 @map("review_reason")
   reviewedAt                  DateTime?               @map("reviewed_at") @db.Timestamptz(6)
   expiresAt                   DateTime?               @map("expires_at") @db.Timestamptz(6)
+  overdueAt                   DateTime?               @map("overdue_at") @db.Timestamptz(6)
   provisionalCreditGranted    Boolean                 @default(true) @map("provisional_credit_granted")
   provisionalCreditResolvedAt DateTime?               @map("provisional_credit_resolved_at") @db.Timestamptz(6)
   createdById                 String                  @map("created_by_id") @db.Uuid
@@ -598,7 +599,7 @@ model DuplicateReview {
   reviewer                    User?                   @relation("DuplicateReviewReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
   createdBy                   User                    @relation("DuplicateReviewCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
-  @@index([status, expiresAt])
+  @@index([status, expiresAt, overdueAt])
   @@index([reviewerId, status])
   @@map("duplicate_reviews")
 }

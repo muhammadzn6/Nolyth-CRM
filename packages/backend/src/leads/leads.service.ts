@@ -40,6 +40,7 @@ import {
 } from "../errors/app-error";
 import { AuthorizationService } from "../identity/authorization.service";
 import type { Actor } from "../identity/session.service";
+import { addBusinessHours } from "../performance/business-hours";
 
 type Store = {
   findMany(args?: unknown): Promise<ReadonlyArray<Record<string, unknown>>>;
@@ -345,7 +346,11 @@ export class LeadsService {
       const contact = await transaction.contact.findFirst({ where: { companyId: String(company.id), email: parsed.data.recruiterEmail } }) ?? await transaction.contact.create({ data: { companyId: String(company.id), createdById: actor.id, name: parsed.data.recruiterName, email: parsed.data.recruiterEmail } });
       await transaction.leadContact.create({ data: { leadId: String(created.id), contactId: String(contact.id), role: "RECRUITER", isPrimary: true } });
       const review = duplicate === "LIKELY"
-        ? await transaction.duplicateReview.create({ data: { leadId: String(created.id), classification: "LIKELY", status: "PENDING", overrideReason: parsed.data.duplicateOverrideReason!, provisionalCreditGranted: true, createdById: actor.id } })
+        ? await transaction.duplicateReview.create({ data: {
+          leadId: String(created.id), classification: "LIKELY", status: "PENDING",
+          overrideReason: parsed.data.duplicateOverrideReason!, provisionalCreditGranted: true,
+          expiresAt: await this.duplicateReviewDueAt(transaction, appliedDate), createdById: actor.id,
+        } })
         : null;
       if (duplicate !== "NONE") {
         await this.audit(actor, created, "lead.duplicate_detected", { classification: duplicate, normalizedJobUrl: canonicalUrl, qualifiedCredit, reviewId: review ? String(review.id) : null }, transaction);
@@ -436,6 +441,21 @@ export class LeadsService {
     const rule = await database.performanceRuleSet.findFirst({ where: { effectiveFrom: { lte: at }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }] }, orderBy: { effectiveFrom: "desc" } });
     const value = Number(rule?.duplicateLookbackMonths);
     return Number.isInteger(value) && value > 0 ? value : 6;
+  }
+  private async duplicateReviewDueAt(database: LeadTransaction, at: Date): Promise<Date> {
+    const rule = await database.performanceRuleSet.findFirst({
+      where: { effectiveFrom: { lte: at }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }] },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    const holidays = await database.performanceHoliday.findMany({});
+    const startHour = Number(rule?.workdayStartHour ?? 9);
+    const endHour = Number(rule?.workdayEndHour ?? 17);
+    return addBusinessHours(at, 3 * (endHour - startHour), {
+      timeZone: String(rule?.businessCalendarTimeZone ?? "UTC"),
+      workingDays: Array.isArray(rule?.workingDays) ? rule.workingDays.map(Number) : [1, 2, 3, 4, 5],
+      workday: { startHour, endHour },
+      holidays: holidays.flatMap((holiday) => holiday.holidayDate instanceof Date ? [holiday.holidayDate] : []),
+    });
   }
   private async audit(actor: Actor, lead: Record<string, unknown>, action: string, newSnapshot: Record<string, unknown>, database: LeadTransaction = this.database) { await database.activityEvent.create({ data: { action, actorId: actor.id, actorNameSnapshot: actor.displayName, actorRoleSnapshot: actor.role, profileId: String(lead.profileId), leadId: String(lead.id), entityType: "lead", entityId: String(lead.id), oldSnapshot: null, newSnapshot, metadata: null, requestId: null } }); }
   private async auditRecord(actor: Actor, action: string, entityType: string, entityId: string, profileId: string | null, leadId: string | null, newSnapshot: Record<string, unknown>) { await this.database.activityEvent.create({ data: { action, actorId: actor.id, actorNameSnapshot: actor.displayName, actorRoleSnapshot: actor.role, profileId, leadId, entityType, entityId, oldSnapshot: null, newSnapshot, metadata: null, requestId: null } }); }
