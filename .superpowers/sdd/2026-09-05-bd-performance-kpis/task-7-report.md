@@ -26,3 +26,19 @@ The new dashboard test was added before the implementation. The initial run fail
 - `git diff --check`
 
 All listed commands passed before commit.
+
+## Review-fix follow-up
+
+- The Upcoming Interviews **Edit** action now consumes `?edit=<interviewId>` and opens that exact round in edit mode.
+- **Open calendar** now carries the interview date through the calendar route and anchors the workspace to that day.
+- The BD dashboard shell is independent of performance and drill-down reads. It stays usable when those reads fail and explicitly labels unavailable performance/work-queue data.
+- Recruiter response, active application, follow-up, and platform counts now come from the server-owned `GET /performance/me/work-queue` aggregate rather than bounded dashboard previews.
+
+## Follow-up verification
+
+- 16 focused web tests across the dashboard, root route, interview route, calendar route, API client, and selected-date workspace interaction.
+- 16 contracts tests, 44 backend performance-service tests (including high-volume queue totals), and 13 API controller tests.
+- Typechecks passed for contracts, backend, API, and web; web lint and Prisma schema validation passed.
+- `git diff --check` passed.
+
+The targeted selected-date calendar regression passed. The wider calendar-workspace suite retains unrelated date-sensitive expectations from the in-progress calendar visual redesign and was intentionally left unchanged.

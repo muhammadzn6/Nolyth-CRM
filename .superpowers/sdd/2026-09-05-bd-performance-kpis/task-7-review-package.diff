@@ -1,19 +1,12 @@
-# Review package: 0930353c80ec4862cde3ca97c01cbb248c9a0cc8..b2a2078
+# Review package: 0930353c80ec4862cde3ca97c01cbb248c9a0cc8..ed3aca7
+#
+# Commits
+# ab04559 feat: add BD performance dashboard
+# ed3aca7 fix: complete BD dashboard workflows
+#
+# Generated with: git diff --binary --ignore-space-at-eol 0930353..ed3aca7
+# (This package excludes itself to avoid recursive review-artifact content.)
 
-## Commits
-b2a2078 feat: add BD performance dashboard
-
-## Files changed
- .../task-7-report.md                               |  28 ++++
- apps/web/app/page.tsx                              |  26 ++++
- .../web/components/dashboard/bd-dashboard.test.tsx | 160 +++++++++++++++++++++
- apps/web/components/dashboard/bd-dashboard.tsx     |  46 ++++++
- .../web/components/performance/bd-peer-ranking.tsx |  22 +++
- .../components/performance/bd-personal-quality.tsx |  37 +++++
- apps/web/components/performance/score-details.tsx  |   7 +-
- 7 files changed, 323 insertions(+), 3 deletions(-)
-
-## Diff
 diff --git a/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md
 new file mode 100644
 index 0000000..207dda6
@@ -48,24 +41,275 @@ index 0000000..207dda6
 +- `git diff --check`
 +
 +All listed commands passed before commit.
+diff --git a/apps/api/src/modules/performance/performance.controller.test.ts b/apps/api/src/modules/performance/performance.controller.test.ts
+index da0fde3..a770558 100644
+--- a/apps/api/src/modules/performance/performance.controller.test.ts
++++ b/apps/api/src/modules/performance/performance.controller.test.ts
+@@ -181,6 +181,15 @@ const auditRecord = {
+ };
+
+ describe("PerformanceController", () => {
++  it("returns the authenticated BD's uncapped work-queue aggregate", async () => {
++    const aggregate = { recruiterResponses: 127, activeApplications: 103, openFollowUps: 64, platformTotals: [{ platform: "linkedin.com", count: 208 }] };
++    const service = { getBdWorkQueue: vi.fn().mockResolvedValue(aggregate) };
++    const controller = new PerformanceController(service as unknown as PerformanceService);
++
++    await expect(controller.myWorkQueue(request(bd))).resolves.toEqual(aggregate);
++    expect(service.getBdWorkQueue).toHaveBeenCalledWith(bd);
++  });
++
+   it("validates admin performance filters before reaching the service", async () => {
+     const service = { getAdminBdPerformance: vi.fn() };
+     const controller = new PerformanceController(service as unknown as PerformanceService);
+diff --git a/apps/api/src/modules/performance/performance.controller.ts b/apps/api/src/modules/performance/performance.controller.ts
+index 98b0626..b1c0a19 100644
+--- a/apps/api/src/modules/performance/performance.controller.ts
++++ b/apps/api/src/modules/performance/performance.controller.ts
+@@ -7,6 +7,7 @@ import {
+ import {
+   adminBdPerformanceResponseSchema,
+   bdPerformanceResponseSchema,
++  bdWorkQueueSchema,
+   duplicateReviewWithLeadSchema,
+   bdTargetScheduleInputSchema,
+   bdTargetScheduleListQuerySchema,
+@@ -83,6 +84,12 @@ export class PerformanceController {
+       .then((response) => parseResponse(bdPerformanceResponseSchema, response));
+   }
+
++  @Get("me/work-queue") myWorkQueue(@Req() request: AuthenticatedRequest) {
++    return this.performance
++      .getBdWorkQueue(this.actor(request))
++      .then((response) => parseResponse(bdWorkQueueSchema, response));
++  }
++
+   @Get("me/drilldown") myDrilldown(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+     return this.performance
+       .getMyPerformanceDrilldown(this.actor(request), parse(performanceDrilldownQuerySchema, query))
+diff --git a/apps/web/app/calendar/page.test.tsx b/apps/web/app/calendar/page.test.tsx
+new file mode 100644
+index 0000000..f35bfb4
+--- /dev/null
++++ b/apps/web/app/calendar/page.test.tsx
+@@ -0,0 +1,35 @@
++import { renderToStaticMarkup } from "react-dom/server";
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++const getCurrentActorMock = vi.hoisted(() => vi.fn());
++const getCalendarMock = vi.hoisted(() => vi.fn());
++
++vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ cookie: "orbit_session=token" })) }));
++vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
++vi.mock("../../components/layout/app-shell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }));
++vi.mock("../../components/calendar/calendar-workspace", () => ({
++  CalendarWorkspace: ({ initialDate }: { initialDate?: string }) => <p>{`selected-date:${initialDate ?? "none"}`}</p>,
++}));
++vi.mock("../../lib/api-client", () => ({
++  getCurrentActor: getCurrentActorMock,
++  getCalendar: getCalendarMock,
++  listLeads: vi.fn(async () => ({ items: [] })),
++  listUsers: vi.fn(async () => []),
++  ApiClientError: class ApiClientError extends Error {},
++}));
++
++import CalendarRoute from "./page";
++
++describe("CalendarRoute", () => {
++  beforeEach(() => {
++    getCurrentActorMock.mockResolvedValue({ id: "00000000-0000-4000-8000-000000000001", displayName: "Ayesha", email: "ayesha@orbit.test", role: "BD", isActive: true });
++    getCalendarMock.mockResolvedValue([]);
++  });
++
++  it("selects the date supplied by the BD open-calendar quick action", async () => {
++    const date = "2026-09-08T09:00:00.000Z";
++    const html = renderToStaticMarkup(await CalendarRoute({ searchParams: Promise.resolve({ date }) }));
++
++    expect(html).toContain(`selected-date:${date}`);
++  });
++});
+diff --git a/apps/web/app/calendar/page.tsx b/apps/web/app/calendar/page.tsx
+index 750bfce..effe9ab 100644
+--- a/apps/web/app/calendar/page.tsx
++++ b/apps/web/app/calendar/page.tsx
+@@ -10,12 +10,14 @@ import { ApiClientError, getCalendar, getCurrentActor } from "../../lib/api-clie
+ export const dynamic = "force-dynamic";
+ export const metadata: Metadata = { title: "Calendar" };
+
+-export default async function CalendarRoute({ searchParams }: { searchParams?: Promise<{ companyId?: string }> }) {
++export default async function CalendarRoute({ searchParams }: { searchParams?: Promise<{ companyId?: string; date?: string | string[] }> }) {
+   const cookie = (await headers()).get("cookie") ?? undefined;
+   const actor = await getCurrentActor(cookie);
+   if (!actor) redirect("/login");
+   let interviews;
+-  try { const params = searchParams ? await searchParams : {}; interviews = await getCalendar(params.companyId ? { companyId: params.companyId } : {}, cookie); }
++  const params = searchParams ? await searchParams : {};
++  const initialDate = Array.isArray(params.date) ? params.date[0] : params.date;
++  try { interviews = await getCalendar(params.companyId ? { companyId: params.companyId } : {}, cookie); }
+   catch (reason) { return <AppShell actor={actor}><ErrorState description={reason instanceof ApiClientError ? reason.message : "Orbit could not load the calendar."} title="Calendar unavailable" /></AppShell>; }
+-  return <AppShell actor={actor}><CalendarWorkspace actor={actor} interviews={interviews} /></AppShell>;
++  return <AppShell actor={actor}><CalendarWorkspace actor={actor} initialDate={initialDate} interviews={interviews} /></AppShell>;
+ }
+diff --git a/apps/web/app/leads/[leadId]/interviews/page.test.tsx b/apps/web/app/leads/[leadId]/interviews/page.test.tsx
+new file mode 100644
+index 0000000..6ba57ff
+--- /dev/null
++++ b/apps/web/app/leads/[leadId]/interviews/page.test.tsx
+@@ -0,0 +1,46 @@
++import { renderToStaticMarkup } from "react-dom/server";
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++const getCurrentActorMock = vi.hoisted(() => vi.fn());
++const getLeadMock = vi.hoisted(() => vi.fn());
++const listLeadInterviewRoundsMock = vi.hoisted(() => vi.fn());
++
++vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ cookie: "orbit_session=token" })) }));
++vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
++vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
++vi.mock("../../../../components/layout/app-shell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }));
++vi.mock("../../../../components/interviews/interview-form", () => ({ InterviewForm: () => <p>interview-form</p> }));
++vi.mock("../../../../components/interviews/interview-edit-form", () => ({
++  InterviewRoundCard: ({ round, initiallyEditing }: { round: { id: string }; initiallyEditing?: boolean }) => <p>{`round:${round.id}:editing:${String(initiallyEditing)}`}</p>,
++}));
++vi.mock("../../../../lib/api-client", () => ({
++  getCurrentActor: getCurrentActorMock,
++  getLead: getLeadMock,
++  listLeadInterviewRounds: listLeadInterviewRoundsMock,
++  listUsers: vi.fn(async () => []),
++  listCloserEligibility: vi.fn(async () => []),
++  ApiClientError: class ApiClientError extends Error {},
++}));
++
++import LeadInterviewsRoute from "./page";
++
++const actor = { id: "00000000-0000-4000-8000-000000000001", displayName: "Ayesha", email: "ayesha@orbit.test", role: "BD" as const, isActive: true };
++const leadId = "00000000-0000-4000-8000-000000000101";
++const roundId = "00000000-0000-4000-8000-000000000201";
++
++describe("LeadInterviewsRoute", () => {
++  beforeEach(() => {
++    getCurrentActorMock.mockResolvedValue(actor);
++    getLeadMock.mockResolvedValue({ id: leadId, profileId: "00000000-0000-4000-8000-000000000301", jobTitle: "Platform Engineer" });
++    listLeadInterviewRoundsMock.mockResolvedValue([{ id: roundId, status: "SCHEDULED" }]);
++  });
++
++  it("opens the interview selected by the BD quick-action edit query", async () => {
++    const html = renderToStaticMarkup(await LeadInterviewsRoute({
++      params: Promise.resolve({ leadId }),
++      searchParams: Promise.resolve({ edit: roundId }),
++    }));
++
++    expect(html).toContain(`round:${roundId}:editing:true`);
++  });
++});
+diff --git a/apps/web/app/leads/[leadId]/interviews/page.tsx b/apps/web/app/leads/[leadId]/interviews/page.tsx
+index 2da0029..09b15f9 100644
+--- a/apps/web/app/leads/[leadId]/interviews/page.tsx
++++ b/apps/web/app/leads/[leadId]/interviews/page.tsx
+@@ -13,8 +13,10 @@ import { ApiClientError, getCurrentActor, getLead, listCloserEligibility, listLe
+ export const dynamic = "force-dynamic";
+ export const metadata: Metadata = { title: "Lead interviews" };
+
+-export default async function LeadInterviewsRoute({ params }: { params: Promise<{ leadId: string }> }) {
++export default async function LeadInterviewsRoute({ params, searchParams }: { params: Promise<{ leadId: string }>; searchParams?: Promise<{ edit?: string | string[] }> }) {
+   const { leadId } = await params;
++  const query = searchParams ? await searchParams : {};
++  const editId = Array.isArray(query.edit) ? query.edit[0] : query.edit;
+   const cookie = (await headers()).get("cookie") ?? undefined;
+   const actor = await getCurrentActor(cookie);
+   if (!actor) redirect("/login");
+@@ -27,7 +29,7 @@ export default async function LeadInterviewsRoute({ params }: { params: Promise<
+       const eligibleIds = new Set(eligibility.filter((assignment) => !assignment.endedAt).map((assignment) => assignment.userId));
+       closers = users.filter((user) => user.role === "CLOSER" && user.isActive && eligibleIds.has(user.id));
+     }
+-    return <AppShell actor={actor}><div className="mx-auto grid max-w-[1100px] gap-5"><Link className="text-xs font-bold uppercase tracking-[0.16em] text-primary hover:underline" href={`/leads/${leadId}`}>← {lead.jobTitle}</Link><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Lead workspace</p><h1 className="mt-2 text-2xl font-bold text-foreground">Interviews</h1><p className="mt-1.5 text-sm text-muted-foreground">Schedule and manage interview rounds for this application.</p></div>{actor.role === "ADMIN" || actor.role === "BD" ? <InterviewForm closers={await closers} leadId={leadId} /> : null}{rounds.length === 0 ? <EmptyState description="Scheduled rounds will appear here." title="No interviews" /> : <section className="grid gap-3">{rounds.map((round) => <InterviewRoundCard actorRole={actor.role} key={round.id} round={round} />)}</section>}</div></AppShell>;
++    return <AppShell actor={actor}><div className="mx-auto grid max-w-[1100px] gap-5"><Link className="text-xs font-bold uppercase tracking-[0.16em] text-primary hover:underline" href={`/leads/${leadId}`}>← {lead.jobTitle}</Link><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Lead workspace</p><h1 className="mt-2 text-2xl font-bold text-foreground">Interviews</h1><p className="mt-1.5 text-sm text-muted-foreground">Schedule and manage interview rounds for this application.</p></div>{actor.role === "ADMIN" || actor.role === "BD" ? <InterviewForm closers={await closers} leadId={leadId} /> : null}{rounds.length === 0 ? <EmptyState description="Scheduled rounds will appear here." title="No interviews" /> : <section className="grid gap-3">{rounds.map((round) => <InterviewRoundCard actorRole={actor.role} initiallyEditing={round.id === editId} key={round.id} round={round} />)}</section>}</div></AppShell>;
+   } catch (reason) {
+     return <AppShell actor={actor}><ErrorState description={reason instanceof ApiClientError ? reason.message : "Orbit could not load lead interviews."} title="Interviews unavailable" /></AppShell>;
+   }
+diff --git a/apps/web/app/page.test.tsx b/apps/web/app/page.test.tsx
+index d699396..9583d6f 100644
+--- a/apps/web/app/page.test.tsx
++++ b/apps/web/app/page.test.tsx
+@@ -6,6 +6,7 @@ const getCurrentActorMock = vi.hoisted(() => vi.fn());
+ const getDashboardMock = vi.hoisted(() => vi.fn());
+ const getCloserDashboardMock = vi.hoisted(() => vi.fn());
+ const getCalendarMock = vi.hoisted(() => vi.fn());
++const listLeadsMock = vi.hoisted(() => vi.fn());
+
+ vi.mock("next/headers", () => ({
+   headers: vi.fn(async () => new Headers({ cookie: "orbit_session=token" })),
+@@ -27,12 +28,19 @@ vi.mock("../components/dashboard/closer-dashboard", () => ({
+   CloserDashboard: () => <p>closer-dashboard</p>,
+ }));
+
++vi.mock("../components/dashboard/bd-dashboard", () => ({
++  BdDashboard: ({ error }: { error?: string }) => <p>{`bd-dashboard:${error ?? "ready"}`}</p>,
++}));
++
+ vi.mock("../lib/api-client", () => ({
+   ApiClientError: class ApiClientError extends Error {},
+   getCurrentActor: getCurrentActorMock,
+   getDashboard: getDashboardMock,
+   getCloserDashboard: getCloserDashboardMock,
+   getCalendar: getCalendarMock,
++  listLeads: listLeadsMock,
++  listUsers: vi.fn(async () => []),
++  listActivity: vi.fn(async () => []),
+ }));
+
+ import HomePage from "./page";
+@@ -54,9 +62,12 @@ describe("HomePage", () => {
+     getDashboardMock.mockReset();
+     getCloserDashboardMock.mockReset();
+     getCalendarMock.mockReset();
++    listLeadsMock.mockReset();
++    listLeadsMock.mockResolvedValue({ items: [], nextCursor: null });
++    vi.unstubAllGlobals();
+   });
+
+-  it("renders the calendar-first dashboard only for closer actors", async () => {
++  it("renders the shared overview only for admin actors and preserves the BD-specific shell", async () => {
+     getCurrentActorMock.mockResolvedValueOnce(closer).mockResolvedValueOnce(admin).mockResolvedValueOnce(bd);
+     getCloserDashboardMock.mockResolvedValue({});
+     getDashboardMock.mockResolvedValue({});
+@@ -64,8 +75,21 @@ describe("HomePage", () => {
+
+     expect(renderToStaticMarkup(await HomePage())).toContain("closer-dashboard");
+     expect(renderToStaticMarkup(await HomePage())).toContain("standard-dashboard");
+-    expect(renderToStaticMarkup(await HomePage())).toContain("standard-dashboard");
++    expect(renderToStaticMarkup(await HomePage())).toContain("bd-dashboard:");
+     expect(getCloserDashboardMock).toHaveBeenCalledTimes(1);
+-    expect(getDashboardMock).toHaveBeenCalledTimes(2);
++    expect(getDashboardMock).toHaveBeenCalledTimes(1);
++  });
++
++  it("keeps the BD-specific dashboard shell when personal performance is unavailable", async () => {
++    getCurrentActorMock.mockResolvedValue(bd);
++    getDashboardMock.mockResolvedValue({});
++    getCalendarMock.mockResolvedValue([]);
++    listLeadsMock.mockResolvedValue({ items: [], nextCursor: null });
++    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("performance unavailable"); }));
++
++    const html = renderToStaticMarkup(await HomePage());
++
++    expect(html).toContain("bd-dashboard:Performance data is temporarily unavailable.");
++    expect(html).not.toContain("standard-dashboard");
+   });
+ });
 diff --git a/apps/web/app/page.tsx b/apps/web/app/page.tsx
-index 17fca17..42b66e1 100644
+index 17fca17..8570787 100644
 --- a/apps/web/app/page.tsx
 +++ b/apps/web/app/page.tsx
-@@ -1,27 +1,30 @@
- import { headers } from "next/headers";
- import { revalidatePath } from "next/cache";
- import { redirect } from "next/navigation";
+@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
  import type { ReactElement } from "react";
  import {
    adminBdPerformanceResponseSchema,
 +  bdPerformanceResponseSchema,
++  bdWorkQueueSchema,
    performanceDrilldownQuerySchema,
    performanceDrilldownResponseSchema,
    performanceFollowUpWithLeadSchema,
-   reassignPerformanceFollowUpInputSchema,
-   successResponseSchema,
- } from "@orbit/contracts";
+@@ -13,8 +15,10 @@ import {
  import { loadWebEnv } from "@orbit/config";
 
  import { CloserDashboard } from "../components/dashboard/closer-dashboard";
@@ -76,81 +320,108 @@ index 17fca17..42b66e1 100644
  import {
    ApiClientError,
    getCloserDashboard,
-   getCalendar,
-   getCurrentActor,
-   getDashboard,
+@@ -24,7 +28,6 @@ import {
    listActivity,
    listLeads,
    listUsers,
-   listTasks,
-@@ -120,20 +123,23 @@ export default async function HomePage(props?: HomePageProps) {
-     try { calendar = await getCalendar({}, cookie); } catch { calendar = undefined; }
+-  listTasks,
+ } from "../lib/api-client";
+ import type { PerformancePeriod } from "../components/performance/bd-team-kpis";
+
+@@ -112,6 +115,39 @@ export default async function HomePage(props?: HomePageProps) {
+     }
+   }
+
++  if (actor.role === "BD") {
++    const [applicationsResult, calendarResult, performanceResult, todayPerformanceResult, workQueueResult] = await Promise.allSettled([
++      listLeads({ limit: 6 }, cookie),
++      getCalendar({}, cookie),
++      readPerformance(`/performance/me?${new URLSearchParams(range)}`, bdPerformanceResponseSchema, cookie),
++      readPerformance(`/performance/me?${new URLSearchParams(performanceRange("day"))}`, bdPerformanceResponseSchema, cookie),
++      readPerformance("/performance/me/work-queue", bdWorkQueueSchema, cookie),
++    ]);
++    const applications = applicationsResult.status === "fulfilled" ? applicationsResult.value.items : [];
++    const calendar = calendarResult.status === "fulfilled" ? calendarResult.value : [];
++    const performance = performanceResult.status === "fulfilled" ? performanceResult.value : undefined;
++    const todayPerformance = todayPerformanceResult.status === "fulfilled" ? todayPerformanceResult.value : undefined;
++    const workQueue = workQueueResult.status === "fulfilled" ? workQueueResult.value : undefined;
++    const performanceAvailable = Boolean(performance && todayPerformance);
++    let drilldown;
++    if (performanceAvailable && metric) {
++      const parsed = performanceDrilldownQuerySchema.safeParse({ ...range, metric });
++      if (parsed.success) {
++        try {
++          drilldown = await readPerformance(`/performance/me/drilldown?${new URLSearchParams(Object.entries(parsed.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
++        } catch {
++          drilldown = undefined;
++        }
++      }
++    }
++    const errors = [
++      !performanceAvailable ? "Performance data is temporarily unavailable." : undefined,
++      !workQueue ? "Work-queue totals are temporarily unavailable." : undefined,
++      applicationsResult.status === "rejected" ? "Recent applications are temporarily unavailable." : undefined,
++    ].filter((value): value is string => Boolean(value));
++    return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications} error={errors.join(" ") || undefined} interviews={calendar} performance={performance} todayPerformance={todayPerformance} workQueue={workQueue} />{drilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={drilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
++  }
++
+   try {
+     const dashboard = await getDashboard(cookie);
+     let recentActivity;
+@@ -121,8 +157,8 @@ export default async function HomePage(props?: HomePageProps) {
      let applications;
      let openTasks;
      let users;
-     if (actor.role === "ADMIN" || actor.role === "BD") {
-       try { [applications, openTasks, users] = await Promise.all([listLeads({ limit: 100 }, cookie), actor.role === "BD" ? listTasks({ status: "OPEN" }, cookie) : Promise.resolve(undefined), listUsers(cookie)]); } catch { applications = undefined; openTasks = undefined; users = undefined; }
+-    if (actor.role === "ADMIN" || actor.role === "BD") {
+-      try { [applications, openTasks, users] = await Promise.all([listLeads({ limit: 100 }, cookie), actor.role === "BD" ? listTasks({ status: "OPEN" }, cookie) : Promise.resolve(undefined), listUsers(cookie)]); } catch { applications = undefined; openTasks = undefined; users = undefined; }
++    if (actor.role === "ADMIN") {
++      try { [applications, openTasks, users] = await Promise.all([listLeads({ limit: 100 }, cookie), Promise.resolve(undefined), listUsers(cookie)]); } catch { applications = undefined; openTasks = undefined; users = undefined; }
      }
      let adminPerformance;
      let performanceReassignments;
-     let performanceDrilldown;
-+    let bdPerformanceDrilldown;
-+    let bdPerformance;
-+    let bdTodayPerformance;
-     let performanceReassignmentError: string | undefined;
-     if (actor.role === "ADMIN") {
-       try {
-         adminPerformance = await readPerformance(`/performance/admin?${new URLSearchParams(range)}`, adminBdPerformanceResponseSchema, cookie);
-         const drilldown = performanceDrilldownQuerySchema.safeParse({ ...range, metric, ...(bdId ? { bdId } : {}) });
-         if (drilldown.success) {
-           try {
-             performanceDrilldown = await readPerformance(`/performance/admin/drilldown?${new URLSearchParams(Object.entries(drilldown.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
-           } catch {
-             performanceDrilldown = undefined;
-@@ -144,15 +150,35 @@ export default async function HomePage(props?: HomePageProps) {
-       }
-       if (adminPerformance) {
-         try {
-           performanceReassignments = await readPerformance("/performance/admin/reassignment-queue", performanceFollowUpWithLeadSchema.array(), cookie);
-         } catch {
-           performanceReassignments = [];
-           performanceReassignmentError = "Reassignment queue is temporarily unavailable. Refresh to try again.";
-         }
-       }
-     }
-+    if (actor.role === "BD") {
-+      try {
-+        [bdPerformance, bdTodayPerformance] = await Promise.all([
-+          readPerformance(`/performance/me?${new URLSearchParams(range)}`, bdPerformanceResponseSchema, cookie),
-+          readPerformance(`/performance/me?${new URLSearchParams(performanceRange("day"))}`, bdPerformanceResponseSchema, cookie),
-+        ]);
-+        const drilldown = performanceDrilldownQuerySchema.safeParse({ ...range, metric });
-+        if (drilldown.success) {
-+          try {
-+            bdPerformanceDrilldown = await readPerformance(`/performance/me/drilldown?${new URLSearchParams(Object.entries(drilldown.data).reduce<Record<string, string>>((values, [key, value]) => ({ ...values, [key]: String(value) }), {}))}`, performanceDrilldownResponseSchema, cookie);
-+          } catch {
-+            bdPerformanceDrilldown = undefined;
-+          }
-+        }
-+      } catch {
-+        bdPerformance = undefined;
-+        bdTodayPerformance = undefined;
-+      }
-+    }
-+    if (actor.role === "BD" && bdPerformance) return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications?.items ?? []} openTasks={openTasks ?? []} interviews={calendar ?? []} performance={bdPerformance} todayPerformance={bdTodayPerformance} />{bdPerformanceDrilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={bdPerformanceDrilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
-     return <AppShell actor={actor}><DashboardOverview actor={actor} dashboard={dashboard} recentActivity={recentActivity} calendarInterviews={calendar} applications={applications?.items} openTasks={openTasks} adminPerformance={adminPerformance} performancePeriod={performancePeriod} performanceMetric={metric} performanceDrilldown={performanceDrilldown} performanceReassignments={performanceReassignments} performanceReassignmentError={performanceReassignmentError} performanceOwners={users?.filter((user) => user.role === "BD" && user.isActive)} onPerformanceReassign={submitPerformanceReassignment} /></AppShell>;
-   } catch (reason) {
-     return <AppShell actor={actor}><DashboardOverview actor={actor} error={reason instanceof ApiClientError ? reason.message : "Live dashboard data is temporarily unavailable."} /></AppShell>;
-   }
+diff --git a/apps/web/components/calendar/calendar-workspace.test.tsx b/apps/web/components/calendar/calendar-workspace.test.tsx
+index 046f726..31832bc 100644
+--- a/apps/web/components/calendar/calendar-workspace.test.tsx
++++ b/apps/web/components/calendar/calendar-workspace.test.tsx
+@@ -126,4 +126,10 @@ describe("CalendarWorkspace", () => {
+     await act(async () => allCalendars?.click());
+     expect(container.textContent).toContain("2 Orbit interviews in view");
+   });
++
++  it("uses the supplied date as its initial calendar anchor", async () => {
++    await act(async () => root.render(<CalendarWorkspace actor={actor} interviews={[]} initialDate="2026-09-08T09:00:00.000Z" />));
++
++    expect(container.querySelector('[aria-label="Calendar view"]')?.textContent).toContain("Tue, Sep 8");
++  });
+ });
+diff --git a/apps/web/components/calendar/calendar-workspace.tsx b/apps/web/components/calendar/calendar-workspace.tsx
+index 045281c..f39bcd2 100644
+--- a/apps/web/components/calendar/calendar-workspace.tsx
++++ b/apps/web/components/calendar/calendar-workspace.tsx
+@@ -79,10 +79,13 @@ function itemDates(item: CalendarItem): { startsAt: string; endsAt: string; time
+   return item.kind === "interview" ? item.value : item.value;
  }
+
+-export function CalendarWorkspace({ actor, interviews, externalMeetings = [], embedded = false }: { actor: SessionUser; interviews: InterviewSummary[]; externalMeetings?: CloserDashboardExternalMeeting[]; embedded?: boolean }) {
++export function CalendarWorkspace({ actor, interviews, externalMeetings = [], embedded = false, initialDate }: { actor: SessionUser; interviews: InterviewSummary[]; externalMeetings?: CloserDashboardExternalMeeting[]; embedded?: boolean; initialDate?: string }) {
+   const firstInterview = interviews[0] ? new Date(interviews[0].startsAt) : new Date();
+   const [view, setView] = useState<View>("week");
+-  const [anchor, setAnchor] = useState(firstInterview);
++  const [anchor, setAnchor] = useState(() => {
++    const selected = initialDate ? new Date(initialDate) : null;
++    return selected && !Number.isNaN(selected.getTime()) ? selected : firstInterview;
++  });
+   const [status, setStatus] = useState("ALL");
+   const [roundType, setRoundType] = useState("ALL");
+   const [showCancelled, setShowCancelled] = useState(false);
 diff --git a/apps/web/components/dashboard/bd-dashboard.test.tsx b/apps/web/components/dashboard/bd-dashboard.test.tsx
 new file mode 100644
-index 0000000..2b056c9
+index 0000000..1e47181
 --- /dev/null
 +++ b/apps/web/components/dashboard/bd-dashboard.test.tsx
-@@ -0,0 +1,160 @@
+@@ -0,0 +1,189 @@
 +import { renderToStaticMarkup } from "react-dom/server";
-+import type { BdPerformanceResponse, InterviewSummary, LeadSummary, SessionUser, TaskSummary } from "@orbit/contracts";
++import type { BdPerformanceResponse, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
 +import { describe, expect, it } from "vitest";
 +
 +import { BdDashboard } from "./bd-dashboard";
@@ -252,7 +523,7 @@ index 0000000..2b056c9
 +
 +describe("BD performance dashboard", () => {
 +  it("renders server-owned operational and personal performance values with interview quick actions", () => {
-+    const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} openTasks={[] as TaskSummary[]} interviews={interviews} performance={performance} />);
++    const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} interviews={interviews} performance={performance} />);
 +
 +    expect(html).toContain("Qualified applications today");
 +    expect(html).toContain("Remaining target");
@@ -268,6 +539,35 @@ index 0000000..2b056c9
 +    expect(html).toContain("Open calendar");
 +    expect(html).toContain("View your application details");
 +    expect(html).toContain("performanceMetric=QUALIFIED_APPLICATIONS");
++  });
++
++  it("uses the server work-queue totals instead of the bounded recent-preview arrays", () => {
++    const html = renderToStaticMarkup(<BdDashboard
++      actor={actor}
++      applications={applications}
++      interviews={interviews}
++      performance={performance}
++      todayPerformance={performance}
++      workQueue={{ recruiterResponses: 127, activeApplications: 103, openFollowUps: 64, platformTotals: [{ platform: "linkedin.com", count: 208 }] }}
++    />);
++
++    expect(html).toContain("127");
++    expect(html).toContain("103");
++    expect(html).toContain("64 tasks");
++    expect(html).toContain("208 total");
++  });
++
++  it("renders an explicit unavailable performance panel without deriving performance from previews", () => {
++    const html = renderToStaticMarkup(<BdDashboard
++      actor={actor}
++      applications={applications}
++      interviews={interviews}
++      error="Performance data is temporarily unavailable."
++    />);
++
++    expect(html).toContain("Performance data is temporarily unavailable.");
++    expect(html).toContain("Personal performance unavailable");
++    expect(html).toContain("Recent applications");
 +  });
 +
 +  it("keeps peer summaries to the approved fields and has no peer detail links", () => {
@@ -311,11 +611,11 @@ index 0000000..2b056c9
 +});
 diff --git a/apps/web/components/dashboard/bd-dashboard.tsx b/apps/web/components/dashboard/bd-dashboard.tsx
 new file mode 100644
-index 0000000..e0dd310
+index 0000000..dfd9b6e
 --- /dev/null
 +++ b/apps/web/components/dashboard/bd-dashboard.tsx
-@@ -0,0 +1,46 @@
-+import type { BdPerformanceResponse, InterviewSummary, LeadSummary, SessionUser, TaskSummary } from "@orbit/contracts";
+@@ -0,0 +1,50 @@
++import type { BdPerformanceResponse, BdWorkQueue, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
 +import { Card } from "@orbit/ui";
 +
 +import { BdPeerRanking } from "../performance/bd-peer-ranking";
@@ -324,10 +624,10 @@ index 0000000..e0dd310
 +type BdDashboardProps = {
 +  actor: SessionUser;
 +  applications: LeadSummary[];
-+  openTasks: TaskSummary[];
 +  interviews: InterviewSummary[];
 +  performance?: BdPerformanceResponse;
 +  todayPerformance?: BdPerformanceResponse;
++  workQueue?: BdWorkQueue;
 +  error?: string;
 +};
 +
@@ -335,32 +635,50 @@ index 0000000..e0dd310
 +  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: interview.timezone }).format(new Date(interview.startsAt));
 +}
 +
-+export function BdDashboard({ actor, applications, openTasks, interviews, performance, todayPerformance, error }: BdDashboardProps) {
++function displayCount(value: number | null | undefined): string {
++  return value == null ? "—" : value.toLocaleString();
++}
++
++function UnavailablePerformancePanel() {
++  return <Card aria-label="Personal performance unavailable" className="editorial-insight-card p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Your details</p><h2 className="mt-1 text-base font-bold text-foreground">Personal performance unavailable</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">Orbit could not load your score, target attainment, or peer summary. Your application queue is still available.</p></Card>;
++}
++
++export function BdDashboard({ actor, applications, interviews, performance, todayPerformance, workQueue, error }: BdDashboardProps) {
 +  const now = new Date();
-+  const today = new Intl.DateTimeFormat("en-CA").format(now);
-+  const responses = applications.filter((application) => application.status === "RESPONSE_RECEIVED");
-+  const active = applications.filter((application) => ["INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED"].includes(application.status));
 +  const upcoming = interviews.filter((interview) => new Date(interview.startsAt) >= now).sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()).slice(0, 5);
-+  const dailyTarget = performance?.currentDailyTarget ?? 70;
-+  const qualifiedToday = todayPerformance?.performance.qualifiedApplications ?? applications.filter((application) => application.appliedDate === today).length;
-+  const interviewsToSchedule = todayPerformance?.performance.interviewsNeedingScheduling ?? responses.length;
++  const dailyTarget = todayPerformance?.currentDailyTarget ?? performance?.currentDailyTarget;
++  const qualifiedToday = todayPerformance?.performance.qualifiedApplications;
++  const interviewsToSchedule = todayPerformance?.performance.interviewsNeedingScheduling;
 +  const kpis = [
 +    ["Qualified applications today", qualifiedToday, "bg-primary-soft", "text-primary", "/leads"],
-+    ["Remaining target", Math.max(0, dailyTarget - qualifiedToday), "bg-warning-soft", "text-warning-foreground", "/leads"],
-+    ["Recruiter responses", todayPerformance?.performance.recruiterResponses ?? responses.length, "bg-info-soft", "text-info", "/leads?status=RESPONSE_RECEIVED"],
++    ["Remaining target", dailyTarget != null && qualifiedToday != null ? Math.max(0, dailyTarget - qualifiedToday) : null, "bg-warning-soft", "text-warning-foreground", "/leads"],
++    ["Recruiter responses", todayPerformance?.performance.recruiterResponses, "bg-info-soft", "text-info", "/leads?status=RESPONSE_RECEIVED"],
 +    ["Interviews to schedule", interviewsToSchedule, "bg-danger-soft", "text-danger", "/leads?status=RESPONSE_RECEIVED"],
 +  ] as const;
-+  const platformCounts = new Map<string, number>();
-+  applications.forEach((application) => { try { const host = new URL(application.rawUrl).hostname.replace(/^www\./, ""); platformCounts.set(host, (platformCounts.get(host) ?? 0) + 1); } catch { platformCounts.set("Other", (platformCounts.get("Other") ?? 0) + 1); } });
++  const platformTotals = workQueue?.platformTotals ?? [];
 +  return <div aria-label="BD application workspace" className="editorial-dashboard mx-auto max-w-[1500px]">
-+    <div className="editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(now)}</span><span><strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "long" }).format(now)}</strong><small>Daily target · {dailyTarget}</small></span><a aria-label="Add application" className="editorial-add-button" href="/leads?new=application">+ Add application <span aria-hidden="true">›</span></a><a aria-label="Open full calendar" className="editorial-round-button" href="/calendar">□</a></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">BD application desk</p><h1>Good morning, {actor.displayName.split(" ")[0]}</h1><p>Keep applications moving from entry to recruiter response.</p></div></div>
++    <div className="editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(now)}</span><span><strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "long" }).format(now)}</strong><small>Daily target · {displayCount(dailyTarget)}</small></span><a aria-label="Add application" className="editorial-add-button" href="/leads?new=application">+ Add application <span aria-hidden="true">›</span></a><a aria-label="Open full calendar" className="editorial-round-button" href="/calendar">□</a></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">BD application desk</p><h1>Good morning, {actor.displayName.split(" ")[0]}</h1><p>Keep applications moving from entry to recruiter response.</p></div></div>
 +    {error ? <p className="mt-4 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground" role="status">{error}</p> : null}
-+    <section aria-label="BD application pulse" className="mt-7"><div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-bold text-foreground">Application pulse</h2><a className="text-xs font-semibold text-primary" href="/leads">Open all applications →</a></div><div className="editorial-pulse-grid">{kpis.map(([label, value, iconTone, valueTone, href]) => <a aria-label={`${label}: ${value}`} className="editorial-pulse-card" href={href} key={label}><span className={`editorial-pulse-icon ${iconTone} ${valueTone}`}>{label === "Recruiter responses" ? "↗" : label === "Interviews to schedule" ? "!" : "✓"}</span><span className="editorial-pulse-copy"><small>{label}</small><strong className={valueTone}>{value}</strong></span><span className="editorial-pulse-badge">{label === "Remaining target" ? `Target ${dailyTarget}` : "View"}</span></a>)}</div></section>
-+    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]"><Card aria-label="BD work queue" className="editorial-attention-card p-5 sm:p-6"><header className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Work queue</h2><p className="mt-1 text-xs text-muted-foreground">The next operational handoffs.</p></div><a className="editorial-today-pill" href="/tasks">{openTasks.length} tasks</a></header><div className="mt-5 space-y-2.5"><a className="editorial-attention-item editorial-attention-danger" href="/leads?status=RESPONSE_RECEIVED"><span className="editorial-status-dot bg-danger" /><span><strong>Recruiter responses</strong><small>Review and schedule interviews.</small></span><b>{responses.length}</b></a><a className="editorial-attention-item" href="/leads?status=INTERVIEWING"><span className="editorial-status-dot bg-primary" /><span><strong>Active applications</strong><small>Already moving through the funnel.</small></span><b>{active.length}</b></a><a className="editorial-attention-item" href="/tasks"><span className="editorial-status-dot bg-warning" /><span><strong>Follow-ups due</strong><small>Keep recruiter conversations warm.</small></span><b>{openTasks.length}</b></a></div></Card>{performance ? <BdPersonalQuality performance={performance} /> : null}</div>
++    <section aria-label="BD application pulse" className="mt-7"><div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-bold text-foreground">Application pulse</h2><a className="text-xs font-semibold text-primary" href="/leads">Open all applications →</a></div><div className="editorial-pulse-grid">{kpis.map(([label, value, iconTone, valueTone, href]) => <a aria-label={`${label}: ${displayCount(value)}`} className="editorial-pulse-card" href={href} key={label}><span className={`editorial-pulse-icon ${iconTone} ${valueTone}`}>{label === "Recruiter responses" ? "↗" : label === "Interviews to schedule" ? "!" : "✓"}</span><span className="editorial-pulse-copy"><small>{label}</small><strong className={valueTone}>{displayCount(value)}</strong></span><span className="editorial-pulse-badge">{label === "Remaining target" ? `Target ${displayCount(dailyTarget)}` : "View"}</span></a>)}</div></section>
++    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]"><Card aria-label="BD work queue" className="editorial-attention-card p-5 sm:p-6"><header className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Work queue</h2><p className="mt-1 text-xs text-muted-foreground">The next operational handoffs.</p></div><a className="editorial-today-pill" href="/tasks">{displayCount(workQueue?.openFollowUps)} tasks</a></header><div className="mt-5 space-y-2.5"><a className="editorial-attention-item editorial-attention-danger" href="/leads?status=RESPONSE_RECEIVED"><span className="editorial-status-dot bg-danger" /><span><strong>Recruiter responses</strong><small>Review and schedule interviews.</small></span><b>{displayCount(workQueue?.recruiterResponses)}</b></a><a className="editorial-attention-item" href="/leads?status=INTERVIEWING"><span className="editorial-status-dot bg-primary" /><span><strong>Active applications</strong><small>Already moving through the funnel.</small></span><b>{displayCount(workQueue?.activeApplications)}</b></a><a className="editorial-attention-item" href="/tasks"><span className="editorial-status-dot bg-warning" /><span><strong>Follow-ups due</strong><small>Keep recruiter conversations warm.</small></span><b>{displayCount(workQueue?.openFollowUps)}</b></a></div></Card>{performance ? <BdPersonalQuality performance={performance} /> : <UnavailablePerformancePanel />}</div>
 +    <section aria-label="BD operations" className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]"><Card className="editorial-insight-card p-5 sm:p-6"><header className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Recent applications</h2><p className="mt-1 text-xs text-muted-foreground">Latest entries needing a quick check.</p></div><a className="text-xs font-semibold text-primary" href="/leads">View all</a></header><div className="mt-4 divide-y divide-border">{applications.slice(0, 6).map((application) => <a className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:bg-surface-subtle" href={`/leads/${application.id}`} key={application.id}><span className="min-w-0"><strong className="block truncate text-sm text-foreground">{application.jobTitle}</strong><small className="block truncate text-xs text-muted-foreground">{application.companyName ?? "Company not recorded"} · {application.appliedDate}</small></span><span className="shrink-0 rounded-full bg-info-soft px-2.5 py-1 text-[10px] font-bold uppercase text-info">{application.status.replaceAll("_", " ")}</span></a>)}{applications.length === 0 ? <p className="py-5 text-sm text-muted-foreground">Your application entries will appear here.</p> : null}</div></Card><Card className="editorial-insight-card p-5 sm:p-6"><header className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Upcoming interviews</h2><p className="mt-1 text-xs text-muted-foreground">Compact handoff view.</p></div><a className="text-xs font-semibold text-primary" href="/calendar">Open calendar</a></header>{upcoming.length ? <ol className="mt-4 divide-y divide-border">{upcoming.map((interview) => <li className="py-3 first:pt-0 last:pb-0" key={interview.id}><strong className="block truncate text-sm text-foreground">{interview.roundType.replaceAll("_", " ")}</strong><small className="block text-xs text-muted-foreground">{interviewTime(interview)} · {interview.timezone}</small><div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold text-primary"><a href={`/leads/${interview.leadId}/interviews?edit=${interview.id}`}>Edit</a><a href={`/leads/${interview.leadId}`}>Open application</a><a href={`/calendar?date=${encodeURIComponent(interview.startsAt)}`}>Open calendar</a></div></li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">No upcoming interviews.</p>}</Card></section>
-+    <section aria-label="BD insights" className="mt-5 grid gap-5 md:grid-cols-2"><Card className="editorial-insight-card p-5 sm:p-6"><header className="flex items-center justify-between"><h2 className="text-base font-bold text-foreground">Applications by platform</h2><span className="editorial-today-pill">{applications.length} total</span></header><ul className="mt-4 space-y-3">{Array.from(platformCounts.entries()).slice(0, 5).map(([platform, count]) => <li className="flex items-center justify-between text-sm" key={platform}><span className="text-muted-foreground">{platform}</span><strong>{count}</strong></li>)}</ul></Card>{performance ? <BdPeerRanking peers={performance.peerLeaderboard} selfRank={performance.rank} /> : <Card className="editorial-insight-card p-5 sm:p-6"><h2 className="text-base font-bold text-foreground">What needs attention</h2><p className="mt-4 text-sm leading-6 text-muted-foreground">Recruiter replies become active applications. Review the response, add interview details, then hand the scheduled call to the assigned Closer.</p></Card>}</section>
++    <section aria-label="BD insights" className="mt-5 grid gap-5 md:grid-cols-2"><Card className="editorial-insight-card p-5 sm:p-6"><header className="flex items-center justify-between"><h2 className="text-base font-bold text-foreground">Applications by platform</h2><span className="editorial-today-pill">{displayCount(platformTotals.reduce((total, entry) => total + entry.count, 0))} total</span></header><ul className="mt-4 space-y-3">{platformTotals.slice(0, 5).map(({ platform, count }) => <li className="flex items-center justify-between text-sm" key={platform}><span className="text-muted-foreground">{platform}</span><strong>{count}</strong></li>)}{workQueue && platformTotals.length === 0 ? <li className="text-sm text-muted-foreground">No saved applications yet.</li> : null}{!workQueue ? <li className="text-sm text-muted-foreground">Platform totals are temporarily unavailable.</li> : null}</ul></Card>{performance ? <BdPeerRanking peers={performance.peerLeaderboard} selfRank={performance.rank} /> : <Card className="editorial-insight-card p-5 sm:p-6"><h2 className="text-base font-bold text-foreground">What needs attention</h2><p className="mt-4 text-sm leading-6 text-muted-foreground">Recruiter replies become active applications. Review the response, add interview details, then hand the scheduled call to the assigned Closer.</p></Card>}</section>
 +  </div>;
 +}
+diff --git a/apps/web/components/interviews/interview-edit-form.tsx b/apps/web/components/interviews/interview-edit-form.tsx
+index 212824a..a3dea73 100644
+--- a/apps/web/components/interviews/interview-edit-form.tsx
++++ b/apps/web/components/interviews/interview-edit-form.tsx
+@@ -59,7 +59,7 @@ export function InterviewEditForm({ round, onCancel }: { round: InterviewSummary
+   </form>;
+ }
+
+-export function InterviewRoundCard({ actorRole, round }: { actorRole: string; round: InterviewSummary }) {
+-  const [editing, setEditing] = useState(false);
++export function InterviewRoundCard({ actorRole, round, initiallyEditing = false }: { actorRole: string; round: InterviewSummary; initiallyEditing?: boolean }) {
++  const [editing, setEditing] = useState(initiallyEditing);
+   return <Card className="p-5"><p className="text-xs font-bold uppercase tracking-[0.12em] text-primary">{round.roundType.replaceAll("_", " ")} · Round {round.roundNumber}</p><h2 className="mt-2 text-base font-bold text-foreground">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: round.timezone }).format(new Date(round.startsAt))}</h2><p className="mt-1 text-sm text-muted-foreground">{round.status.replaceAll("_", " ")} · {round.timezone}</p>{round.interviewer ? <p className="mt-2 text-sm text-foreground">{round.interviewer}</p> : null}{["ADMIN", "BD"].includes(actorRole) && round.status === "SCHEDULED" ? editing ? <InterviewEditForm onCancel={() => setEditing(false)} round={round} /> : <Button className="mt-4" size="sm" variant="secondary" onClick={() => setEditing(true)}>Edit interview</Button> : null}</Card>;
+ }
 diff --git a/apps/web/components/performance/bd-peer-ranking.tsx b/apps/web/components/performance/bd-peer-ranking.tsx
 new file mode 100644
 index 0000000..6e103e6
@@ -436,14 +754,7 @@ diff --git a/apps/web/components/performance/score-details.tsx b/apps/web/compon
 index f960755..abc8919 100644
 --- a/apps/web/components/performance/score-details.tsx
 +++ b/apps/web/components/performance/score-details.tsx
-@@ -12,17 +12,18 @@ const metricLabels: Record<string, string> = {
-   REASSIGNMENTS: "Reassignments",
- };
-
- function leadFor(item: PerformanceDrilldownResponse[number]) {
-   if (item.kind === "LEAD") return item.lead;
-   if (item.kind === "FOLLOW_UP") return item.followUp.lead;
-   if (item.kind === "INTERVIEW") return item.interview.lead;
+@@ -19,10 +19,11 @@ function leadFor(item: PerformanceDrilldownResponse[number]) {
    return item.review.lead;
  }
 
@@ -458,3 +769,191 @@ index f960755..abc8919 100644
      {items.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">No records match this period.</p> : <ul className="mt-4 divide-y divide-border">{items.map((item) => { const lead = leadFor(item); return <li className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0" key={`${item.kind}-${lead.id}`}><div className="min-w-0"><a className="block truncate text-sm font-semibold text-foreground hover:text-primary" href={`/leads/${lead.id}`}>{lead.companyName} · {lead.jobTitle}</a><p className="mt-1 truncate text-xs text-muted-foreground">{lead.status.replaceAll("_", " ")} · applied {lead.appliedDate}</p></div><span className="rounded-full bg-surface-subtle px-2 py-1 text-[10px] font-bold text-muted-foreground">{item.kind.replaceAll("_", " ")}</span></li>; })}</ul>}
    </details>;
  }
+diff --git a/apps/web/lib/api-client.ts b/apps/web/lib/api-client.ts
+index a9b65b8..96e2ff1 100644
+--- a/apps/web/lib/api-client.ts
++++ b/apps/web/lib/api-client.ts
+@@ -128,6 +128,7 @@ import {
+   type CompanyCloserAssignment,
+   bulkImportResultSchema,
+   bdTargetScheduleInputSchema,
++  bdWorkQueueSchema,
+   bdTargetScheduleSchema,
+   duplicateReviewWithLeadSchema,
+   performanceApprovedLeaveInputSchema,
+@@ -144,6 +145,7 @@ import {
+   updatePerformanceHolidayInputSchema,
+   performanceVersionInputSchema,
+   type BdTargetSchedule,
++  type BdWorkQueue,
+   type PerformanceApprovedLeave,
+   type PerformanceHoliday,
+   type PerformanceRuleMutation,
+@@ -182,6 +184,7 @@ export type CreatePerformanceApprovedLeave = Pick<
+   "bdId" | "startsAt" | "endsAt" | "reason" | "availableStartHour" | "availableEndHour"
+ >;
+ export type { PerformanceRulePreview };
++export type { BdWorkQueue };
+ type Schema<T> = {
+   safeParse(data: unknown):
+     | { success: true; data: T }
+@@ -562,6 +565,10 @@ export async function listTasks(input: TaskListInput = {}, cookie?: string): Pro
+   return parsed.data;
+ }
+
++export async function getBdWorkQueue(cookie?: string): Promise<BdWorkQueue> {
++  return parseResource(bdWorkQueueSchema, await read("/performance/me/work-queue", cookie), "BD work queue");
++}
++
+ export async function completeTask(id: string, expectedVersion: number, notes?: string): Promise<TaskSummary> {
+   const taskId = parseId(id, "task");
+   const command = parseInput(completeTaskSchema, { expectedVersion, ...(notes?.trim() ? { notes: notes.trim() } : {}) }, "Enter valid completion details.");
+diff --git a/apps/web/lib/performance-api-client.test.ts b/apps/web/lib/performance-api-client.test.ts
+index dfc9468..d9cd717 100644
+--- a/apps/web/lib/performance-api-client.test.ts
++++ b/apps/web/lib/performance-api-client.test.ts
+@@ -4,6 +4,7 @@ import {
+   deletePerformanceApprovedLeave,
+   deletePerformanceHoliday,
+   getDuplicateReviews,
++  getBdWorkQueue,
+   getPerformanceRules,
+   getPerformanceRuleHistory,
+   previewPerformanceRules,
+@@ -162,6 +163,23 @@ describe("performance API client", () => {
+     });
+   });
+
++  it("reads uncapped BD work-queue totals through the shared contract", async () => {
++    const queue = {
++      recruiterResponses: 127,
++      activeApplications: 103,
++      openFollowUps: 64,
++      platformTotals: [{ platform: "linkedin.com", count: 208 }],
++    };
++    const fetchMock = vi.fn().mockResolvedValue(success(queue));
++    vi.stubGlobal("fetch", fetchMock);
++
++    await expect(getBdWorkQueue()).resolves.toEqual(queue);
++    expect(fetchMock).toHaveBeenCalledWith(
++      "https://api.orbit.example/api/v1/performance/me/work-queue",
++      expect.objectContaining({ cache: "no-store" }),
++    );
++  });
++
+   it("uses versioned holiday and leave mutations and reads rule history through shared contracts", async () => {
+     const holiday = {
+       id: "20000000-0000-4000-8000-000000000001",
+diff --git a/packages/backend/src/performance/performance.service.test.ts b/packages/backend/src/performance/performance.service.test.ts
+index f567330..0f5f380 100644
+--- a/packages/backend/src/performance/performance.service.test.ts
++++ b/packages/backend/src/performance/performance.service.test.ts
+@@ -23,6 +23,31 @@ const reviewId = "10000000-0000-4000-8000-000000000003";
+ const leadId = "10000000-0000-4000-8000-000000000004";
+
+ describe("PerformanceService", () => {
++  it("returns uncapped BD work-queue totals while keeping bounded previews separate", async () => {
++    const leads = Array.from({ length: 127 }, (_, index) => ({
++      id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
++      currentOwnerId: bd.id,
++      status: index < 64 ? "RESPONSE_RECEIVED" : index < 103 ? "INTERVIEWING" : "APPLIED",
++      rawUrl: index % 2 ? "https://www.linkedin.com/jobs/view/1" : "https://jobs.example.com/role/2",
++    }));
++    const tasks = Array.from({ length: 64 }, (_, index) => ({ id: String(index), assigneeId: bd.id, status: "OPEN" }));
++    const database: any = {
++      jobLead: { findMany: vi.fn().mockResolvedValue(leads) },
++      task: { findMany: vi.fn().mockResolvedValue(tasks) },
++    };
++    const service = new PerformanceService(database, { assertRole: vi.fn() } as never);
++
++    await expect(service.getBdWorkQueue(bd)).resolves.toEqual({
++      recruiterResponses: 64,
++      activeApplications: 39,
++      openFollowUps: 64,
++      platformTotals: [
++        { platform: "jobs.example.com", count: 64 },
++        { platform: "linkedin.com", count: 63 },
++      ],
++    });
++  });
++
+   it("derives Screening from a persisted recruiter or pre-screen round before a technical interview", () => {
+     expect(outcomeStage("RESPONSE_RECEIVED", [{ roundType: "PRE_SCREEN" }])).toBe("SCREENING");
+     expect(outcomeStage("RESPONSE_RECEIVED", [{ roundType: "TECHNICAL" }])).toBe("INTERVIEW");
+diff --git a/packages/backend/src/performance/performance.service.ts b/packages/backend/src/performance/performance.service.ts
+index 291a96c..3f617e4 100644
+--- a/packages/backend/src/performance/performance.service.ts
++++ b/packages/backend/src/performance/performance.service.ts
+@@ -49,6 +49,7 @@ export type PerformanceDatabase = {
+   bdTargetSchedule: Store;
+   performanceLeaderboardException: Store;
+   interviewRound: Store;
++  task: Store;
+   leadStatusTransition: Store;
+   outboxEvent: Store;
+   user: Store;
+@@ -292,6 +293,37 @@ export class PerformanceService {
+     };
+   }
+
++  async getBdWorkQueue(actor: Actor) {
++    if (!actor.isActive || actor.role !== "BD") throw new AuthorizationError();
++    const [leads, tasks] = await Promise.all([
++      this.database.jobLead.findMany?.({
++        where: { currentOwnerId: actor.id, archivedAt: null },
++        select: { status: true, rawUrl: true },
++      }) ?? [],
++      this.database.task.findMany?.({
++        where: { assigneeId: actor.id, status: "OPEN" },
++        select: { id: true },
++      }) ?? [],
++    ]);
++    const platformCounts = new Map<string, number>();
++    let recruiterResponses = 0;
++    let activeApplications = 0;
++    for (const lead of leads) {
++      if (lead.status === "RESPONSE_RECEIVED") recruiterResponses += 1;
++      if (["INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED"].includes(String(lead.status))) activeApplications += 1;
++      const platform = jobUrlHost(lead.rawUrl) ?? "Other";
++      platformCounts.set(platform, (platformCounts.get(platform) ?? 0) + 1);
++    }
++    return {
++      recruiterResponses,
++      activeApplications,
++      openFollowUps: tasks.length,
++      platformTotals: [...platformCounts.entries()]
++        .map(([platform, count]) => ({ platform, count }))
++        .sort((left, right) => right.count - left.count || left.platform.localeCompare(right.platform)),
++    };
++  }
++
+   async getPerformanceRules(actor: Actor) {
+     this.authorization.assertRole(actor, ["ADMIN"]);
+     const rule = await this.database.performanceRuleSet.findFirst?.({
+diff --git a/packages/contracts/src/performance.ts b/packages/contracts/src/performance.ts
+index 8e92478..c2ca1aa 100644
+--- a/packages/contracts/src/performance.ts
++++ b/packages/contracts/src/performance.ts
+@@ -391,6 +391,14 @@ export const performanceQualityIndicatorsSchema = z.strictObject({
+   duplicateRate: percentageSchema.nullable(),
+ });
+
++/** Server-owned BD queue totals. Preview arrays must never be used as these totals. */
++export const bdWorkQueueSchema = z.strictObject({
++  recruiterResponses: nonnegativeIntegerSchema,
++  activeApplications: nonnegativeIntegerSchema,
++  openFollowUps: nonnegativeIntegerSchema,
++  platformTotals: z.array(z.strictObject({ platform: textSchema, count: nonnegativeIntegerSchema })),
++});
++
+ export const performanceLeaderboardRowSchema = z.strictObject({
+   bdId: uuidSchema,
+   bdName: textSchema,
+@@ -612,6 +620,7 @@ export type PerformanceFollowUpWithLead = z.infer<typeof performanceFollowUpWith
+ export type PerformanceRuleMutation = z.infer<typeof performanceRuleMutationSchema>;
+ export type PerformanceKpi = z.infer<typeof performanceKpiSchema>;
+ export type PerformanceQualityIndicators = z.infer<typeof performanceQualityIndicatorsSchema>;
++export type BdWorkQueue = z.infer<typeof bdWorkQueueSchema>;
+ export type PerformanceLeaderboardRow = z.infer<typeof performanceLeaderboardRowSchema>;
+ export type BdPeerSummary = z.infer<typeof bdPeerSummarySchema>;
+ export type BdPerformanceEligibility = z.infer<typeof bdPerformanceEligibilitySchema>;
