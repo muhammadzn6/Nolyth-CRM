@@ -6,6 +6,13 @@ Completed and corrected after review.
 
 ## Delivered
 
+### Final drill-down and review-response correction
+
+- `RECRUITER_RESPONSES` drill-down now reads the same qualified, applied-date application cohort as the KPI and retains only records whose current highest outcome is above `NONE`, including interview-derived stages.
+- `FOLLOW_UP_SLA` drill-down now uses the active follow-up owner and the same responded-at, eligible-status, completion/due predicates as the performance row. Original-owner history remains available through the explicit `REASSIGNMENTS` metric.
+- Duplicate-review decisions now re-read and return the persisted post-update review inside the transaction, including the incremented version, reviewer, review timestamps, and resolved-credit timestamp.
+- Added regressions for each correction, including a reassigned follow-up and persisted duplicate-review response fields.
+
 ### Final correction
 
 - Historical performance now segments attainment and score weights by the effective rule version on each eligible workday and application date; later settings do not recalculate earlier periods.
@@ -30,8 +37,8 @@ Completed and corrected after review.
 
 ## Verification
 
-- `npx vitest run packages/backend/src/performance/performance.service.test.ts packages/backend/src/performance/score.test.ts packages/backend/src/performance/eligibility.test.ts packages/backend/src/performance/maturity.test.ts packages/backend/src/performance/business-hours.test.ts packages/backend/src/leads/collaboration.service.test.ts packages/backend/src/leads/application-intake.test.ts apps/api/src/modules/performance/performance.controller.test.ts packages/contracts/src/performance.test.ts` — 86 tests pass.
-- Backend, API, and contracts TypeScript checks pass.
+- `npx vitest run packages/backend/src/performance/performance.service.test.ts packages/backend/src/performance/score.test.ts packages/backend/src/performance/eligibility.test.ts packages/backend/src/performance/maturity.test.ts packages/backend/src/performance/business-hours.test.ts packages/backend/src/leads/collaboration.service.test.ts packages/backend/src/leads/application-intake.test.ts apps/api/src/modules/performance/performance.controller.test.ts packages/contracts/src/performance.test.ts` — 88 tests pass.
+- Backend, API, contracts, and database TypeScript checks pass.
 - Local Prisma schema validation passes, including migration `20260905050000_duplicate_review_overdue`.
 - `git diff --check` passes.
 

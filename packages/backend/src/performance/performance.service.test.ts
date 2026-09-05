@@ -46,10 +46,20 @@ describe("PerformanceService", () => {
       createdById: bd.id,
       lead: { id: leadId, profileId: "10000000-0000-4000-8000-000000000005", jobTitle: "Platform Engineer" },
     };
+    const persistedReview = {
+      ...review,
+      status: "REJECTED",
+      reviewerId: admin.id,
+      reviewReason: "Same requisition and candidate.",
+      reviewedAt: new Date("2026-09-05T12:00:00.000Z"),
+      provisionalCreditResolvedAt: new Date("2026-09-05T12:00:00.000Z"),
+      updatedAt: new Date("2026-09-05T12:00:00.000Z"),
+      version: 2,
+    };
     const database: any = {
       $transaction: async <T>(work: (transaction: typeof database) => Promise<T>) => work(database),
       duplicateReview: {
-        findUnique: vi.fn().mockResolvedValue(review),
+        findUnique: vi.fn().mockResolvedValueOnce(review).mockResolvedValueOnce(persistedReview),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       jobLead: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -57,10 +67,16 @@ describe("PerformanceService", () => {
     };
     const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never);
 
-    await service.reviewDuplicateOverride(admin, reviewId, {
+    await expect(service.reviewDuplicateOverride(admin, reviewId, {
       status: "REJECTED",
       reviewReason: "Same requisition and candidate.",
       expectedVersion: 1,
+    })).resolves.toMatchObject({
+      status: "REJECTED",
+      reviewerId: admin.id,
+      version: 2,
+      reviewedAt: new Date("2026-09-05T12:00:00.000Z"),
+      provisionalCreditResolvedAt: new Date("2026-09-05T12:00:00.000Z"),
     });
 
     expect(database.jobLead.updateMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -69,6 +85,75 @@ describe("PerformanceService", () => {
     }));
     expect(database.activityEvent.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ action: "performance.duplicate_override_rejected", leadId }),
+    }));
+  });
+
+  it("drills recruiter responses from the same qualified applied-date cohort as the KPI", async () => {
+    const responseLead = {
+      id: "response-lead",
+      appliedDate: new Date("2026-09-02T00:00:00.000Z"),
+      qualifiedCredit: true,
+      status: "RESPONSE_RECEIVED",
+      interviews: [],
+    };
+    const noOutcomeLead = {
+      id: "no-outcome-lead",
+      appliedDate: new Date("2026-09-02T00:00:00.000Z"),
+      qualifiedCredit: true,
+      status: "APPLIED",
+      interviews: [],
+    };
+    const database: any = {
+      jobLead: { findMany: vi.fn().mockResolvedValue([responseLead, noOutcomeLead]) },
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database),
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never);
+
+    await expect(service.getAdminPerformanceDrilldown(admin, {
+      metric: "RECRUITER_RESPONSES", bdId: bd.id,
+      from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z",
+    })).resolves.toEqual([responseLead]);
+
+    expect(database.jobLead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        qualifiedCredit: true,
+        createdById: bd.id,
+        appliedDate: { gte: new Date("2026-09-01T00:00:00.000Z"), lte: new Date("2026-09-30T00:00:00.000Z") },
+      }),
+      include: { interviews: { where: { startsAt: { lte: new Date("2026-09-30T00:00:00.000Z") } } } },
+    }));
+  });
+
+  it("drills follow-up SLA work for the active owner after reassignment", async () => {
+    const replacementBdId = "10000000-0000-4000-8000-000000000007";
+    const activeFollowUp = {
+      id: "active-follow-up",
+      ownerId: replacementBdId,
+      originalOwnerId: bd.id,
+      status: "COMPLETED",
+      recruiterRespondedAt: new Date("2026-09-02T00:00:00.000Z"),
+      completedAt: new Date("2026-09-03T00:00:00.000Z"),
+      slaDueAt: new Date("2026-09-04T00:00:00.000Z"),
+    };
+    const database: any = {
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([activeFollowUp]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database),
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-05T00:00:00.000Z"));
+
+    await expect(service.getAdminPerformanceDrilldown(admin, {
+      metric: "FOLLOW_UP_SLA", bdId: replacementBdId,
+      from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z",
+    })).resolves.toEqual([activeFollowUp]);
+
+    expect(database.performanceFollowUp.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        ownerId: replacementBdId,
+        recruiterRespondedAt: { gte: new Date("2026-09-01T00:00:00.000Z"), lte: new Date("2026-09-30T00:00:00.000Z") },
+      }),
     }));
   });
 

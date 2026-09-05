@@ -301,7 +301,12 @@ export class PerformanceService {
         },
       });
 
-      return { ...review, status: parsed.data.status, reviewerId: actor.id, reviewReason: parsed.data.reviewReason };
+      const persisted = await transaction.duplicateReview.findUnique?.({
+        where: { id: reviewId },
+        include: { lead: true },
+      });
+      if (!persisted) throw new NotFoundError("The duplicate review was not found after it was updated");
+      return persisted;
     });
     const reviewedRecord = reviewed as Record<string, unknown>;
     const rejected = parsed.data.status === "REJECTED";
@@ -471,22 +476,39 @@ export class PerformanceService {
       }) ?? [];
     }
     if (parsed.data.metric === "FOLLOW_UP_SLA") {
-      return this.database.performanceFollowUp.findMany?.({
+      const followUps = await this.database.performanceFollowUp.findMany?.({
         where: {
-          recruiterRespondedAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { originalOwnerId: parsed.data.bdId } : {}),
+          recruiterRespondedAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { ownerId: parsed.data.bdId } : {}),
           ...(parsed.data.status ? { status: parsed.data.status } : {}),
         },
         include: { lead: true }, orderBy: { recruiterRespondedAt: "desc" },
       }) ?? [];
+      const observedAt = this.now();
+      return followUps.filter((followUp) => {
+        if (followUp.status === "NEEDS_REASSIGNMENT") return false;
+        const completedAt = asDate(followUp.completedAt);
+        const dueAt = asDate(followUp.slaDueAt);
+        return Boolean(completedAt || (dueAt && dueAt <= observedAt));
+      });
     }
     if (parsed.data.metric === "REASSIGNMENTS") return this.database.performanceFollowUp.findMany?.({
       where: { reassignedAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { originalOwnerId: parsed.data.bdId } : {}), ...(parsed.data.status ? { status: parsed.data.status } : {}) },
       include: { lead: true }, orderBy: { reassignedAt: "desc" },
     }) ?? [];
-    if (parsed.data.metric === "RECRUITER_RESPONSES") return this.database.leadStatusTransition.findMany?.({
-      where: { toStatus: "RESPONSE_RECEIVED", createdAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { lead: { createdById: parsed.data.bdId } } : {}) },
-      include: { lead: true }, orderBy: { createdAt: "desc" },
-    }) ?? [];
+    if (parsed.data.metric === "RECRUITER_RESPONSES") {
+      const leads = await this.database.jobLead.findMany?.({
+        where: {
+          qualifiedCredit: true,
+          appliedDate: { gte: from, lte: to },
+          ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}),
+        },
+        include: { interviews: { where: { startsAt: { lte: to } } } }, orderBy: { appliedDate: "desc" },
+      }) ?? [];
+      return leads.filter((lead) => outcomeStage(
+        lead.status,
+        Array.isArray(lead.interviews) ? lead.interviews as Record<string, unknown>[] : [],
+      ) !== "NONE");
+    }
     if (parsed.data.metric === "INTERVIEWS_SCHEDULED") return this.database.interviewRound.findMany?.({
       where: { startsAt: { gte: from, lte: to }, status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, ...(parsed.data.bdId ? { lead: { createdById: parsed.data.bdId } } : {}) },
       include: { lead: true }, orderBy: { startsAt: "asc" },
@@ -655,7 +677,7 @@ export class PerformanceService {
     const eligibility = evaluateEligibility({ eligibleWorkingDays, initialMaturityElapsed, qualifiedApplications: qualified, maturedApplications: matured.length, evaluatedAt: now });
     const performance = {
       qualifiedApplications: qualified, targetApplications: Math.round(targetApplications), rawTargetAttainmentPercent: Math.round(rawTargetAttainmentPercent * 10) / 10,
-      effectiveTargetAttainmentPercent, recruiterResponses: leads.filter((lead) => outcomeStage(lead.status, interviewsByLead.get(String(lead.id)) ?? []) !== "NONE").length,
+      effectiveTargetAttainmentPercent, recruiterResponses: qualifiedLeads.filter((lead) => outcomeStage(lead.status, interviewsByLead.get(String(lead.id)) ?? []) !== "NONE").length,
       interviewsScheduled: interviews.filter((interview) => asDate(interview.startsAt) && asDate(interview.startsAt)! >= from && asDate(interview.startsAt)! <= to && ["SCHEDULED", "RESCHEDULE_REQUIRED"].includes(String(interview.status))).length,
       interviewsNeedingScheduling: leads.filter((lead) => lead.status === "RESPONSE_RECEIVED" && !(interviewsByLead.get(String(lead.id))?.length)).length,
       followUpSlaCompliancePercent: followUpSlaCompliancePercent === null ? null : Math.round(followUpSlaCompliancePercent * 10) / 10,
