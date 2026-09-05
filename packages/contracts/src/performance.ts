@@ -284,6 +284,16 @@ export const performanceKpiSchema = z.strictObject({
   scoreCoverage: z.enum(["COMPLETE", "PARTIAL_MEASUREMENT", "PROVISIONAL", "INSUFFICIENT_DATA"]),
 });
 
+export const performanceQualityIndicatorsSchema = z.strictObject({
+  recordHealthRate: percentageSchema.nullable(),
+  adminAuditPassRate: percentageSchema.nullable(),
+  correctionRate: percentageSchema.nullable(),
+  confirmedDuplicateRate: percentageSchema.nullable(),
+  pendingOverrideRate: percentageSchema.nullable(),
+  rejectedOverrideRate: percentageSchema.nullable(),
+  duplicateRate: percentageSchema.nullable(),
+});
+
 export const performanceLeaderboardRowSchema = z.strictObject({
   bdId: uuidSchema,
   bdName: textSchema,
@@ -295,6 +305,7 @@ export const performanceLeaderboardRowSchema = z.strictObject({
   ineligibilityReason: textSchema.nullable().optional(),
   estimatedEligibilityDate: dateTimeSchema.nullable().optional(),
   warnings: z.array(z.enum(["LOW_APPLICATION_SAMPLE", "LOW_OUTCOME_SAMPLE", "ADMIN_OVERRIDE_PROVISIONAL"])).default([]),
+  quality: performanceQualityIndicatorsSchema,
 });
 
 /** The only team-performance information a BD may see for another BD. */
@@ -307,6 +318,72 @@ export const bdPeerSummarySchema = z.strictObject({
   adminAuditPassRate: percentageSchema.nullable(),
   duplicateRate: percentageSchema.nullable(),
 });
+
+export const performanceLeadSummarySchema = z.strictObject({
+  id: uuidSchema,
+  profileId: uuidSchema,
+  createdById: uuidSchema,
+  currentOwnerId: uuidSchema,
+  companyName: textSchema,
+  jobTitle: textSchema,
+  appliedDate: z.iso.date(),
+  status: z.enum(["APPLIED", "RESPONSE_RECEIVED", "INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED", "CLOSED"]),
+});
+
+export const performanceFollowUpSchema = z.strictObject({
+  id: uuidSchema,
+  leadId: uuidSchema,
+  ownerId: uuidSchema,
+  originalOwnerId: uuidSchema,
+  status: z.enum(["OPEN", "COMPLETED", "NEEDS_REASSIGNMENT", "ADMIN_REASSIGNMENT_OVERDUE"]),
+  recruiterRespondedAt: dateTimeSchema,
+  slaStartedAt: dateTimeSchema,
+  slaPausedAt: dateTimeSchema.nullable(),
+  slaResumedAt: dateTimeSchema.nullable(),
+  slaDueAt: dateTimeSchema.nullable(),
+  completedAt: dateTimeSchema.nullable(),
+  breachedAt: dateTimeSchema.nullable(),
+  adminReassignmentSlaStartedAt: dateTimeSchema.nullable(),
+  adminReassignmentSlaDueAt: dateTimeSchema.nullable(),
+  adminReassignmentBreachedAt: dateTimeSchema.nullable(),
+  reassignedAt: dateTimeSchema.nullable(),
+  reassignedById: uuidSchema.nullable(),
+  auditMetadata: z.record(z.string(), z.unknown()).nullable(),
+  version: z.number().int().positive(),
+  createdAt: dateTimeSchema,
+  updatedAt: dateTimeSchema,
+});
+
+export const duplicateReviewWithLeadSchema = z.strictObject({
+  ...duplicateReviewSchema.shape,
+  lead: performanceLeadSummarySchema,
+});
+
+export const performanceFollowUpWithLeadSchema = z.strictObject({
+  ...performanceFollowUpSchema.shape,
+  lead: performanceLeadSummarySchema,
+});
+
+export const performanceInterviewDrilldownSchema = z.strictObject({
+  id: uuidSchema,
+  leadId: uuidSchema,
+  roundNumber: z.number().int().positive(),
+  roundType: textSchema,
+  status: z.string().trim().min(1),
+  closerId: uuidSchema,
+  startsAt: dateTimeSchema,
+  endsAt: dateTimeSchema,
+  lead: performanceLeadSummarySchema,
+});
+
+export const performanceDrilldownItemSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("LEAD"), lead: performanceLeadSummarySchema }),
+  z.strictObject({ kind: z.literal("FOLLOW_UP"), followUp: performanceFollowUpWithLeadSchema }),
+  z.strictObject({ kind: z.literal("DUPLICATE_REVIEW"), review: duplicateReviewWithLeadSchema }),
+  z.strictObject({ kind: z.literal("INTERVIEW"), interview: performanceInterviewDrilldownSchema }),
+]);
+
+export const performanceDrilldownResponseSchema = z.array(performanceDrilldownItemSchema);
 
 export const performanceRuleImpactSchema = z.strictObject({
   bdId: uuidSchema,
@@ -371,13 +448,20 @@ export const performanceDrilldownQuerySchema = z
     ]),
     status: z.enum(["PENDING", "APPROVED", "REJECTED", "OPEN", "COMPLETED", "NEEDS_REASSIGNMENT", "ADMIN_REASSIGNMENT_OVERDUE"]).optional(),
   })
-  .refine(({ from, to }) => from < to, { message: "Period must end after it starts", path: ["to"] });
+  .refine(({ from, to }) => from < to, { message: "Period must end after it starts", path: ["to"] })
+  .refine(({ metric, status }) => {
+    if (!status) return true;
+    if (metric === "DUPLICATE_REVIEWS") return ["PENDING", "APPROVED", "REJECTED"].includes(status);
+    if (["FOLLOW_UP_SLA", "REASSIGNMENTS"].includes(metric)) return ["OPEN", "COMPLETED", "NEEDS_REASSIGNMENT", "ADMIN_REASSIGNMENT_OVERDUE"].includes(status);
+    return false;
+  }, { message: "The selected status is not valid for this drill-down metric", path: ["status"] });
 
 export const adminBdPerformanceResponseSchema = z.strictObject({
   period: z.strictObject({ from: dateTimeSchema, to: dateTimeSchema }),
   team: performanceKpiSchema,
   leaderboard: z.array(performanceLeaderboardRowSchema),
   buildingBaseline: z.array(performanceLeaderboardRowSchema),
+  quality: performanceQualityIndicatorsSchema,
 });
 
 export const bdPerformanceResponseSchema = z.strictObject({
@@ -387,6 +471,7 @@ export const bdPerformanceResponseSchema = z.strictObject({
   performance: performanceKpiSchema,
   rank: z.number().int().positive().nullable(),
   peerLeaderboard: z.array(bdPeerSummarySchema),
+  quality: performanceQualityIndicatorsSchema,
 });
 
 export type PerformanceRuleSet = z.infer<typeof performanceRuleSchema>;
@@ -400,9 +485,11 @@ export type PerformancePeriodQuery = z.infer<typeof performancePeriodQuerySchema
 export type ReassignPerformanceFollowUpInput = z.infer<typeof reassignPerformanceFollowUpInputSchema>;
 export type PerformanceRuleMutation = z.infer<typeof performanceRuleMutationSchema>;
 export type PerformanceKpi = z.infer<typeof performanceKpiSchema>;
+export type PerformanceQualityIndicators = z.infer<typeof performanceQualityIndicatorsSchema>;
 export type PerformanceLeaderboardRow = z.infer<typeof performanceLeaderboardRowSchema>;
 export type BdPeerSummary = z.infer<typeof bdPeerSummarySchema>;
 export type PerformanceRulePreview = z.infer<typeof performanceRulePreviewSchema>;
 export type PerformanceDrilldownQuery = z.infer<typeof performanceDrilldownQuerySchema>;
+export type PerformanceDrilldownResponse = z.infer<typeof performanceDrilldownResponseSchema>;
 export type AdminBdPerformanceResponse = z.infer<typeof adminBdPerformanceResponseSchema>;
 export type BdPerformanceResponse = z.infer<typeof bdPerformanceResponseSchema>;

@@ -2,6 +2,7 @@ export type WorkerHealth = { live: boolean; ready: boolean };
 
 export type WorkerRuntimeDependencies = {
   dispatcher: { dispatchPending(): Promise<number> };
+  performanceSlaEvaluator?: { evaluateOverdueSlas(): Promise<unknown> };
   consumer: { close(): Promise<void>; waitUntilReady(): Promise<unknown> };
   queue: {
     close(): Promise<void>;
@@ -10,6 +11,7 @@ export type WorkerRuntimeDependencies = {
   };
   pollIntervalMs: number;
   onDispatchError?: (error: unknown) => void;
+  onPerformanceEvaluationError?: (error: unknown) => void;
 };
 
 export type WorkerRuntime = {
@@ -24,6 +26,19 @@ export function createWorkerRuntime(
   let live = false;
   let closed = false;
   let poller: ReturnType<typeof setInterval> | undefined;
+  let evaluatingPerformance = false;
+
+  const evaluatePerformance = async () => {
+    if (!dependencies.performanceSlaEvaluator || evaluatingPerformance) return;
+    evaluatingPerformance = true;
+    try {
+      await dependencies.performanceSlaEvaluator.evaluateOverdueSlas();
+    } catch (error) {
+      dependencies.onPerformanceEvaluationError?.(error);
+    } finally {
+      evaluatingPerformance = false;
+    }
+  };
 
   return {
     async start() {
@@ -33,11 +48,13 @@ export function createWorkerRuntime(
       await dependencies.queue.waitUntilReady();
       await dependencies.consumer.waitUntilReady();
       await dependencies.dispatcher.dispatchPending();
+      await evaluatePerformance();
       live = true;
       poller = setInterval(() => {
         void dependencies.dispatcher.dispatchPending().catch((error: unknown) => {
           dependencies.onDispatchError?.(error);
         });
+        void evaluatePerformance();
       }, dependencies.pollIntervalMs);
       poller.unref();
     },

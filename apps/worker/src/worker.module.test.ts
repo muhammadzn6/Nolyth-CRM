@@ -12,6 +12,12 @@ describe("worker runtime", () => {
           return 0;
         },
       },
+      performanceSlaEvaluator: {
+        evaluateOverdueSlas: async () => {
+          lifecycle.push("performance.evaluate");
+          return { reassignmentOverdue: 0, reviewOverdue: 0 };
+        },
+      },
       consumer: {
         close: async () => {
           lifecycle.push("consumer.close");
@@ -34,6 +40,6 @@ describe("worker runtime", () => {
 
     await runtime.close();
 
-    expect(lifecycle).toEqual(["dispatch", "consumer.close", "queue.close"]);
+    expect(lifecycle).toEqual(["dispatch", "performance.evaluate", "consumer.close", "queue.close"]);
   });
 });

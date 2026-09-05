@@ -1,5 +1,6 @@
 import {
   OutboxProcessor,
+  PerformanceService,
   type EmailProvider,
   type NotificationProvider,
   type OutboxDatabase,
@@ -83,6 +84,7 @@ type WorkerApplicationOptions = {
   logger?: WorkerLogger;
   pollIntervalMs?: number;
   providers?: WorkerProviders;
+  performanceSlaEvaluator?: { evaluateOverdueSlas(): Promise<unknown> };
 };
 
 const defaultFactories: WorkerInfrastructureFactories = {
@@ -149,6 +151,10 @@ export function createWorkerApplication(options: WorkerApplicationOptions): Work
     onDispatchError: (error) => {
       logger.error("worker.dispatch_failed", { errorType: errorType(error) });
     },
+    onPerformanceEvaluationError: (error) => {
+      logger.error("worker.performance_sla_evaluation_failed", { errorType: errorType(error) });
+    },
+    performanceSlaEvaluator: options.performanceSlaEvaluator,
     pollIntervalMs: options.pollIntervalMs ?? 1_000,
     queue: {
       close: async () => {
@@ -221,6 +227,7 @@ export async function bootstrapWorker(): Promise<void> {
   const application = createWorkerApplication({
     config: { redisUrl: env.redisUrl },
     database: database as unknown as WorkerDatabase,
+    performanceSlaEvaluator: new PerformanceService(database as never, { assertRole: () => undefined }),
   });
   await runWorkerProcess(application);
 }

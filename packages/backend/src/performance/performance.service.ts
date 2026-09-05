@@ -82,9 +82,34 @@ function iso(value: unknown): string | null {
   return parsed ? parsed.toISOString() : typeof value === "string" ? value : null;
 }
 
+function isoDate(value: unknown): string {
+  const parsed = asDate(value);
+  if (parsed) return parsed.toISOString().slice(0, 10);
+  return typeof value === "string" ? value.slice(0, 10) : "";
+}
+
 function number(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function percentage(numerator: number, denominator: number): number | null {
+  return denominator ? Math.round((numerator / denominator) * 1_000) / 10 : null;
+}
+
+function usableText(value: unknown): boolean {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return Boolean(normalized) && !["-", "n/a", "na", "none", "unknown", "tbd", "test"].includes(normalized);
+}
+
+function hasUsableJobUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const parsed = new URL(value);
+    return ["http:", "https:"].includes(parsed.protocol) && Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
 }
 
 export function outcomeStage(status: unknown, interviews: readonly Record<string, unknown>[] = []): "NONE" | "POSITIVE_REPLY" | "SCREENING" | "INTERVIEW" | "OFFER" {
@@ -132,8 +157,9 @@ export class PerformanceService {
     return {
       period: { from: period.from, to: period.to },
       team: this.aggregateKpis(completed.map((row) => row.performance)),
-      leaderboard: completed.filter((row) => row.eligible),
-      buildingBaseline: completed.filter((row) => !row.eligible),
+      quality: this.aggregateQuality(completed.map((row) => row.quality)),
+      leaderboard: completed.filter((row) => row.eligible).map((row) => this.leaderboardRow(row)),
+      buildingBaseline: completed.filter((row) => !row.eligible).map((row) => this.leaderboardRow(row)),
     };
   }
 
@@ -163,6 +189,7 @@ export class PerformanceService {
       currentDailyTarget: self.currentDailyTarget,
       nextTargetChangeEffectiveAt: iso(nextTarget?.effectiveFrom),
       performance: self.performance,
+      quality: self.quality,
       rank,
       peerLeaderboard: adminView.map((row) => {
         const rankedRow = ranked.find((candidate) => candidate.bdId === row.bdId);
@@ -171,9 +198,9 @@ export class PerformanceService {
           bdName: row.bdName,
           rank: rankedRow?.rank ?? null,
           qualifiedApplications: row.qualifiedApplications,
-          recordHealthRate: null,
-          adminAuditPassRate: null,
-          duplicateRate: row.duplicateRate ?? null,
+          recordHealthRate: row.quality.recordHealthRate,
+          adminAuditPassRate: row.quality.adminAuditPassRate,
+          duplicateRate: row.quality.duplicateRate,
         };
       }),
     };
@@ -318,7 +345,7 @@ export class PerformanceService {
       relatedEntityType: "lead",
       relatedEntityId: String(reviewedRecord.leadId),
     });
-    return reviewed;
+    return this.duplicateReviewWithLead(reviewed as Record<string, unknown>);
   }
 
   async recordRecruiterResponse(actor: Actor, leadId: string, respondedAt = this.now()) {
@@ -401,7 +428,7 @@ export class PerformanceService {
       const rule = await this.activeCalendarRule(asDate(followUp.recruiterRespondedAt) ?? now);
       const holidays = await transaction.performanceHoliday.findMany?.({}) ?? [];
       const leaves = await transaction.performanceApprovedLeave.findMany?.({
-        where: { bdId: parsed.data.newOwnerId, startsAt: { lte: now }, endsAt: { gt: now } },
+        where: { bdId: parsed.data.newOwnerId, endsAt: { gt: now } },
       }) ?? [];
       const schedule = {
         timeZone: rule.businessCalendarTimeZone,
@@ -410,7 +437,7 @@ export class PerformanceService {
         holidays: holidays.flatMap((row) => asDate(row.holidayDate) ? [asDate(row.holidayDate)!] : []),
         leaves: leaves.flatMap((row) => {
           const startsAt = asDate(row.startsAt); const endsAt = asDate(row.endsAt);
-          return startsAt && endsAt ? [{ startsAt, endsAt }] : [];
+          return startsAt && endsAt ? [{ startsAt, endsAt, ...(row.availableStartHour == null || row.availableEndHour == null ? {} : { availableHours: { startHour: number(row.availableStartHour), endHour: number(row.availableEndHour) } }) }] : [];
         }),
       };
       const adminDueAt = asDate(followUp.adminReassignmentSlaDueAt);
@@ -448,18 +475,21 @@ export class PerformanceService {
         relatedEntityType: "lead",
         relatedEntityId: String(lead.id),
       });
-      return transaction.performanceFollowUp.findUnique?.({ where: { id: followUpId } });
+      const persisted = await transaction.performanceFollowUp.findUnique?.({ where: { id: followUpId }, include: { lead: true } });
+      if (!persisted) throw new NotFoundError("The follow-up was not found after reassignment");
+      return this.followUpWithLead(persisted);
     });
   }
 
   async getDuplicateReviewQueue(actor: Actor) {
     this.authorization.assertRole(actor, ["ADMIN"]);
     await this.evaluateOverdueSlas();
-    return this.database.duplicateReview.findMany?.({
+    const reviews = await this.database.duplicateReview.findMany?.({
       where: { status: "PENDING" },
       include: { lead: true },
       orderBy: { createdAt: "asc" },
     }) ?? [];
+    return reviews.map((review) => this.duplicateReviewWithLead(review));
   }
 
   async getAdminPerformanceDrilldown(actor: Actor, query: unknown) {
@@ -470,10 +500,11 @@ export class PerformanceService {
     const from = new Date(parsed.data.from);
     const to = new Date(parsed.data.to);
     if (parsed.data.metric === "DUPLICATE_REVIEWS") {
-      return this.database.duplicateReview.findMany?.({
+      const reviews = await this.database.duplicateReview.findMany?.({
         where: { status: parsed.data.status, createdAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}) },
         include: { lead: true }, orderBy: { createdAt: "desc" },
       }) ?? [];
+      return reviews.map((review) => ({ kind: "DUPLICATE_REVIEW" as const, review: this.duplicateReviewWithLead(review) }));
     }
     if (parsed.data.metric === "FOLLOW_UP_SLA") {
       const followUps = await this.database.performanceFollowUp.findMany?.({
@@ -489,12 +520,15 @@ export class PerformanceService {
         const completedAt = asDate(followUp.completedAt);
         const dueAt = asDate(followUp.slaDueAt);
         return Boolean(completedAt || (dueAt && dueAt <= observedAt));
-      });
+      }).map((followUp) => ({ kind: "FOLLOW_UP" as const, followUp: this.followUpWithLead(followUp) }));
     }
-    if (parsed.data.metric === "REASSIGNMENTS") return this.database.performanceFollowUp.findMany?.({
+    if (parsed.data.metric === "REASSIGNMENTS") {
+      const followUps = await this.database.performanceFollowUp.findMany?.({
       where: { reassignedAt: { gte: from, lte: to }, ...(parsed.data.bdId ? { originalOwnerId: parsed.data.bdId } : {}), ...(parsed.data.status ? { status: parsed.data.status } : {}) },
       include: { lead: true }, orderBy: { reassignedAt: "desc" },
-    }) ?? [];
+      }) ?? [];
+      return followUps.map((followUp) => ({ kind: "FOLLOW_UP" as const, followUp: this.followUpWithLead(followUp) }));
+    }
     if (parsed.data.metric === "RECRUITER_RESPONSES") {
       const leads = await this.database.jobLead.findMany?.({
         where: {
@@ -507,13 +541,17 @@ export class PerformanceService {
       return leads.filter((lead) => outcomeStage(
         lead.status,
         Array.isArray(lead.interviews) ? lead.interviews as Record<string, unknown>[] : [],
-      ) !== "NONE");
+      ) !== "NONE").map((lead) => ({ kind: "LEAD" as const, lead: this.leadSummary(lead) }));
     }
-    if (parsed.data.metric === "INTERVIEWS_SCHEDULED") return this.database.interviewRound.findMany?.({
+    if (parsed.data.metric === "INTERVIEWS_SCHEDULED") {
+      const interviews = await this.database.interviewRound.findMany?.({
       where: { startsAt: { gte: from, lte: to }, status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, ...(parsed.data.bdId ? { lead: { createdById: parsed.data.bdId } } : {}) },
       include: { lead: true }, orderBy: { startsAt: "asc" },
-    }) ?? [];
-    if (parsed.data.metric === "INTERVIEWS_NEEDING_SCHEDULING") return this.database.jobLead.findMany?.({
+      }) ?? [];
+      return interviews.map((interview) => ({ kind: "INTERVIEW" as const, interview: this.interviewSummary(interview) }));
+    }
+    if (parsed.data.metric === "INTERVIEWS_NEEDING_SCHEDULING") {
+      const leads = await this.database.jobLead.findMany?.({
       where: {
         qualifiedCredit: true,
         appliedDate: { gte: from, lte: to },
@@ -522,7 +560,9 @@ export class PerformanceService {
         interviews: { none: {} },
       },
       orderBy: { updatedAt: "desc" },
-    }) ?? [];
+      }) ?? [];
+      return leads.map((lead) => ({ kind: "LEAD" as const, lead: this.leadSummary(lead) }));
+    }
     if (parsed.data.metric === "OUTCOMES") {
       const [leads, rules] = await Promise.all([
         this.database.jobLead.findMany?.({
@@ -539,12 +579,13 @@ export class PerformanceService {
           maturityDays: number(this.ruleAt(rules, appliedAt).maturityWindowDays, 21),
           observedAt,
         }).isMatured);
-      });
+      }).map((lead) => ({ kind: "LEAD" as const, lead: this.leadSummary(lead) }));
     }
-    return this.database.jobLead.findMany?.({
+    const leads = await this.database.jobLead.findMany?.({
       where: { qualifiedCredit: true, appliedDate: { gte: from, lte: to }, ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}) },
       orderBy: { appliedDate: "desc" },
     }) ?? [];
+    return leads.map((lead) => ({ kind: "LEAD" as const, lead: this.leadSummary(lead) }));
   }
 
   private parsePeriod(query: unknown) {
@@ -578,6 +619,15 @@ export class PerformanceService {
       this.database.performanceHoliday.findMany?.({}) ?? [],
       this.database.performanceApprovedLeave.findMany?.({ where: { bdId: String(bd.id), startsAt: { lte: to }, endsAt: { gt: from } } }) ?? [],
       this.database.performanceRuleSet.findMany?.({ where: { effectiveFrom: { lte: ruleWindowTo }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: ruleWindowFrom } }] }, orderBy: { effectiveFrom: "asc" } }) ?? [],
+    ]);
+    const leadIds = leads.map((lead) => String(lead.id));
+    const [qualityEvents, duplicateReviews] = await Promise.all([
+      leadIds.length
+        ? this.database.activityEvent.findMany?.({ where: { leadId: { in: leadIds }, action: { in: ["lead.updated", "performance.record_corrected", "performance.record_audit_passed", "performance.record_audit_failed"] } }, orderBy: { occurredAt: "asc" } }) ?? []
+        : [],
+      leadIds.length
+        ? this.database.duplicateReview.findMany?.({ where: { leadId: { in: leadIds } } }) ?? []
+        : [],
     ]);
     const rule = this.ruleAt(rules, to);
     const calendarRule = this.toCalendarRule(rule);
@@ -683,6 +733,7 @@ export class PerformanceService {
       followUpSlaCompliancePercent: followUpSlaCompliancePercent === null ? null : Math.round(followUpSlaCompliancePercent * 10) / 10,
       maturedOutcomeScorePercent, balancedScore: balanced.score, scoreCoverage: balanced.status,
     };
+    const quality = this.qualityIndicators(leads, qualityEvents, duplicateReviews);
     return {
       bdId: String(bd.id), bdName: String(bd.displayName), rank: null, eligible: eligibility.eligible, qualifiedApplications: qualified,
       performance, warnings: eligibility.warnings,
@@ -690,7 +741,7 @@ export class PerformanceService {
       eligibilityProgress: Math.min(100, Math.round((eligibleWorkingDays / 10) * 100)),
       estimatedEligibilityDate: null,
       currentDailyTarget: number(this.targetAt(targets, now)?.dailyTarget, number(this.ruleAt(rules, now).defaultDailyTarget, 70)),
-      duplicateRate: leads.length ? (leads.filter((lead) => lead.duplicateClassification === "CONFIRMED").length / leads.length) * 100 : null,
+      quality,
     };
   }
 
@@ -709,6 +760,95 @@ export class PerformanceService {
       maturedOutcomeScorePercent: outcomeValues.length ? Math.round((outcomeValues.reduce((sum, value) => sum + value, 0) / outcomeValues.length) * 10) / 10 : null,
       balancedScore: scoreValues.length ? Math.round((scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length) * 10) / 10 : null,
       scoreCoverage: rows.every((row) => (row as { scoreCoverage: string }).scoreCoverage === "COMPLETE") ? "COMPLETE" : rows.length ? "PARTIAL_MEASUREMENT" : "INSUFFICIENT_DATA",
+    };
+  }
+
+  private qualityIndicators(
+    leads: readonly Record<string, unknown>[],
+    events: readonly Record<string, unknown>[],
+    reviews: readonly Record<string, unknown>[],
+  ) {
+    const total = leads.length;
+    const healthy = leads.filter((lead) => usableText(lead.companyName) && usableText(lead.jobTitle) && hasUsableJobUrl(lead.rawUrl)).length;
+    const corrections = new Set(events.filter((event) => ["lead.updated", "performance.record_corrected"].includes(String(event.action))).map((event) => String(event.leadId)));
+    const latestAudit = new Map<string, Record<string, unknown>>();
+    for (const event of events) {
+      if (!["performance.record_audit_passed", "performance.record_audit_failed"].includes(String(event.action))) continue;
+      const leadId = String(event.leadId);
+      const prior = latestAudit.get(leadId);
+      if (!prior || (asDate(prior.occurredAt)?.getTime() ?? 0) <= (asDate(event.occurredAt)?.getTime() ?? 0)) latestAudit.set(leadId, event);
+    }
+    const audited = Array.from(latestAudit.values());
+    const duplicateLeadIds = new Set(leads.filter((lead) => lead.duplicateClassification === "CONFIRMED").map((lead) => String(lead.id)));
+    for (const review of reviews) if (review.status === "REJECTED") duplicateLeadIds.add(String(review.leadId));
+    return {
+      recordHealthRate: percentage(healthy, total),
+      adminAuditPassRate: percentage(audited.filter((event) => event.action === "performance.record_audit_passed").length, audited.length),
+      correctionRate: percentage(corrections.size, total),
+      confirmedDuplicateRate: percentage(leads.filter((lead) => lead.duplicateClassification === "CONFIRMED").length, total),
+      pendingOverrideRate: percentage(reviews.filter((review) => review.status === "PENDING").length, total),
+      rejectedOverrideRate: percentage(reviews.filter((review) => review.status === "REJECTED").length, total),
+      duplicateRate: percentage(duplicateLeadIds.size, total),
+    };
+  }
+
+  private aggregateQuality(rows: Array<Record<string, unknown>>) {
+    const keys = ["recordHealthRate", "adminAuditPassRate", "correctionRate", "confirmedDuplicateRate", "pendingOverrideRate", "rejectedOverrideRate", "duplicateRate"] as const;
+    return Object.fromEntries(keys.map((key) => {
+      const values = rows.map((row) => row[key]).filter((value): value is number => typeof value === "number");
+      return [key, values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null];
+    }));
+  }
+
+  private leaderboardRow(row: Record<string, unknown>) {
+    return {
+      bdId: String(row.bdId), bdName: String(row.bdName), rank: typeof row.rank === "number" ? row.rank : null,
+      eligible: Boolean(row.eligible), qualifiedApplications: number(row.qualifiedApplications), performance: row.performance,
+      eligibilityProgress: number(row.eligibilityProgress), ineligibilityReason: typeof row.ineligibilityReason === "string" ? row.ineligibilityReason : null,
+      estimatedEligibilityDate: iso(row.estimatedEligibilityDate), warnings: Array.isArray(row.warnings) ? row.warnings : [], quality: row.quality,
+    };
+  }
+
+  private leadSummary(lead: Record<string, unknown>) {
+    return {
+      id: String(lead.id), profileId: String(lead.profileId), createdById: String(lead.createdById), currentOwnerId: String(lead.currentOwnerId),
+      companyName: String(lead.companyName), jobTitle: String(lead.jobTitle), appliedDate: isoDate(lead.appliedDate), status: String(lead.status),
+    };
+  }
+
+  private duplicateReviewSummary(review: Record<string, unknown>) {
+    return {
+      id: String(review.id), leadId: String(review.leadId), classification: String(review.classification), status: String(review.status), overrideReason: String(review.overrideReason),
+      reviewerId: review.reviewerId ? String(review.reviewerId) : null, reviewReason: typeof review.reviewReason === "string" ? review.reviewReason : null,
+      reviewedAt: iso(review.reviewedAt), expiresAt: iso(review.expiresAt), overdueAt: iso(review.overdueAt), provisionalCreditGranted: Boolean(review.provisionalCreditGranted),
+      provisionalCreditResolvedAt: iso(review.provisionalCreditResolvedAt), createdById: String(review.createdById), auditMetadata: review.auditMetadata ?? null,
+      version: number(review.version, 1), createdAt: iso(review.createdAt), updatedAt: iso(review.updatedAt),
+    };
+  }
+
+  private duplicateReviewWithLead(review: Record<string, unknown>) {
+    return { ...this.duplicateReviewSummary(review), lead: this.leadSummary((review.lead as Record<string, unknown>) ?? {}) };
+  }
+
+  private followUpSummary(followUp: Record<string, unknown>) {
+    return {
+      id: String(followUp.id), leadId: String(followUp.leadId), ownerId: String(followUp.ownerId), originalOwnerId: String(followUp.originalOwnerId), status: String(followUp.status),
+      recruiterRespondedAt: iso(followUp.recruiterRespondedAt), slaStartedAt: iso(followUp.slaStartedAt), slaPausedAt: iso(followUp.slaPausedAt), slaResumedAt: iso(followUp.slaResumedAt),
+      slaDueAt: iso(followUp.slaDueAt), completedAt: iso(followUp.completedAt), breachedAt: iso(followUp.breachedAt), adminReassignmentSlaStartedAt: iso(followUp.adminReassignmentSlaStartedAt),
+      adminReassignmentSlaDueAt: iso(followUp.adminReassignmentSlaDueAt), adminReassignmentBreachedAt: iso(followUp.adminReassignmentBreachedAt), reassignedAt: iso(followUp.reassignedAt),
+      reassignedById: followUp.reassignedById ? String(followUp.reassignedById) : null, auditMetadata: followUp.auditMetadata ?? null, version: number(followUp.version, 1),
+      createdAt: iso(followUp.createdAt), updatedAt: iso(followUp.updatedAt),
+    };
+  }
+
+  private followUpWithLead(followUp: Record<string, unknown>) {
+    return { ...this.followUpSummary(followUp), lead: this.leadSummary((followUp.lead as Record<string, unknown>) ?? {}) };
+  }
+
+  private interviewSummary(interview: Record<string, unknown>) {
+    return {
+      id: String(interview.id), leadId: String(interview.leadId), roundNumber: number(interview.roundNumber), roundType: String(interview.roundType), status: String(interview.status),
+      closerId: String(interview.closerId), startsAt: iso(interview.startsAt), endsAt: iso(interview.endsAt), lead: this.leadSummary((interview.lead as Record<string, unknown>) ?? {}),
     };
   }
 
@@ -856,7 +996,7 @@ export class PerformanceService {
     const originalOwnerId = String(lead.currentOwnerId);
     const [holidays, leaves] = await Promise.all([
       database.performanceHoliday.findMany?.({}) ?? [],
-      database.performanceApprovedLeave.findMany?.({ where: { bdId: originalOwnerId, startsAt: { lte: respondedAt }, endsAt: { gt: respondedAt } } }) ?? [],
+      database.performanceApprovedLeave.findMany?.({ where: { bdId: originalOwnerId, endsAt: { gt: respondedAt } } }) ?? [],
     ]);
     const schedule = {
       timeZone: rule.businessCalendarTimeZone, workingDays: rule.workingDays,
@@ -864,10 +1004,13 @@ export class PerformanceService {
       holidays: holidays.flatMap((holiday) => asDate(holiday.holidayDate) ? [asDate(holiday.holidayDate)!] : []),
       leaves: leaves.flatMap((leave) => {
         const startsAt = asDate(leave.startsAt); const endsAt = asDate(leave.endsAt);
-        return startsAt && endsAt ? [{ startsAt, endsAt }] : [];
+        return startsAt && endsAt ? [{ startsAt, endsAt, ...(leave.availableStartHour == null || leave.availableEndHour == null ? {} : { availableHours: { startHour: number(leave.availableStartHour), endHour: number(leave.availableEndHour) } }) }] : [];
       }),
     };
-    const needsReassignment = leaves.length > 0;
+    const needsReassignment = leaves.some((leave) => {
+      const startsAt = asDate(leave.startsAt); const endsAt = asDate(leave.endsAt);
+      return Boolean(startsAt && endsAt && startsAt <= respondedAt && endsAt > respondedAt);
+    });
     const data = {
       leadId, ownerId: originalOwnerId, originalOwnerId,
       status: needsReassignment ? "NEEDS_REASSIGNMENT" : "OPEN",

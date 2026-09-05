@@ -2,7 +2,21 @@
 
 ## Status
 
-Completed and corrected after review.
+Correction pass committed with remaining follow-up explicitly recorded.
+
+### Latest correction pass
+
+- Follow-up SLA schedules now load future approved leave intervals for both the original and reassigned BD; only leave active at response time pauses the original BD and starts Admin reassignment.
+- Any outbound recruiter communication now completes the eligible open follow-up even when no contact is selected. Optional contact context remains in the communication audit record.
+- The production worker now invokes the idempotent overdue-SLA evaluator at startup and on its polling interval. Admin read-time evaluation remains a safety net.
+- Drill-down query validation now rejects a status that is incompatible with its metric before Prisma is called.
+- Added server-side quality-rate calculation from saved leads, duplicate reviews, and auditable activity events: record health, audit pass, correction, confirmed duplicate, pending override, rejected override, and total duplicate rate. Admin/BD responses and the peer-safe existing quality fields consume these values.
+- Began projecting performance drill-down, duplicate-review, and follow-up responses into dedicated shared response shapes.
+
+### Deliberately recorded remaining work
+
+- Controller-level strict response parsing for every performance endpoint has not yet been completed in this correction pass. The response shapes and service projections were added, but the controller still needs to parse every returned payload through those shared schemas and the corresponding endpoint-level regression tests need to be completed.
+- The new quality contracts require the existing dashboard/client task to consume the additional fields; this is intentionally deferred to the planned UI tasks.
 
 ## Delivered
 

@@ -166,8 +166,31 @@ describe("performance contracts", () => {
           balancedScore: 68.2,
           scoreCoverage: "COMPLETE",
         },
+        quality: {
+          recordHealthRate: 100,
+          adminAuditPassRate: null,
+          correctionRate: 0,
+          confirmedDuplicateRate: 0,
+          pendingOverrideRate: 0,
+          rejectedOverrideRate: 0,
+          duplicateRate: 0,
+        },
       }),
     ).toMatchObject({ bdName: "Ada Lovelace", rank: 1, eligible: true });
+  });
+
+  it("rejects drill-down statuses that do not belong to the selected metric", () => {
+    const drilldown = schema("performanceDrilldownQuerySchema");
+    const base = {
+      from: "2026-08-06T00:00:00.000Z",
+      to: "2026-09-05T23:59:59.999Z",
+      bdId,
+    };
+
+    expect(drilldown.safeParse({ ...base, metric: "DUPLICATE_REVIEWS", status: "OPEN" }).success).toBe(false);
+    expect(drilldown.safeParse({ ...base, metric: "FOLLOW_UP_SLA", status: "PENDING" }).success).toBe(false);
+    expect(drilldown.safeParse({ ...base, metric: "QUALIFIED_APPLICATIONS", status: "COMPLETED" }).success).toBe(false);
+    expect(drilldown.safeParse({ ...base, metric: "DUPLICATE_REVIEWS", status: "PENDING" }).success).toBe(true);
   });
 
   it("rejects invalid rule-set periods, weight totals, and duplicate working days", () => {

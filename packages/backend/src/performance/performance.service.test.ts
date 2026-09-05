@@ -213,6 +213,56 @@ describe("PerformanceService", () => {
     }));
   });
 
+  it("excludes future approved leave from the original owner's follow-up SLA deadline", async () => {
+    const respondedAt = new Date("2026-09-07T09:00:00.000Z");
+    const database: any = {
+      $transaction: async <T>(work: (transaction: typeof database) => Promise<T>) => work(database),
+      jobLead: { findUnique: vi.fn().mockResolvedValue({ id: leadId, profileId: "10000000-0000-4000-8000-000000000005", currentOwnerId: bd.id, jobTitle: "Platform Engineer" }) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue({ businessCalendarTimeZone: "UTC", workingDays: [1, 2, 3, 4, 5], workdayStartHour: 9, workdayEndHour: 17, followUpSlaBusinessHours: 48, adminReassignmentSlaBusinessHours: 2 }) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([{ startsAt: new Date("2026-09-09T00:00:00.000Z"), endsAt: new Date("2026-09-12T00:00:00.000Z") }]) },
+      performanceFollowUp: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "10000000-0000-4000-8000-000000000006" }) },
+      activityEvent: { create: vi.fn().mockResolvedValue(undefined) }, user: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => respondedAt);
+
+    await service.recordRecruiterResponse(bd, leadId, respondedAt);
+
+    expect(database.performanceFollowUp.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ slaDueAt: new Date("2026-09-17T17:00:00.000Z") }),
+    }));
+    expect(database.performanceApprovedLeave.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ bdId: bd.id, endsAt: { gt: respondedAt } }),
+    }));
+  });
+
+  it("excludes future approved leave from the reassigned owner's follow-up SLA deadline", async () => {
+    const reassignedAt = new Date("2026-09-07T09:00:00.000Z");
+    const newOwnerId = "10000000-0000-4000-8000-000000000007";
+    const database: any = {
+      $transaction: async <T>(work: (transaction: typeof database) => Promise<T>) => work(database),
+      user: { findUnique: vi.fn().mockResolvedValue({ id: newOwnerId, role: "BD", isActive: true }) },
+      performanceFollowUp: {
+        findUnique: vi.fn().mockResolvedValueOnce({ id: "10000000-0000-4000-8000-000000000006", version: 1, status: "NEEDS_REASSIGNMENT", ownerId: bd.id, recruiterRespondedAt: reassignedAt, adminReassignmentSlaDueAt: new Date("2026-09-07T11:00:00.000Z"), lead: { id: leadId, profileId: "10000000-0000-4000-8000-000000000005", jobTitle: "Platform Engineer" } }).mockResolvedValueOnce({ id: "10000000-0000-4000-8000-000000000006", ownerId: newOwnerId, status: "OPEN" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue({ businessCalendarTimeZone: "UTC", workingDays: [1, 2, 3, 4, 5], workdayStartHour: 9, workdayEndHour: 17, followUpSlaBusinessHours: 48, adminReassignmentSlaBusinessHours: 2 }) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([{ startsAt: new Date("2026-09-09T00:00:00.000Z"), endsAt: new Date("2026-09-12T00:00:00.000Z") }]) },
+      activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => reassignedAt);
+
+    await service.reassignFollowUp(admin, "10000000-0000-4000-8000-000000000006", { newOwnerId, expectedVersion: 1 });
+
+    expect(database.performanceFollowUp.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ slaDueAt: new Date("2026-09-17T17:00:00.000Z") }),
+    }));
+    expect(database.performanceApprovedLeave.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ bdId: newOwnerId, endsAt: { gt: reassignedAt } }),
+    }));
+  });
+
   it("previews future target and configuration impacts without claiming exact future scores", async () => {
     const rules = {
       id: "10000000-0000-4000-8000-000000000008",
@@ -502,5 +552,38 @@ describe("PerformanceService", () => {
     const result = await service.getBdPerformance(bd, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
 
     expect(result.currentDailyTarget).toBe(90);
+  });
+
+  it("calculates auditable record-health and duplicate quality indicators for Admin and BD views", async () => {
+    const firstLead = { id: "10000000-0000-4000-8000-000000000021", appliedDate: new Date("2026-09-01T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED", companyName: "Orbit", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/1", duplicateClassification: "NONE" };
+    const correctedLead = { id: "10000000-0000-4000-8000-000000000022", appliedDate: new Date("2026-09-02T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED", companyName: "Unknown", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/2", duplicateClassification: "NONE" };
+    const duplicateLead = { id: "10000000-0000-4000-8000-000000000023", appliedDate: new Date("2026-09-03T00:00:00.000Z"), qualifiedCredit: false, status: "APPLIED", companyName: "Orbit", jobTitle: "Engineer", rawUrl: "https://jobs.example.test/3", duplicateClassification: "CONFIRMED" };
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([{ ...bd, createdAt: new Date("2026-08-01T00:00:00.000Z") }]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue([firstLead, correctedLead, duplicateLead]) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([]) }, performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) }, performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) }, performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) }, performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+      activityEvent: { findMany: vi.fn().mockResolvedValue([
+        { leadId: firstLead.id, action: "performance.record_audit_passed", occurredAt: new Date("2026-09-04T00:00:00.000Z") },
+        { leadId: correctedLead.id, action: "performance.record_audit_failed", occurredAt: new Date("2026-09-04T00:00:00.000Z") },
+        { leadId: correctedLead.id, action: "lead.updated", occurredAt: new Date("2026-09-05T00:00:00.000Z") },
+      ]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([{ leadId: firstLead.id, status: "PENDING" }, { leadId: duplicateLead.id, status: "REJECTED" }] },
+      $transaction: async (work: any) => work(database), outboxEvent: { upsert: vi.fn() },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+
+    const result = await service.getBdPerformance(bd, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+
+    expect(result.quality).toEqual({
+      recordHealthRate: 66.7,
+      adminAuditPassRate: 50,
+      correctionRate: 33.3,
+      confirmedDuplicateRate: 33.3,
+      pendingOverrideRate: 33.3,
+      rejectedOverrideRate: 33.3,
+      duplicateRate: 33.3,
+    });
+    expect(result.peerLeaderboard[0]).toMatchObject({ recordHealthRate: 66.7, adminAuditPassRate: 50, duplicateRate: 33.3 });
   });
 });
