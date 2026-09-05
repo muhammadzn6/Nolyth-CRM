@@ -1,10 +1,11 @@
-# Review package: 0930353c80ec4862cde3ca97c01cbb248c9a0cc8..ed3aca7
+# Review package: 0930353c80ec4862cde3ca97c01cbb248c9a0cc8..c611075
 #
 # Commits
 # ab04559 feat: add BD performance dashboard
 # ed3aca7 fix: complete BD dashboard workflows
+# c611075 fix: align selected calendar date regression
 #
-# Generated with: git diff --binary --ignore-space-at-eol 0930353..ed3aca7
+# Generated with: git diff --binary --ignore-space-at-eol 0930353..c611075
 # (This package excludes itself to avoid recursive review-artifact content.)
 
 diff --git a/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md
@@ -14,33 +15,24 @@ index 0000000..207dda6
 +++ b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md
 @@ -0,0 +1,28 @@
 +# Task 7 — BD Dashboard Performance Surfaces
-+
-+## Delivered
-+
-+- Added the focused BD dashboard at `apps/web/components/dashboard/bd-dashboard.tsx`.
+++## Delivered
+++- Added the focused BD dashboard at `apps/web/components/dashboard/bd-dashboard.tsx`.
 +- Added a privacy-safe peer ranking that renders only name, qualified application count, Record Health Rate, Audit Pass Rate, and Duplicate Rate.
 +- Added a self-only performance and quality panel with score coverage, baseline/insufficient-data states, warnings, current target, and next target effective date.
 +- Wired the dashboard route to fetch `BdPerformanceResponse` for rolling 30 days and today, and to use the existing server-authorized `/performance/me/drilldown` endpoint for personal records only.
 +- Added interview quick actions: Edit, Open application, and Open calendar.
-+
-+## TDD evidence
-+
-+The new dashboard test was added before the implementation. The initial run failed because `bd-dashboard` did not exist. A later RED cycle added the personal detail link expectation, which failed until the self-only drill-down entry point was added.
-+
-+## Scope and privacy
-+
-+- Admin dashboard composition and calendar files were not changed.
+++## TDD evidence
+++The new dashboard test was added before the implementation. The initial run failed because `bd-dashboard` did not exist. A later RED cycle added the personal detail link expectation, which failed until the self-only drill-down entry point was added.
+++## Scope and privacy
+++- Admin dashboard composition and calendar files were not changed.
 +- Peer rows render no lead/application links, recruiter details, audit reasons, correction history, or score-details link.
 +- Drill-down rendering is only reached through the signed-in BD `/performance/me/drilldown` route.
-+
-+## Verification
-+
-+- `npm --prefix apps/web test -- components/dashboard/bd-dashboard.test.tsx components/performance/admin-bd-performance.test.tsx apps/web/app/page.test.tsx`
+++## Verification
+++- `npm --prefix apps/web test -- components/dashboard/bd-dashboard.test.tsx components/performance/admin-bd-performance.test.tsx apps/web/app/page.test.tsx`
 +- `npm --prefix apps/web run typecheck`
 +- `npm --prefix apps/web run lint`
 +- `git diff --check`
-+
-+All listed commands passed before commit.
+++All listed commands passed before commit.
 diff --git a/apps/api/src/modules/performance/performance.controller.test.ts b/apps/api/src/modules/performance/performance.controller.test.ts
 index da0fde3..a770558 100644
 --- a/apps/api/src/modules/performance/performance.controller.test.ts
@@ -53,12 +45,10 @@ index da0fde3..a770558 100644
 +    const aggregate = { recruiterResponses: 127, activeApplications: 103, openFollowUps: 64, platformTotals: [{ platform: "linkedin.com", count: 208 }] };
 +    const service = { getBdWorkQueue: vi.fn().mockResolvedValue(aggregate) };
 +    const controller = new PerformanceController(service as unknown as PerformanceService);
-+
-+    await expect(controller.myWorkQueue(request(bd))).resolves.toEqual(aggregate);
+++    await expect(controller.myWorkQueue(request(bd))).resolves.toEqual(aggregate);
 +    expect(service.getBdWorkQueue).toHaveBeenCalledWith(bd);
 +  });
-+
-   it("validates admin performance filters before reaching the service", async () => {
++   it("validates admin performance filters before reaching the service", async () => {
      const service = { getAdminBdPerformance: vi.fn() };
      const controller = new PerformanceController(service as unknown as PerformanceService);
 diff --git a/apps/api/src/modules/performance/performance.controller.ts b/apps/api/src/modules/performance/performance.controller.ts
@@ -82,8 +72,7 @@ index 98b0626..b1c0a19 100644
 +      .getBdWorkQueue(this.actor(request))
 +      .then((response) => parseResponse(bdWorkQueueSchema, response));
 +  }
-+
-   @Get("me/drilldown") myDrilldown(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
++   @Get("me/drilldown") myDrilldown(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
      return this.performance
        .getMyPerformanceDrilldown(this.actor(request), parse(performanceDrilldownQuerySchema, query))
 diff --git a/apps/web/app/calendar/page.test.tsx b/apps/web/app/calendar/page.test.tsx
@@ -94,11 +83,9 @@ index 0000000..f35bfb4
 @@ -0,0 +1,35 @@
 +import { renderToStaticMarkup } from "react-dom/server";
 +import { beforeEach, describe, expect, it, vi } from "vitest";
-+
-+const getCurrentActorMock = vi.hoisted(() => vi.fn());
+++const getCurrentActorMock = vi.hoisted(() => vi.fn());
 +const getCalendarMock = vi.hoisted(() => vi.fn());
-+
-+vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ cookie: "orbit_session=token" })) }));
+++vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ cookie: "orbit_session=token" })) }));
 +vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 +vi.mock("../../components/layout/app-shell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }));
 +vi.mock("../../components/calendar/calendar-workspace", () => ({
@@ -111,20 +98,16 @@ index 0000000..f35bfb4
 +  listUsers: vi.fn(async () => []),
 +  ApiClientError: class ApiClientError extends Error {},
 +}));
-+
-+import CalendarRoute from "./page";
-+
-+describe("CalendarRoute", () => {
+++import CalendarRoute from "./page";
+++describe("CalendarRoute", () => {
 +  beforeEach(() => {
 +    getCurrentActorMock.mockResolvedValue({ id: "00000000-0000-4000-8000-000000000001", displayName: "Ayesha", email: "ayesha@orbit.test", role: "BD", isActive: true });
 +    getCalendarMock.mockResolvedValue([]);
 +  });
-+
-+  it("selects the date supplied by the BD open-calendar quick action", async () => {
+++  it("selects the date supplied by the BD open-calendar quick action", async () => {
 +    const date = "2026-09-08T09:00:00.000Z";
 +    const html = renderToStaticMarkup(await CalendarRoute({ searchParams: Promise.resolve({ date }) }));
-+
-+    expect(html).toContain(`selected-date:${date}`);
+++    expect(html).toContain(`selected-date:${date}`);
 +  });
 +});
 diff --git a/apps/web/app/calendar/page.tsx b/apps/web/app/calendar/page.tsx
@@ -157,12 +140,10 @@ index 0000000..6ba57ff
 @@ -0,0 +1,46 @@
 +import { renderToStaticMarkup } from "react-dom/server";
 +import { beforeEach, describe, expect, it, vi } from "vitest";
-+
-+const getCurrentActorMock = vi.hoisted(() => vi.fn());
+++const getCurrentActorMock = vi.hoisted(() => vi.fn());
 +const getLeadMock = vi.hoisted(() => vi.fn());
 +const listLeadInterviewRoundsMock = vi.hoisted(() => vi.fn());
-+
-+vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ cookie: "orbit_session=token" })) }));
+++vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers({ cookie: "orbit_session=token" })) }));
 +vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 +vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a> }));
 +vi.mock("../../../../components/layout/app-shell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }));
@@ -178,27 +159,22 @@ index 0000000..6ba57ff
 +  listCloserEligibility: vi.fn(async () => []),
 +  ApiClientError: class ApiClientError extends Error {},
 +}));
-+
-+import LeadInterviewsRoute from "./page";
-+
-+const actor = { id: "00000000-0000-4000-8000-000000000001", displayName: "Ayesha", email: "ayesha@orbit.test", role: "BD" as const, isActive: true };
+++import LeadInterviewsRoute from "./page";
+++const actor = { id: "00000000-0000-4000-8000-000000000001", displayName: "Ayesha", email: "ayesha@orbit.test", role: "BD" as const, isActive: true };
 +const leadId = "00000000-0000-4000-8000-000000000101";
 +const roundId = "00000000-0000-4000-8000-000000000201";
-+
-+describe("LeadInterviewsRoute", () => {
+++describe("LeadInterviewsRoute", () => {
 +  beforeEach(() => {
 +    getCurrentActorMock.mockResolvedValue(actor);
 +    getLeadMock.mockResolvedValue({ id: leadId, profileId: "00000000-0000-4000-8000-000000000301", jobTitle: "Platform Engineer" });
 +    listLeadInterviewRoundsMock.mockResolvedValue([{ id: roundId, status: "SCHEDULED" }]);
 +  });
-+
-+  it("opens the interview selected by the BD quick-action edit query", async () => {
+++  it("opens the interview selected by the BD quick-action edit query", async () => {
 +    const html = renderToStaticMarkup(await LeadInterviewsRoute({
 +      params: Promise.resolve({ leadId }),
 +      searchParams: Promise.resolve({ edit: roundId }),
 +    }));
-+
-+    expect(html).toContain(`round:${roundId}:editing:true`);
+++    expect(html).toContain(`round:${roundId}:editing:true`);
 +  });
 +});
 diff --git a/apps/web/app/leads/[leadId]/interviews/page.tsx b/apps/web/app/leads/[leadId]/interviews/page.tsx
@@ -245,8 +221,7 @@ index d699396..9583d6f 100644
 +vi.mock("../components/dashboard/bd-dashboard", () => ({
 +  BdDashboard: ({ error }: { error?: string }) => <p>{`bd-dashboard:${error ?? "ready"}`}</p>,
 +}));
-+
- vi.mock("../lib/api-client", () => ({
++ vi.mock("../lib/api-client", () => ({
    ApiClientError: class ApiClientError extends Error {},
    getCurrentActor: getCurrentActorMock,
    getDashboard: getDashboardMock,
@@ -282,17 +257,14 @@ index d699396..9583d6f 100644
 -    expect(getDashboardMock).toHaveBeenCalledTimes(2);
 +    expect(getDashboardMock).toHaveBeenCalledTimes(1);
 +  });
-+
-+  it("keeps the BD-specific dashboard shell when personal performance is unavailable", async () => {
+++  it("keeps the BD-specific dashboard shell when personal performance is unavailable", async () => {
 +    getCurrentActorMock.mockResolvedValue(bd);
 +    getDashboardMock.mockResolvedValue({});
 +    getCalendarMock.mockResolvedValue([]);
 +    listLeadsMock.mockResolvedValue({ items: [], nextCursor: null });
 +    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("performance unavailable"); }));
-+
-+    const html = renderToStaticMarkup(await HomePage());
-+
-+    expect(html).toContain("bd-dashboard:Performance data is temporarily unavailable.");
+++    const html = renderToStaticMarkup(await HomePage());
+++    expect(html).toContain("bd-dashboard:Performance data is temporarily unavailable.");
 +    expect(html).not.toContain("standard-dashboard");
    });
  });
@@ -364,8 +336,7 @@ index 17fca17..8570787 100644
 +    ].filter((value): value is string => Boolean(value));
 +    return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications} error={errors.join(" ") || undefined} interviews={calendar} performance={performance} todayPerformance={todayPerformance} workQueue={workQueue} />{drilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={drilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
 +  }
-+
-   try {
++   try {
      const dashboard = await getDashboard(cookie);
      let recentActivity;
 @@ -121,8 +157,8 @@ export default async function HomePage(props?: HomePageProps) {
@@ -387,11 +358,9 @@ index 046f726..31832bc 100644
      await act(async () => allCalendars?.click());
      expect(container.textContent).toContain("2 Orbit interviews in view");
    });
-+
-+  it("uses the supplied date as its initial calendar anchor", async () => {
+++  it("uses the supplied date as its initial calendar anchor", async () => {
 +    await act(async () => root.render(<CalendarWorkspace actor={actor} interviews={[]} initialDate="2026-09-08T09:00:00.000Z" />));
-+
-+    expect(container.querySelector('[aria-label="Calendar view"]')?.textContent).toContain("Tue, Sep 8");
+++    expect(container.querySelector('[aria-label="Calendar view"]')?.textContent).toContain("Tue, Sep 8");
 +  });
  });
 diff --git a/apps/web/components/calendar/calendar-workspace.tsx b/apps/web/components/calendar/calendar-workspace.tsx
@@ -423,20 +392,17 @@ index 0000000..1e47181
 +import { renderToStaticMarkup } from "react-dom/server";
 +import type { BdPerformanceResponse, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
 +import { describe, expect, it } from "vitest";
-+
-+import { BdDashboard } from "./bd-dashboard";
+++import { BdDashboard } from "./bd-dashboard";
 +import { BdPeerRanking } from "../performance/bd-peer-ranking";
 +import { BdPersonalQuality } from "../performance/bd-personal-quality";
-+
-+const actor: SessionUser = {
+++const actor: SessionUser = {
 +  id: "00000000-0000-4000-8000-000000000101",
 +  displayName: "Ayesha Khan",
 +  email: "ayesha@orbit.example",
 +  role: "BD",
 +  isActive: true,
 +};
-+
-+const performance: BdPerformanceResponse = {
+++const performance: BdPerformanceResponse = {
 +  period: { from: "2026-08-06T00:00:00.000Z", to: "2026-09-05T23:59:59.000Z" },
 +  currentDailyTarget: 70,
 +  nextTargetChangeEffectiveAt: "2026-10-01T00:00:00.000Z",
@@ -482,8 +448,7 @@ index 0000000..1e47181
 +    duplicateRate: 2,
 +  }],
 +};
-+
-+const applications = [{
+++const applications = [{
 +  id: "00000000-0000-4000-8000-000000000201",
 +  profileId: "00000000-0000-4000-8000-000000000301",
 +  companyName: "Northstar Labs",
@@ -494,8 +459,7 @@ index 0000000..1e47181
 +  createdAt: "2026-09-05T10:00:00.000Z",
 +  updatedAt: "2026-09-05T10:00:00.000Z",
 +}] as LeadSummary[];
-+
-+const interviews = [{
+++const interviews = [{
 +  id: "00000000-0000-4000-8000-000000000401",
 +  leadId: applications[0].id,
 +  roundNumber: 1,
@@ -520,12 +484,10 @@ index 0000000..1e47181
 +  createdAt: "2026-09-05T10:00:00.000Z",
 +  updatedAt: "2026-09-05T10:00:00.000Z",
 +}] as InterviewSummary[];
-+
-+describe("BD performance dashboard", () => {
+++describe("BD performance dashboard", () => {
 +  it("renders server-owned operational and personal performance values with interview quick actions", () => {
 +    const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} interviews={interviews} performance={performance} />);
-+
-+    expect(html).toContain("Qualified applications today");
+++    expect(html).toContain("Qualified applications today");
 +    expect(html).toContain("Remaining target");
 +    expect(html).toContain("Recruiter responses");
 +    expect(html).toContain("Interviews to schedule");
@@ -540,8 +502,7 @@ index 0000000..1e47181
 +    expect(html).toContain("View your application details");
 +    expect(html).toContain("performanceMetric=QUALIFIED_APPLICATIONS");
 +  });
-+
-+  it("uses the server work-queue totals instead of the bounded recent-preview arrays", () => {
+++  it("uses the server work-queue totals instead of the bounded recent-preview arrays", () => {
 +    const html = renderToStaticMarkup(<BdDashboard
 +      actor={actor}
 +      applications={applications}
@@ -550,30 +511,25 @@ index 0000000..1e47181
 +      todayPerformance={performance}
 +      workQueue={{ recruiterResponses: 127, activeApplications: 103, openFollowUps: 64, platformTotals: [{ platform: "linkedin.com", count: 208 }] }}
 +    />);
-+
-+    expect(html).toContain("127");
+++    expect(html).toContain("127");
 +    expect(html).toContain("103");
 +    expect(html).toContain("64 tasks");
 +    expect(html).toContain("208 total");
 +  });
-+
-+  it("renders an explicit unavailable performance panel without deriving performance from previews", () => {
+++  it("renders an explicit unavailable performance panel without deriving performance from previews", () => {
 +    const html = renderToStaticMarkup(<BdDashboard
 +      actor={actor}
 +      applications={applications}
 +      interviews={interviews}
 +      error="Performance data is temporarily unavailable."
 +    />);
-+
-+    expect(html).toContain("Performance data is temporarily unavailable.");
+++    expect(html).toContain("Performance data is temporarily unavailable.");
 +    expect(html).toContain("Personal performance unavailable");
 +    expect(html).toContain("Recent applications");
 +  });
-+
-+  it("keeps peer summaries to the approved fields and has no peer detail links", () => {
+++  it("keeps peer summaries to the approved fields and has no peer detail links", () => {
 +    const html = renderToStaticMarkup(<BdPeerRanking peers={performance.peerLeaderboard} selfRank={performance.rank} />);
-+
-+    expect(html).toContain("Noor Ali");
+++    expect(html).toContain("Noor Ali");
 +    expect(html).toContain("95 qualified applications");
 +    expect(html).toContain("Record health");
 +    expect(html).toContain("Audit pass");
@@ -583,19 +539,16 @@ index 0000000..1e47181
 +    expect(html).not.toContain("Recruiter");
 +    expect(html).not.toContain("audit reasons");
 +  });
-+
-+  it("renders self-only quality and the current score coverage state", () => {
+++  it("renders self-only quality and the current score coverage state", () => {
 +    const html = renderToStaticMarkup(<BdPersonalQuality performance={performance} />);
-+
-+    expect(html).toContain("Personal performance");
+++    expect(html).toContain("Personal performance");
 +    expect(html).toContain("Partial measurement");
 +    expect(html).toContain("Low application sample");
 +    expect(html).toContain("Low outcome sample");
 +    expect(html).toContain("Record health");
 +    expect(html).toContain("Your details");
 +  });
-+
-+  it.each([
+++  it.each([
 +    [{ eligibilitySection: "BUILDING_BASELINE", scoreCoverage: "INSUFFICIENT_DATA" }, "Building baseline"],
 +    [{ eligibilitySection: "OFFICIAL", scoreCoverage: "INSUFFICIENT_DATA" }, "Insufficient data"],
 +  ] as const)("renders the %s eligibility state only for the signed-in BD", (state, label) => {
@@ -604,8 +557,7 @@ index 0000000..1e47181
 +      performance: { ...performance.performance, scoreCoverage: state.scoreCoverage, scoreCoveragePercent: 0 },
 +      eligibility: { ...performance.eligibility, eligible: false, eligibilitySection: state.eligibilitySection, ineligibilityReason: "INITIAL_MATURITY_WINDOW_NOT_ELAPSED" },
 +    }} />);
-+
-+    expect(html).toContain(label);
+++    expect(html).toContain(label);
 +    expect(html).toContain("Your details");
 +  });
 +});
@@ -617,11 +569,9 @@ index 0000000..dfd9b6e
 @@ -0,0 +1,50 @@
 +import type { BdPerformanceResponse, BdWorkQueue, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
 +import { Card } from "@orbit/ui";
-+
-+import { BdPeerRanking } from "../performance/bd-peer-ranking";
+++import { BdPeerRanking } from "../performance/bd-peer-ranking";
 +import { BdPersonalQuality } from "../performance/bd-personal-quality";
-+
-+type BdDashboardProps = {
+++type BdDashboardProps = {
 +  actor: SessionUser;
 +  applications: LeadSummary[];
 +  interviews: InterviewSummary[];
@@ -630,20 +580,16 @@ index 0000000..dfd9b6e
 +  workQueue?: BdWorkQueue;
 +  error?: string;
 +};
-+
-+function interviewTime(interview: InterviewSummary): string {
+++function interviewTime(interview: InterviewSummary): string {
 +  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: interview.timezone }).format(new Date(interview.startsAt));
 +}
-+
-+function displayCount(value: number | null | undefined): string {
+++function displayCount(value: number | null | undefined): string {
 +  return value == null ? "—" : value.toLocaleString();
 +}
-+
-+function UnavailablePerformancePanel() {
+++function UnavailablePerformancePanel() {
 +  return <Card aria-label="Personal performance unavailable" className="editorial-insight-card p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Your details</p><h2 className="mt-1 text-base font-bold text-foreground">Personal performance unavailable</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">Orbit could not load your score, target attainment, or peer summary. Your application queue is still available.</p></Card>;
 +}
-+
-+export function BdDashboard({ actor, applications, interviews, performance, todayPerformance, workQueue, error }: BdDashboardProps) {
+++export function BdDashboard({ actor, applications, interviews, performance, todayPerformance, workQueue, error }: BdDashboardProps) {
 +  const now = new Date();
 +  const upcoming = interviews.filter((interview) => new Date(interview.startsAt) >= now).sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()).slice(0, 5);
 +  const dailyTarget = todayPerformance?.currentDailyTarget ?? performance?.currentDailyTarget;
@@ -687,12 +633,10 @@ index 0000000..6e103e6
 @@ -0,0 +1,22 @@
 +import type { BdPeerSummary } from "@orbit/contracts";
 +import { Card } from "@orbit/ui";
-+
-+function rate(value: number | null): string {
+++function rate(value: number | null): string {
 +  return value === null ? "N/A" : `${value.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 +}
-+
-+/** The API contract deliberately exposes only these aggregate values for a peer. */
+++/** The API contract deliberately exposes only these aggregate values for a peer. */
 +export function BdPeerRanking({ peers, selfRank }: { peers: BdPeerSummary[]; selfRank: number | null }) {
 +  return <Card aria-label="BD team ranking" className="editorial-insight-card p-5 sm:p-6">
 +    <header className="flex items-start justify-between gap-4">
@@ -715,17 +659,14 @@ index 0000000..a6bba34
 @@ -0,0 +1,37 @@
 +import type { BdPerformanceResponse, PerformanceQualityIndicators } from "@orbit/contracts";
 +import { Card } from "@orbit/ui";
-+
-+function rate(value: number | null): string {
+++function rate(value: number | null): string {
 +  return value === null ? "N/A" : `${value.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 +}
-+
-+function title(value: string): string {
+++function title(value: string): string {
 +  const label = value.replaceAll("_", " ").toLowerCase();
 +  return `${label.slice(0, 1).toUpperCase()}${label.slice(1)}`;
 +}
-+
-+function qualityRows(quality: PerformanceQualityIndicators) {
+++function qualityRows(quality: PerformanceQualityIndicators) {
 +  return [
 +    ["Record health", quality.recordHealthRate],
 +    ["Audit pass", quality.adminAuditPassRate],
@@ -734,8 +675,7 @@ index 0000000..a6bba34
 +    ["Duplicate rate", quality.duplicateRate],
 +  ] as const;
 +}
-+
-+export function BdPersonalQuality({ performance }: { performance: BdPerformanceResponse }) {
+++export function BdPersonalQuality({ performance }: { performance: BdPerformanceResponse }) {
 +  const ownScore = performance.performance.balancedScore;
 +  const state = performance.eligibility.eligibilitySection === "BUILDING_BASELINE"
 +    ? "Building baseline"
@@ -804,8 +744,7 @@ index a9b65b8..96e2ff1 100644
 +export async function getBdWorkQueue(cookie?: string): Promise<BdWorkQueue> {
 +  return parseResource(bdWorkQueueSchema, await read("/performance/me/work-queue", cookie), "BD work queue");
 +}
-+
- export async function completeTask(id: string, expectedVersion: number, notes?: string): Promise<TaskSummary> {
++ export async function completeTask(id: string, expectedVersion: number, notes?: string): Promise<TaskSummary> {
    const taskId = parseId(id, "task");
    const command = parseInput(completeTaskSchema, { expectedVersion, ...(notes?.trim() ? { notes: notes.trim() } : {}) }, "Enter valid completion details.");
 diff --git a/apps/web/lib/performance-api-client.test.ts b/apps/web/lib/performance-api-client.test.ts
@@ -833,15 +772,13 @@ index dfc9468..d9cd717 100644
 +    };
 +    const fetchMock = vi.fn().mockResolvedValue(success(queue));
 +    vi.stubGlobal("fetch", fetchMock);
-+
-+    await expect(getBdWorkQueue()).resolves.toEqual(queue);
+++    await expect(getBdWorkQueue()).resolves.toEqual(queue);
 +    expect(fetchMock).toHaveBeenCalledWith(
 +      "https://api.orbit.example/api/v1/performance/me/work-queue",
 +      expect.objectContaining({ cache: "no-store" }),
 +    );
 +  });
-+
-   it("uses versioned holiday and leave mutations and reads rule history through shared contracts", async () => {
++   it("uses versioned holiday and leave mutations and reads rule history through shared contracts", async () => {
      const holiday = {
        id: "20000000-0000-4000-8000-000000000001",
 diff --git a/packages/backend/src/performance/performance.service.test.ts b/packages/backend/src/performance/performance.service.test.ts
@@ -865,8 +802,7 @@ index f567330..0f5f380 100644
 +      task: { findMany: vi.fn().mockResolvedValue(tasks) },
 +    };
 +    const service = new PerformanceService(database, { assertRole: vi.fn() } as never);
-+
-+    await expect(service.getBdWorkQueue(bd)).resolves.toEqual({
+++    await expect(service.getBdWorkQueue(bd)).resolves.toEqual({
 +      recruiterResponses: 64,
 +      activeApplications: 39,
 +      openFollowUps: 64,
@@ -876,8 +812,7 @@ index f567330..0f5f380 100644
 +      ],
 +    });
 +  });
-+
-   it("derives Screening from a persisted recruiter or pre-screen round before a technical interview", () => {
++   it("derives Screening from a persisted recruiter or pre-screen round before a technical interview", () => {
      expect(outcomeStage("RESPONSE_RECEIVED", [{ roundType: "PRE_SCREEN" }])).toBe("SCREENING");
      expect(outcomeStage("RESPONSE_RECEIVED", [{ roundType: "TECHNICAL" }])).toBe("INTERVIEW");
 diff --git a/packages/backend/src/performance/performance.service.ts b/packages/backend/src/performance/performance.service.ts
@@ -926,8 +861,7 @@ index 291a96c..3f617e4 100644
 +        .sort((left, right) => right.count - left.count || left.platform.localeCompare(right.platform)),
 +    };
 +  }
-+
-   async getPerformanceRules(actor: Actor) {
++   async getPerformanceRules(actor: Actor) {
      this.authorization.assertRole(actor, ["ADMIN"]);
      const rule = await this.database.performanceRuleSet.findFirst?.({
 diff --git a/packages/contracts/src/performance.ts b/packages/contracts/src/performance.ts
@@ -945,8 +879,7 @@ index 8e92478..c2ca1aa 100644
 +  openFollowUps: nonnegativeIntegerSchema,
 +  platformTotals: z.array(z.strictObject({ platform: textSchema, count: nonnegativeIntegerSchema })),
 +});
-+
- export const performanceLeaderboardRowSchema = z.strictObject({
++ export const performanceLeaderboardRowSchema = z.strictObject({
    bdId: uuidSchema,
    bdName: textSchema,
 @@ -612,6 +620,7 @@ export type PerformanceFollowUpWithLead = z.infer<typeof performanceFollowUpWith
@@ -956,4 +889,36 @@ index 8e92478..c2ca1aa 100644
 +export type BdWorkQueue = z.infer<typeof bdWorkQueueSchema>;
  export type PerformanceLeaderboardRow = z.infer<typeof performanceLeaderboardRowSchema>;
  export type BdPeerSummary = z.infer<typeof bdPeerSummarySchema>;
- export type BdPerformanceEligibility = z.infer<typeof bdPerformanceEligibilitySchema>;
+export type BdPerformanceEligibility = z.infer<typeof bdPerformanceEligibilitySchema>;
+
+diff --git a/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md
+index f13db30..4ad7e32 100644
+--- a/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md
++++ b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-7-report.md
+@@ -42,3 +42,10 @@ All listed commands passed before commit.
+ - `git diff --check` passed.
+
+ The targeted selected-date calendar regression passed. The wider calendar-workspace suite retains unrelated date-sensitive expectations from the in-progress calendar visual redesign and was intentionally left unchanged.
+++## Review-fix: selected calendar date in the configured week view
+++- Kept the calendar's configured default view as **week** for this committed Task 7 surface.
++- Corrected the selected-date regression to verify the intended behavior: `?date=2026-09-08T09:00:00.000Z` opens the exact week containing September 8 and renders the Tuesday column, rather than incorrectly requiring a day-view title.
++- The route-to-workspace `initialDate` contract and BD quick action remain unchanged.
++- Fresh validation: 102 web tests, web typecheck, web lint, and `git diff --check` pass.
+diff --git a/apps/web/components/calendar/calendar-workspace.test.tsx b/apps/web/components/calendar/calendar-workspace.test.tsx
+index 31832bc..500e052 100644
+--- a/apps/web/components/calendar/calendar-workspace.test.tsx
++++ b/apps/web/components/calendar/calendar-workspace.test.tsx
+@@ -127,9 +127,11 @@ describe("CalendarWorkspace", () => {
+     expect(container.textContent).toContain("2 Orbit interviews in view");
+   });
+
+-  it("uses the supplied date as its initial calendar anchor", async () => {
++  it("opens the week containing the supplied calendar date", async () => {
+     await act(async () => root.render(<CalendarWorkspace actor={actor} interviews={[]} initialDate="2026-09-08T09:00:00.000Z" />));
+
+-    expect(container.querySelector('[aria-label="Calendar view"]')?.textContent).toContain("Tue, Sep 8");
++    const calendar = container.querySelector('[aria-label="Calendar view"]');
++    expect(calendar?.textContent).toContain("Sun, Sep 6 – Sat, Sep 12");
++    expect(container.querySelector('[data-testid="calendar-time-grid"]')?.textContent).toContain("8 Tue");
+   });
+ });
