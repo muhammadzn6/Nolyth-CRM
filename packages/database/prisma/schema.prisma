@@ -164,6 +164,25 @@ enum GoogleCalendarSyncStatus {
   CANCELLED
 }
 
+enum DuplicateClassification {
+  NONE
+  LIKELY
+  CONFIRMED
+}
+
+enum DuplicateReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PerformanceFollowUpStatus {
+  OPEN
+  COMPLETED
+  NEEDS_REASSIGNMENT
+  ADMIN_REASSIGNMENT_OVERDUE
+}
+
 model User {
   id                     String                     @id @default(uuid()) @db.Uuid
   displayName            String                     @map("display_name")
@@ -220,6 +239,17 @@ model User {
   googleCalendarConnections GoogleCalendarConnection[]
   clientCloserAssignments     CompanyCloserAssignment[] @relation("CompanyCloserAssignee")
   clientCloserAssignmentsMade CompanyCloserAssignment[] @relation("CompanyCloserAssignedBy")
+  createdPerformanceRuleSets  PerformanceRuleSet[] @relation("PerformanceRuleSetCreatedBy")
+  bdTargetSchedules           BdTargetSchedule[] @relation("BdTargetScheduleBd")
+  createdBdTargetSchedules    BdTargetSchedule[] @relation("BdTargetScheduleCreatedBy")
+  createdPerformanceHolidays  PerformanceHoliday[] @relation("PerformanceHolidayCreatedBy")
+  performanceLeaves           PerformanceApprovedLeave[] @relation("PerformanceLeaveBd")
+  approvedPerformanceLeaves   PerformanceApprovedLeave[] @relation("PerformanceLeaveApprovedBy")
+  createdDuplicateReviews     DuplicateReview[] @relation("DuplicateReviewCreatedBy")
+  reviewedDuplicateReviews    DuplicateReview[] @relation("DuplicateReviewReviewer")
+  ownedPerformanceFollowUps   PerformanceFollowUp[] @relation("PerformanceFollowUpOwner")
+  originalPerformanceFollowUps PerformanceFollowUp[] @relation("PerformanceFollowUpOriginalOwner")
+  reassignedPerformanceFollowUps PerformanceFollowUp[] @relation("PerformanceFollowUpReassignedBy")
 
   @@map("users")
 }
@@ -441,16 +471,173 @@ model JobLead {
   interviews           InterviewRound[]
   documentUsages       LeadDocumentUsage[]
   offers               Offer[]
+  duplicateReview      DuplicateReview?
+  performanceFollowUp  PerformanceFollowUp?
 
   @@index([profileId, status])
   @@index([profileId, status, appliedDate])
   @@index([profileId, isImportant, appliedDate])
   @@index([profileId, canonicalHash])
+  @@index([currentOwnerId, appliedDate])
   @@index([currentOwnerId])
   @@index([responsibleCloserId])
   @@index([companyId])
   @@index([sourceId])
   @@map("job_leads")
+}
+
+model PerformanceRuleSet {
+  id                                String                  @id @default(uuid()) @db.Uuid
+  effectiveFrom                     DateTime                @map("effective_from") @db.Timestamptz(6)
+  effectiveTo                       DateTime?               @map("effective_to") @db.Timestamptz(6)
+  defaultDailyTarget                Int                     @default(70) @map("default_daily_target")
+  followUpSlaBusinessHours          Int                     @default(48) @map("follow_up_sla_business_hours")
+  adminReassignmentSlaBusinessHours Int                     @default(2) @map("admin_reassignment_sla_business_hours")
+  maturityWindowDays                Int                     @default(21) @map("maturity_window_days")
+  duplicateLookbackMonths           Int                     @default(6) @map("duplicate_lookback_months")
+  applicationWeightPercent          Decimal                 @default(45) @map("application_weight_percent") @db.Decimal(5, 2)
+  followUpWeightPercent             Decimal                 @default(25) @map("follow_up_weight_percent") @db.Decimal(5, 2)
+  outcomeWeightPercent              Decimal                 @default(30) @map("outcome_weight_percent") @db.Decimal(5, 2)
+  positiveReplyPoints               Int                     @default(1) @map("positive_reply_points")
+  screeningPoints                   Int                     @default(2) @map("screening_points")
+  interviewPoints                   Int                     @default(3) @map("interview_points")
+  offerPoints                       Int                     @default(5) @map("offer_points")
+  slowdownThresholdPercent          Decimal                 @default(120) @map("slowdown_threshold_percent") @db.Decimal(6, 2)
+  slowdownMultiplierPercent         Decimal                 @default(25) @map("slowdown_multiplier_percent") @db.Decimal(5, 2)
+  createdById                       String                  @map("created_by_id") @db.Uuid
+  auditMetadata                     Json?                   @map("audit_metadata")
+  createdAt                         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                         DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version                           Int                     @default(1)
+  createdBy                         User                    @relation("PerformanceRuleSetCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  workingDays                       PerformanceWorkingDay[]
+
+  @@index([effectiveFrom, effectiveTo])
+  @@index([createdById, createdAt])
+  @@map("performance_rule_sets")
+}
+
+model PerformanceWorkingDay {
+  id        String             @id @default(uuid()) @db.Uuid
+  ruleSetId String             @map("rule_set_id") @db.Uuid
+  dayOfWeek Int                @map("day_of_week")
+  isWorking Boolean            @default(true) @map("is_working")
+  ruleSet   PerformanceRuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleSetId, dayOfWeek])
+  @@index([dayOfWeek, isWorking])
+  @@map("performance_working_days")
+}
+
+model BdTargetSchedule {
+  id            String    @id @default(uuid()) @db.Uuid
+  bdId          String    @map("bd_id") @db.Uuid
+  dailyTarget   Int       @default(70) @map("daily_target")
+  effectiveFrom DateTime  @map("effective_from") @db.Timestamptz(6)
+  effectiveTo   DateTime? @map("effective_to") @db.Timestamptz(6)
+  createdById   String    @map("created_by_id") @db.Uuid
+  auditMetadata Json?     @map("audit_metadata")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version       Int       @default(1)
+  bd            User      @relation("BdTargetScheduleBd", fields: [bdId], references: [id], onDelete: Restrict)
+  createdBy     User      @relation("BdTargetScheduleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([bdId, effectiveFrom, effectiveTo])
+  @@index([effectiveFrom, effectiveTo])
+  @@map("bd_target_schedules")
+}
+
+model PerformanceHoliday {
+  id            String   @id @default(uuid()) @db.Uuid
+  holidayDate   DateTime @map("holiday_date") @db.Date
+  name          String
+  createdById   String   @map("created_by_id") @db.Uuid
+  auditMetadata Json?    @map("audit_metadata")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy     User     @relation("PerformanceHolidayCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([holidayDate])
+  @@index([createdById, holidayDate])
+  @@map("performance_holidays")
+}
+
+model PerformanceApprovedLeave {
+  id            String   @id @default(uuid()) @db.Uuid
+  bdId          String   @map("bd_id") @db.Uuid
+  startsAt      DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt        DateTime @map("ends_at") @db.Timestamptz(6)
+  reason        String?
+  approvedById  String   @map("approved_by_id") @db.Uuid
+  approvedAt    DateTime @default(now()) @map("approved_at") @db.Timestamptz(6)
+  auditMetadata Json?    @map("audit_metadata")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  bd            User     @relation("PerformanceLeaveBd", fields: [bdId], references: [id], onDelete: Restrict)
+  approvedBy    User     @relation("PerformanceLeaveApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@index([bdId, startsAt, endsAt])
+  @@index([startsAt, endsAt])
+  @@map("performance_approved_leaves")
+}
+
+model DuplicateReview {
+  id                          String                  @id @default(uuid()) @db.Uuid
+  leadId                      String                  @unique @map("lead_id") @db.Uuid
+  classification              DuplicateClassification @default(LIKELY)
+  status                      DuplicateReviewStatus   @default(PENDING)
+  overrideReason              String                  @map("override_reason")
+  reviewerId                  String?                 @map("reviewer_id") @db.Uuid
+  reviewReason                String?                 @map("review_reason")
+  reviewedAt                  DateTime?               @map("reviewed_at") @db.Timestamptz(6)
+  expiresAt                   DateTime?               @map("expires_at") @db.Timestamptz(6)
+  provisionalCreditGranted    Boolean                 @default(true) @map("provisional_credit_granted")
+  provisionalCreditResolvedAt DateTime?               @map("provisional_credit_resolved_at") @db.Timestamptz(6)
+  createdById                 String                  @map("created_by_id") @db.Uuid
+  auditMetadata               Json?                   @map("audit_metadata")
+  createdAt                   DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version                     Int                     @default(1)
+  lead                        JobLead                 @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  reviewer                    User?                   @relation("DuplicateReviewReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+  createdBy                   User                    @relation("DuplicateReviewCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([status, expiresAt])
+  @@index([reviewerId, status])
+  @@map("duplicate_reviews")
+}
+
+model PerformanceFollowUp {
+  id                            String                    @id @default(uuid()) @db.Uuid
+  leadId                        String                    @unique @map("lead_id") @db.Uuid
+  ownerId                       String                    @map("owner_id") @db.Uuid
+  originalOwnerId               String                    @map("original_owner_id") @db.Uuid
+  status                        PerformanceFollowUpStatus @default(OPEN)
+  recruiterRespondedAt          DateTime                  @map("recruiter_responded_at") @db.Timestamptz(6)
+  slaStartedAt                  DateTime                  @map("sla_started_at") @db.Timestamptz(6)
+  slaPausedAt                   DateTime?                 @map("sla_paused_at") @db.Timestamptz(6)
+  slaResumedAt                  DateTime?                 @map("sla_resumed_at") @db.Timestamptz(6)
+  slaDueAt                      DateTime?                 @map("sla_due_at") @db.Timestamptz(6)
+  completedAt                   DateTime?                 @map("completed_at") @db.Timestamptz(6)
+  breachedAt                    DateTime?                 @map("breached_at") @db.Timestamptz(6)
+  adminReassignmentSlaStartedAt DateTime?                 @map("admin_reassignment_sla_started_at") @db.Timestamptz(6)
+  adminReassignmentSlaDueAt     DateTime?                 @map("admin_reassignment_sla_due_at") @db.Timestamptz(6)
+  adminReassignmentBreachedAt   DateTime?                 @map("admin_reassignment_breached_at") @db.Timestamptz(6)
+  reassignedAt                  DateTime?                 @map("reassigned_at") @db.Timestamptz(6)
+  reassignedById                String?                   @map("reassigned_by_id") @db.Uuid
+  auditMetadata                 Json?                     @map("audit_metadata")
+  createdAt                     DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                     DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version                       Int                       @default(1)
+  lead                          JobLead                   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  owner                         User                      @relation("PerformanceFollowUpOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  originalOwner                 User                      @relation("PerformanceFollowUpOriginalOwner", fields: [originalOwnerId], references: [id], onDelete: Restrict)
+  reassignedBy                  User?                     @relation("PerformanceFollowUpReassignedBy", fields: [reassignedById], references: [id], onDelete: Restrict)
+
+  @@index([ownerId, status, slaDueAt])
+  @@index([status, adminReassignmentSlaDueAt])
+  @@map("performance_follow_ups")
 }
 
 model Company {

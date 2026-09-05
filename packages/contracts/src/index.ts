@@ -8,6 +8,7 @@ export * from "./documents";
 export * from "./availability";
 export * from "./offers";
 export * from "./notifications";
+export * from "./performance";
 export * from "./analytics";
 export * from "./closer-dashboard";
 export * from "./calendar";
