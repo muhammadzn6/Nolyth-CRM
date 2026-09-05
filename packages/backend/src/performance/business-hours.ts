@@ -21,6 +21,12 @@ export type BusinessHoursSchedule = {
   leaves?: readonly ApprovedLeave[];
 };
 
+/**
+ * The Admin reassignment SLA is an operational clock. It observes the shared
+ * business calendar, but never an individual BD's approved leave.
+ */
+export type AdminBusinessHoursSchedule = Omit<BusinessHoursSchedule, "leaves">;
+
 type Interval = { start: Date; end: Date };
 type LocalDate = { year: number; month: number; day: number };
 
@@ -94,6 +100,19 @@ function localParts(value: Date, timeZone: string): LocalDate & { hour: number; 
 function localDate(value: Date, timeZone: string): LocalDate {
   const { year, month, day } = localParts(value, timeZone);
   return { year, month, day };
+}
+
+/**
+ * Prisma materializes PostgreSQL DATE values at UTC midnight. Preserve those
+ * persisted calendar components instead of converting them as an instant.
+ */
+export function dateOnlyFromPersistedDate(value: Date): LocalDate {
+  if (Number.isNaN(value.getTime())) throw new Error("Expected a valid day");
+  return {
+    year: value.getUTCFullYear(),
+    month: value.getUTCMonth() + 1,
+    day: value.getUTCDate(),
+  };
 }
 
 function compareLocalDates(left: LocalDate, right: LocalDate): number {
@@ -231,9 +250,8 @@ function roundToOneDecimal(value: number): number {
 }
 
 export function getEligibleWorkdayCapacity(day: Date, schedule: BusinessHoursSchedule): number {
-  if (Number.isNaN(day.getTime())) throw new Error("Expected a valid day");
   assertValidSchedule(schedule);
-  const local = localDate(day, schedule.timeZone);
+  const local = dateOnlyFromPersistedDate(day);
   const normalHours = durationHours(normalIntervalsForDay(local, { ...schedule, holidays: [] }));
   if (normalHours === 0) return 0;
   return roundToOneDecimal(durationHours(availableIntervalsForDay(local, schedule)) / normalHours);
@@ -295,7 +313,8 @@ export type FollowUpSlaInput = {
   requiredBusinessHours: number;
   schedule: BusinessHoursSchedule;
   now: Date;
-  reassignedAt?: Date;
+  /** The original owner's clock pauses immediately when reassignment is needed. */
+  pausedAt?: Date;
   completedAt?: Date;
 };
 
@@ -306,20 +325,20 @@ export function calculateFollowUpSla(input: FollowUpSlaInput): {
   elapsedBusinessHours: number;
   dueAt: Date;
 } {
-  const stoppedAt = input.completedAt ?? input.reassignedAt ?? input.now;
+  const stoppedAt = input.completedAt ?? input.pausedAt ?? input.now;
   const dueAt = addBusinessHours(input.startedAt, input.requiredBusinessHours, input.schedule);
   const elapsedBusinessHours = businessHoursBetween(input.startedAt, stoppedAt, input.schedule);
   const completedLate = Boolean(input.completedAt && input.completedAt > dueAt);
   const status = input.completedAt
     ? "COMPLETED"
-    : input.reassignedAt
+    : input.pausedAt
       ? "PAUSED_FOR_REASSIGNMENT"
       : input.now > dueAt
         ? "OVERDUE"
         : "OPEN";
   const compliance = input.completedAt
     ? completedLate ? "MISSED" : "MET"
-    : input.reassignedAt
+    : input.pausedAt
       ? "PAUSED"
       : input.now > dueAt ? "MISSED" : "PENDING";
 
@@ -329,7 +348,7 @@ export function calculateFollowUpSla(input: FollowUpSlaInput): {
 export type AdminReassignmentSlaInput = {
   recruiterRespondedAt: Date;
   requiredBusinessHours: number;
-  schedule: BusinessHoursSchedule;
+  adminSchedule: AdminBusinessHoursSchedule;
   now: Date;
   reassignedAt?: Date;
 };
@@ -340,7 +359,13 @@ export function calculateAdminReassignmentSla(input: AdminReassignmentSlaInput):
   breached: boolean;
   dueAt: Date;
 } {
-  const dueAt = addBusinessHours(input.recruiterRespondedAt, input.requiredBusinessHours, input.schedule);
+  const adminSchedule: BusinessHoursSchedule = {
+    timeZone: input.adminSchedule.timeZone,
+    workingDays: input.adminSchedule.workingDays,
+    workday: input.adminSchedule.workday,
+    holidays: input.adminSchedule.holidays,
+  };
+  const dueAt = addBusinessHours(input.recruiterRespondedAt, input.requiredBusinessHours, adminSchedule);
   if (input.reassignedAt) {
     const compliance = input.reassignedAt <= dueAt ? "MET" : "MISSED";
     return { status: "REASSIGNED", compliance, breached: compliance === "MISSED", dueAt };

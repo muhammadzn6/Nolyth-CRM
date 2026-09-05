@@ -105,6 +105,19 @@ describe("businessHoursBetween", () => {
 });
 
 describe("isEligibleWorkingDay", () => {
+  it("preserves the persisted DATE calendar day for US target calculations", () => {
+    const newYorkSchedule: BusinessHoursSchedule = {
+      timeZone: "America/New_York",
+      workingDays: [1, 2, 3, 4, 5],
+      workday: { startHour: 9, endHour: 17 },
+    };
+    // PostgreSQL DATE values are materialized at UTC midnight by Prisma.
+    const persistedMonday = new Date("2026-09-07T00:00:00.000Z");
+
+    expect(getEligibleWorkdayCapacity(persistedMonday, newYorkSchedule)).toBe(1);
+    expect(calculateProratedDailyTarget(70, persistedMonday, newYorkSchedule)).toBe(70);
+  });
+
   it("excludes holidays and full approved leave from target-working-day eligibility", () => {
     const calendar: BusinessHoursSchedule = {
       ...schedule,
@@ -151,10 +164,10 @@ describe("isEligibleWorkingDay", () => {
 });
 
 describe("follow-up SLA timing", () => {
-  it("pauses the original BD follow-up clock when Admin must reassign it", () => {
+  it("pauses the original BD follow-up clock when the item enters Needs Reassignment", () => {
     expect(calculateFollowUpSla({
       startedAt: new Date("2026-09-07T09:00:00.000Z"),
-      reassignedAt: new Date("2026-09-07T12:00:00.000Z"),
+      pausedAt: new Date("2026-09-07T12:00:00.000Z"),
       requiredBusinessHours: 4,
       now: new Date("2026-09-07T17:00:00.000Z"),
       schedule,
@@ -164,6 +177,39 @@ describe("follow-up SLA timing", () => {
       breached: false,
       elapsedBusinessHours: 3,
       dueAt: new Date("2026-09-07T13:00:00.000Z"),
+    });
+  });
+
+  it("keeps the original BD SLA paused even when Admin reassigns after leave ends", () => {
+    const originalBdSchedule: BusinessHoursSchedule = {
+      ...schedule,
+      leaves: [{
+        startsAt: new Date("2026-09-07T09:00:00.000Z"),
+        endsAt: new Date("2026-09-07T12:00:00.000Z"),
+      }],
+    };
+
+    expect(calculateFollowUpSla({
+      startedAt: new Date("2026-09-07T09:00:00.000Z"),
+      pausedAt: new Date("2026-09-07T09:00:00.000Z"),
+      requiredBusinessHours: 4,
+      now: new Date("2026-09-08T10:00:00.000Z"),
+      schedule: originalBdSchedule,
+    })).toMatchObject({
+      status: "PAUSED_FOR_REASSIGNMENT",
+      compliance: "PAUSED",
+      elapsedBusinessHours: 0,
+    });
+
+    expect(calculateFollowUpSla({
+      startedAt: new Date("2026-09-08T10:00:00.000Z"),
+      requiredBusinessHours: 4,
+      now: new Date("2026-09-08T11:00:00.000Z"),
+      schedule,
+    })).toMatchObject({
+      status: "OPEN",
+      elapsedBusinessHours: 1,
+      dueAt: new Date("2026-09-08T14:00:00.000Z"),
     });
   });
 
@@ -193,7 +239,7 @@ describe("follow-up SLA timing", () => {
     const input = {
       recruiterRespondedAt: new Date("2026-09-07T16:00:00.000Z"),
       requiredBusinessHours: 2,
-      schedule,
+      adminSchedule: schedule,
     };
 
     expect(calculateAdminReassignmentSla({ ...input, now: new Date("2026-09-08T10:00:00.000Z") })).toEqual({
@@ -215,7 +261,7 @@ describe("follow-up SLA timing", () => {
       recruiterRespondedAt: new Date("2026-09-07T09:00:00.000Z"),
       requiredBusinessHours: 2,
       now: new Date("2026-09-07T12:00:00.000Z"),
-      schedule,
+      adminSchedule: schedule,
     };
 
     expect(calculateAdminReassignmentSla({ ...input, reassignedAt: new Date("2026-09-07T11:00:00.000Z") })).toMatchObject({
@@ -229,6 +275,52 @@ describe("follow-up SLA timing", () => {
       compliance: "MISSED",
       breached: true,
       dueAt: new Date("2026-09-07T11:00:00.000Z"),
+    });
+  });
+
+  it("uses the Admin calendar, not the absent BD leave, for reassignment SLA", () => {
+    const absentBdSchedule: BusinessHoursSchedule = {
+      ...schedule,
+      leaves: [{
+        startsAt: new Date("2026-09-07T09:00:00.000Z"),
+        endsAt: new Date("2026-09-09T09:00:00.000Z"),
+      }],
+    };
+    const adminSchedule = {
+      ...schedule,
+    };
+
+    expect(calculateAdminReassignmentSla({
+      recruiterRespondedAt: new Date("2026-09-07T09:00:00.000Z"),
+      requiredBusinessHours: 2,
+      now: new Date("2026-09-07T10:00:00.000Z"),
+      adminSchedule,
+    })).toMatchObject({
+      status: "OPEN",
+      dueAt: new Date("2026-09-07T11:00:00.000Z"),
+    });
+
+    // `leaves` may exist on a structurally compatible calendar object, but the
+    // Admin helper deliberately discards them before calculating the deadline.
+    expect(calculateAdminReassignmentSla({
+      recruiterRespondedAt: new Date("2026-09-07T09:00:00.000Z"),
+      requiredBusinessHours: 2,
+      now: new Date("2026-09-07T10:00:00.000Z"),
+      adminSchedule: absentBdSchedule,
+    })).toMatchObject({
+      dueAt: new Date("2026-09-07T11:00:00.000Z"),
+    });
+
+    expect(calculateAdminReassignmentSla({
+      recruiterRespondedAt: new Date("2026-09-04T16:00:00.000Z"),
+      requiredBusinessHours: 2,
+      now: new Date("2026-09-08T10:00:00.000Z"),
+      adminSchedule: {
+        ...absentBdSchedule,
+        holidays: [new Date("2026-09-07T00:00:00.000Z")],
+      },
+    })).toMatchObject({
+      dueAt: new Date("2026-09-08T10:00:00.000Z"),
     });
   });
 

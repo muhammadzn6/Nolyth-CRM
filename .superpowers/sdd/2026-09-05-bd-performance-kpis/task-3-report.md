@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete after final review fixes.
+Complete after the final review follow-up fixes.
 
 Commits: `da23dad fix: harden BD performance scoring invariants`; final Task 3 review-fix commit on the current branch
 
@@ -19,10 +19,13 @@ Commits: `da23dad fix: harden BD performance scoring invariants`; final Task 3 r
 - Completed Admin reassignment SLA results expose `MET`/`MISSED` compliance and a breach flag, including exact-deadline and late-reassignment boundaries.
 - Approved leave now persists an optional reduced local availability window. The contract rejects partial/invalid windows, the business-calendar engine rejects windows outside the active workday, and database-to-engine coverage proves a 09:00–13:00 leave window yields a 50% daily target.
 - Local work-window resolution explicitly chooses the first occurrence of an ambiguous fall-back time and moves nonexistent spring-forward times to the first valid time after the gap.
+- Date-only target calculations now preserve the UTC calendar components materialized by PostgreSQL `DATE`, so a persisted Monday remains Monday for a BD using a US business timezone.
+- The original BD follow-up SLA now pauses at `pausedAt` when the response enters Needs Reassignment. A reassigned owner's new SLA is calculated independently from their reassignment time.
+- Admin reassignment SLA accepts a dedicated Admin calendar and discards any structurally supplied BD leave, while still applying configured weekends and public holidays.
 
 ## Verification
 
-- `npx vitest run packages/backend/src/performance packages/contracts/src/performance.test.ts` — 46 tests passed.
+- `npx vitest run packages/backend/src/performance packages/contracts/src/performance.test.ts` — 49 tests passed.
 - `DATABASE_URL=<disposable orbit_task3_test> npx vitest run packages/database/src/performance-rules.test.ts` — 6 tests passed.
 - `npx tsc --noEmit -p packages/contracts/tsconfig.json` — passed.
 - `npx tsc --noEmit -p packages/backend/tsconfig.json` — passed.
