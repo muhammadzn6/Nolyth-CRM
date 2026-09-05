@@ -809,7 +809,12 @@ export class PerformanceService {
         throw new StaleVersionError(parsed.data.expectedVersion, number(followUp.version));
       }
       const now = this.now();
-      const rule = await this.activeCalendarRule(asDate(followUp.recruiterRespondedAt) ?? now);
+      const adminDueAt = asDate(followUp.adminReassignmentSlaDueAt);
+      const reassignmentOverdue = followUp.status === "NEEDS_REASSIGNMENT" && Boolean(adminDueAt && now > adminDueAt);
+      if (reassignmentOverdue && !await this.markAdminReassignmentOverdue(transaction, followUp, now, parsed.data.expectedVersion)) {
+        throw new StaleVersionError(parsed.data.expectedVersion, number(followUp.version));
+      }
+      const rule = await this.activeCalendarRule(now, transaction);
       const holidays = await transaction.performanceHoliday.findMany?.({}) ?? [];
       const leaves = await transaction.performanceApprovedLeave.findMany?.({
         where: { bdId: parsed.data.newOwnerId, endsAt: { gt: now } },
@@ -824,9 +829,12 @@ export class PerformanceService {
           return startsAt && endsAt ? [{ startsAt, endsAt, ...(row.availableStartHour == null || row.availableEndHour == null ? {} : { availableHours: { startHour: number(row.availableStartHour), endHour: number(row.availableEndHour) } }) }] : [];
         }),
       };
-      const adminDueAt = asDate(followUp.adminReassignmentSlaDueAt);
       const result = await transaction.performanceFollowUp.updateMany?.({
-        where: { id: followUpId, version: parsed.data.expectedVersion, status: { in: ["NEEDS_REASSIGNMENT", "ADMIN_REASSIGNMENT_OVERDUE"] } },
+        where: {
+          id: followUpId,
+          version: parsed.data.expectedVersion + (reassignmentOverdue ? 1 : 0),
+          status: reassignmentOverdue ? "ADMIN_REASSIGNMENT_OVERDUE" : followUp.status,
+        },
         data: {
           ownerId: parsed.data.newOwnerId,
           status: "OPEN",
@@ -835,7 +843,11 @@ export class PerformanceService {
           slaResumedAt: now,
           slaStartedAt: now,
           slaDueAt: addBusinessHours(now, rule.followUpSlaBusinessHours, schedule),
-          adminReassignmentBreachedAt: adminDueAt && now > adminDueAt ? now : null,
+          adminReassignmentBreachedAt: reassignmentOverdue
+            ? now
+            : followUp.status === "ADMIN_REASSIGNMENT_OVERDUE"
+              ? asDate(followUp.adminReassignmentBreachedAt) ?? now
+              : null,
           version: { increment: 1 },
         },
       });
@@ -848,7 +860,7 @@ export class PerformanceService {
           entityType: "performance_follow_up", entityId: followUpId,
           oldSnapshot: { ownerId: followUp.ownerId, status: followUp.status },
           newSnapshot: { ownerId: parsed.data.newOwnerId, status: "OPEN" },
-          metadata: { adminReassignmentSlaMissed: Boolean(adminDueAt && now > adminDueAt) }, requestId: null,
+          metadata: { adminReassignmentSlaMissed: reassignmentOverdue || followUp.status === "ADMIN_REASSIGNMENT_OVERDUE" }, requestId: null,
         },
       });
       if (lead) await this.notifications?.createInApp({
@@ -1717,20 +1729,7 @@ export class PerformanceService {
     let reassignmentOverdue = 0;
     for (const followUp of followUps) {
       const updated = await this.database.$transaction(async (transaction) => {
-        const changed = await transaction.performanceFollowUp.updateMany?.({
-          where: { id: String(followUp.id), status: "NEEDS_REASSIGNMENT" },
-          data: { status: "ADMIN_REASSIGNMENT_OVERDUE", adminReassignmentBreachedAt: at, version: { increment: 1 } },
-        });
-        if (!changed?.count) return false;
-        const lead = followUp.lead as Record<string, unknown> | undefined;
-        await transaction.activityEvent.create?.({ data: {
-          action: "performance.admin_reassignment_overdue", actorId: null, actorNameSnapshot: null, actorRoleSnapshot: null,
-          profileId: lead?.profileId ? String(lead.profileId) : null, leadId: lead?.id ? String(lead.id) : null,
-          entityType: "performance_follow_up", entityId: String(followUp.id), oldSnapshot: { status: "NEEDS_REASSIGNMENT" },
-          newSnapshot: { status: "ADMIN_REASSIGNMENT_OVERDUE", breachedAt: at.toISOString() }, metadata: null, requestId: null,
-        } });
-        await this.appendAdminAlerts(transaction, `performance-reassignment-overdue:${String(followUp.id)}`, "Admin reassignment overdue", String(lead?.jobTitle ?? "Recruiter follow-up"), String(lead?.id ?? followUp.leadId));
-        return true;
+        return this.markAdminReassignmentOverdue(transaction, followUp, at);
       });
       if (updated) reassignmentOverdue += 1;
     }
@@ -1755,6 +1754,32 @@ export class PerformanceService {
       if (updated) reviewOverdue += 1;
     }
     return { reassignmentOverdue, reviewOverdue };
+  }
+
+  private async markAdminReassignmentOverdue(
+    database: PerformanceDatabase,
+    followUp: Record<string, unknown>,
+    at: Date,
+    expectedVersion?: number,
+  ) {
+    const changed = await database.performanceFollowUp.updateMany?.({
+      where: {
+        id: String(followUp.id),
+        status: "NEEDS_REASSIGNMENT",
+        ...(expectedVersion === undefined ? {} : { version: expectedVersion }),
+      },
+      data: { status: "ADMIN_REASSIGNMENT_OVERDUE", adminReassignmentBreachedAt: at, version: { increment: 1 } },
+    });
+    if (!changed?.count) return false;
+    const lead = followUp.lead as Record<string, unknown> | undefined;
+    await database.activityEvent.create?.({ data: {
+      action: "performance.admin_reassignment_overdue", actorId: null, actorNameSnapshot: null, actorRoleSnapshot: null,
+      profileId: lead?.profileId ? String(lead.profileId) : null, leadId: lead?.id ? String(lead.id) : null,
+      entityType: "performance_follow_up", entityId: String(followUp.id), oldSnapshot: { status: "NEEDS_REASSIGNMENT" },
+      newSnapshot: { status: "ADMIN_REASSIGNMENT_OVERDUE", breachedAt: at.toISOString() }, metadata: null, requestId: null,
+    } });
+    await this.appendAdminAlerts(database, `performance-reassignment-overdue:${String(followUp.id)}`, "Admin reassignment overdue", String(lead?.jobTitle ?? "Recruiter follow-up"), String(lead?.id ?? followUp.leadId));
+    return true;
   }
 
   private async appendAdminAlerts(database: PerformanceDatabase, prefix: string, title: string, message: string, leadId: string) {

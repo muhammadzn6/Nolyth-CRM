@@ -420,6 +420,82 @@ describe("PerformanceService", () => {
     }));
   });
 
+  it("uses the rule effective when the replacement BD's SLA starts", async () => {
+    const recruiterRespondedAt = new Date("2026-09-01T09:00:00.000Z");
+    const reassignedAt = new Date("2026-09-08T09:00:00.000Z");
+    const newOwnerId = "10000000-0000-4000-8000-000000000007";
+    const effectiveFrom = new Date("2026-09-05T00:00:00.000Z");
+    const priorRule = { businessCalendarTimeZone: "UTC", workingDays: [1, 2, 3, 4, 5], workdayStartHour: 9, workdayEndHour: 17, followUpSlaBusinessHours: 48, adminReassignmentSlaBusinessHours: 2 };
+    const replacementRule = { ...priorRule, followUpSlaBusinessHours: 24 };
+    const database: any = {
+      $transaction: async <T>(work: (transaction: typeof database) => Promise<T>) => work(database),
+      user: { findUnique: vi.fn().mockResolvedValue({ id: newOwnerId, role: "BD", isActive: true }) },
+      performanceFollowUp: {
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({ id: "10000000-0000-4000-8000-000000000006", version: 1, status: "NEEDS_REASSIGNMENT", ownerId: bd.id, recruiterRespondedAt, adminReassignmentSlaDueAt: new Date("2026-09-08T11:00:00.000Z"), lead: { id: leadId, profileId: "10000000-0000-4000-8000-000000000005", jobTitle: "Platform Engineer" } })
+          .mockResolvedValueOnce({ id: "10000000-0000-4000-8000-000000000006", ownerId: newOwnerId, status: "OPEN" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      performanceRuleSet: { findFirst: vi.fn().mockImplementation(({ where }: any) => Promise.resolve(where.effectiveFrom.lte < effectiveFrom ? priorRule : replacementRule)) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) },
+      activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => reassignedAt);
+
+    await service.reassignFollowUp(admin, "10000000-0000-4000-8000-000000000006", { newOwnerId, expectedVersion: 1 });
+
+    expect(database.performanceRuleSet.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ effectiveFrom: { lte: reassignedAt } }),
+    }));
+    expect(database.performanceFollowUp.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ slaDueAt: new Date("2026-09-10T17:00:00.000Z") }),
+    }));
+  });
+
+  it("records and alerts an overdue Admin reassignment before opening it", async () => {
+    const reassignedAt = new Date("2026-09-08T12:00:00.000Z");
+    const newOwnerId = "10000000-0000-4000-8000-000000000007";
+    const followUpId = "10000000-0000-4000-8000-000000000006";
+    const database: any = {
+      $transaction: async <T>(work: (transaction: typeof database) => Promise<T>) => work(database),
+      user: {
+        findUnique: vi.fn().mockResolvedValue({ id: newOwnerId, role: "BD", isActive: true }),
+        findMany: vi.fn().mockResolvedValue([{ id: admin.id, email: admin.email }]),
+      },
+      performanceFollowUp: {
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({ id: followUpId, version: 1, status: "NEEDS_REASSIGNMENT", ownerId: bd.id, recruiterRespondedAt: new Date("2026-09-07T09:00:00.000Z"), adminReassignmentSlaDueAt: new Date("2026-09-08T11:00:00.000Z"), lead: { id: leadId, profileId: "10000000-0000-4000-8000-000000000005", jobTitle: "Platform Engineer" } })
+          .mockResolvedValueOnce({ id: followUpId, ownerId: newOwnerId, status: "OPEN" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue({ businessCalendarTimeZone: "UTC", workingDays: [1, 2, 3, 4, 5], workdayStartHour: 9, workdayEndHour: 17, followUpSlaBusinessHours: 48, adminReassignmentSlaBusinessHours: 2 }) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) },
+      activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
+      outboxEvent: { upsert: vi.fn().mockResolvedValue(undefined) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => reassignedAt);
+
+    await service.reassignFollowUp(admin, followUpId, { newOwnerId, expectedVersion: 1 });
+
+    expect(database.performanceFollowUp.updateMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: expect.objectContaining({ id: followUpId, version: 1, status: "NEEDS_REASSIGNMENT" }),
+      data: expect.objectContaining({ status: "ADMIN_REASSIGNMENT_OVERDUE", adminReassignmentBreachedAt: reassignedAt }),
+    }));
+    expect(database.performanceFollowUp.updateMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: expect.objectContaining({ id: followUpId, version: 2, status: "ADMIN_REASSIGNMENT_OVERDUE" }),
+      data: expect.objectContaining({ status: "OPEN" }),
+    }));
+    expect(database.activityEvent.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "performance.admin_reassignment_overdue" }) }));
+    expect(database.outboxEvent.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { idempotencyKey: `performance-reassignment-overdue:${followUpId}:in-app:${admin.id}` },
+    }));
+    expect(database.outboxEvent.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { idempotencyKey: `performance-reassignment-overdue:${followUpId}:email:${admin.id}` },
+    }));
+  });
+
   it("excludes future approved leave from the original owner's follow-up SLA deadline", async () => {
     const respondedAt = new Date("2026-09-07T09:00:00.000Z");
     const database: any = {

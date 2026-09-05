@@ -162,3 +162,15 @@ The local `orbit` database still has the pre-existing migration-history drift. T
 - Focused Task 4 suite: **130 passed**.
 - Direct TypeScript checks passed for contracts, backend, API, worker, and database packages.
 - Prisma schema validation and `git diff --check` passed.
+
+## Final reassignment handoff and overdue-transition correction
+
+- A replacement BD's working calendar and follow-up SLA rule are now resolved at the reassignment/SLA-start timestamp. The original owner's recruiter-response cohort and historical attribution remain unchanged.
+- Late direct reassignment first performs the same durable `ADMIN_REASSIGNMENT_OVERDUE` transition used by the evaluator: optimistic version update, immutable activity event, and idempotent in-app/email outbox effects. It then opens the handoff under the incremented version within the same transaction.
+- Added regressions for both an effective-dated rule changed after the recruiter response and an Admin reassignment submitted after its SLA due time but before evaluation.
+
+### Final reassignment handoff verification
+
+- `node_modules/.bin/vitest run packages/backend/src/performance/performance.service.test.ts` — **40 passed**.
+- `node_modules/.bin/tsc --noEmit -p packages/backend/tsconfig.json` — passed.
+- `npm run db:validate` — passed.
