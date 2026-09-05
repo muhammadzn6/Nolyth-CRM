@@ -41,6 +41,16 @@
 - `packages/database/node_modules/.bin/prisma validate --schema packages/database/prisma/schema.prisma` — passed.
 - `packages/database/node_modules/.bin/prisma migrate status --schema packages/database/prisma/schema.prisma` — the configured local `orbit` database has the new migration pending and also contains pre-existing migration history drift (`20260724111622_auth_api_updated` exists in the database but not this checkout).
 
+### Final review correction
+
+- Aligned the persisted performance-rule response contract with the nullable PostgreSQL `audit_metadata` column. `performanceRuleSchema` now accepts `null` from an ordinary persisted row while the create and update input schemas continue to accept only an object when metadata is supplied.
+- Added regression coverage for parsing a persisted rule with `auditMetadata: null`.
+- `./node_modules/.bin/vitest run packages/contracts/src/performance.test.ts` — 1 file, 8 tests passed.
+- `./node_modules/.bin/tsc --project packages/contracts/tsconfig.json --noEmit` — passed.
+- `./node_modules/.bin/tsc --project packages/database/tsconfig.json --noEmit` — passed.
+- `packages/database/node_modules/.bin/prisma validate --schema packages/database/prisma/schema.prisma` — passed.
+- `git diff --check` — passed.
+
 ## Environment notes
 
 - The declared `pnpm` package manager is unavailable in this environment, so verification used the installed local binaries.

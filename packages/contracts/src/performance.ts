@@ -51,6 +51,7 @@ export const performanceRuleSchema = z
     id: uuidSchema,
     effectiveTo: dateTimeSchema.nullable(),
     createdById: uuidSchema,
+    auditMetadata: z.record(z.string(), z.unknown()).nullable().optional(),
     version: z.number().int().positive(),
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,

@@ -205,6 +205,21 @@ describe("performance contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts null audit metadata from a persisted performance rule", () => {
+    expect(
+      schema("performanceRuleSchema").parse({
+        id: reviewId,
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        effectiveTo: null,
+        createdById: adminId,
+        auditMetadata: null,
+        createdAt: "2026-09-05T00:00:00.000Z",
+        updatedAt: "2026-09-05T00:00:00.000Z",
+        version: 1,
+      }),
+    ).toMatchObject({ auditMetadata: null });
+  });
+
   it("uses persisted status and classification values in performance queries", () => {
     const query = schema("performanceDrilldownQuerySchema");
 
