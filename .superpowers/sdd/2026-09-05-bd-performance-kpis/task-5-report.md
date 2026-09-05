@@ -77,3 +77,13 @@ Initial RED checks established the missing API history helper, missing future-re
 - `npm --prefix apps/web run typecheck`, `npm --prefix packages/backend run typecheck`, and `npm --prefix apps/api run typecheck` — passed.
 - `npm run db:validate` — passed.
 - Isolated Task 5 diff check — passed.
+
+## Controller-route repair
+
+The follow-up review found that `GET /performance/rules/history` had been accidentally inserted inside `previewRules`, leaving the controller syntactically invalid. The repair restores it as an independent class route immediately after `GET /performance/rules` and preserves the existing immutable `performanceRuleSchema[]` response contract.
+
+### Regression evidence
+
+- RED: the controller source from commit `1aff133` produces TypeScript parser errors (`Declaration expected`, `Expression expected`, and related parse errors).
+- GREEN: `npm --prefix apps/api test -- --run src/modules/performance/performance.controller.test.ts` — 11 passed.
+- The focused controller regression invokes both `ruleHistory` and `previewRules`, proving the independent history read and preview routes continue to work together.

@@ -373,4 +373,18 @@ describe("PerformanceController", () => {
     expect(() => controller.drilldown({ ...period, metric: "QUALIFIED_APPLICATIONS", status: "OPEN" }, request())).toThrow(expect.objectContaining({ statusCode: 422, code: new ValidationError().code }));
     expect(service.getAdminPerformanceDrilldown).not.toHaveBeenCalled();
   });
+
+  it("keeps rule history and preview as independent controller operations", async () => {
+    const history = [{ ...rule, effectiveFrom: "2026-08-01T00:00:00.000Z", effectiveTo: null, version: 1 }];
+    const service = {
+      getPerformanceRuleHistory: vi.fn().mockResolvedValue(history),
+      previewPerformanceRules: vi.fn().mockResolvedValue(preview),
+    };
+    const controller = new PerformanceController(service as unknown as PerformanceService);
+
+    await expect(controller.ruleHistory(request())).resolves.toEqual(history);
+    await expect(controller.previewRules(ruleInput, request())).resolves.toEqual(preview);
+    expect(service.getPerformanceRuleHistory).toHaveBeenCalledWith(admin);
+    expect(service.previewPerformanceRules).toHaveBeenCalledWith(admin, ruleInput);
+  });
 });

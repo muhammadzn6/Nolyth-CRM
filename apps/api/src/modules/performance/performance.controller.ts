@@ -101,13 +101,13 @@ export class PerformanceController {
       .then((response) => parseResponse(nullablePerformanceRuleSchema, response));
   }
 
-  @Post("rules/preview") previewRules(@Body() input: unknown, @Req() request: AuthenticatedRequest) {
   @Get("rules/history") ruleHistory(@Req() request: AuthenticatedRequest) {
     return this.performance
       .getPerformanceRuleHistory(this.actor(request))
       .then((response) => parseResponse(performanceRuleHistorySchema, response));
   }
 
+  @Post("rules/preview") previewRules(@Body() input: unknown, @Req() request: AuthenticatedRequest) {
     return this.performance
       .previewPerformanceRules(this.actor(request), parse(performanceRuleInputSchema, input))
       .then((response) => parseResponse(performanceRulePreviewSchema, response));
