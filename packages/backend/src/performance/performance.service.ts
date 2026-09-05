@@ -114,6 +114,7 @@ export class PerformanceService {
   async getAdminBdPerformance(actor: Actor, query: unknown) {
     if (!actor.isActive || actor.role !== "ADMIN") throw new AuthorizationError();
     this.authorization.assertRole(actor, ["ADMIN"]);
+    await this.evaluateOverdueSlas();
     const period = this.parsePeriod(query);
     const rows = await this.performanceRows(period);
     const selected = period.bdId ? rows.filter((row) => row.bdId === period.bdId) : rows;
@@ -458,6 +459,7 @@ export class PerformanceService {
 
   async getAdminPerformanceDrilldown(actor: Actor, query: unknown) {
     this.authorization.assertRole(actor, ["ADMIN"]);
+    await this.evaluateOverdueSlas();
     const parsed = performanceDrilldownQuerySchema.safeParse(query);
     if (!parsed.success) throw invalid(parsed.error.issues);
     const from = new Date(parsed.data.from);
@@ -490,13 +492,33 @@ export class PerformanceService {
       include: { lead: true }, orderBy: { startsAt: "asc" },
     }) ?? [];
     if (parsed.data.metric === "INTERVIEWS_NEEDING_SCHEDULING") return this.database.jobLead.findMany?.({
-      where: { status: "RESPONSE_RECEIVED", ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}), interviews: { none: {} } },
+      where: {
+        qualifiedCredit: true,
+        appliedDate: { gte: from, lte: to },
+        status: "RESPONSE_RECEIVED",
+        ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}),
+        interviews: { none: {} },
+      },
       orderBy: { updatedAt: "desc" },
     }) ?? [];
-    if (parsed.data.metric === "OUTCOMES") return this.database.jobLead.findMany?.({
-      where: { qualifiedCredit: true, appliedDate: { gte: from, lte: to }, status: { in: ["RESPONSE_RECEIVED", "INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED", "CLOSED"] }, ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}) },
-      include: { interviews: true }, orderBy: { appliedDate: "desc" },
-    }) ?? [];
+    if (parsed.data.metric === "OUTCOMES") {
+      const [leads, rules] = await Promise.all([
+        this.database.jobLead.findMany?.({
+          where: { qualifiedCredit: true, appliedDate: { gte: from, lte: to }, ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}) },
+          include: { interviews: true }, orderBy: { appliedDate: "desc" },
+        }) ?? [],
+        this.rulesForPeriod(from, to),
+      ]);
+      const observedAt = this.now();
+      return leads.filter((lead) => {
+        const appliedAt = asDate(lead.appliedDate);
+        return lead.qualifiedCredit !== false && Boolean(appliedAt && getMaturityCohort({
+          appliedAt,
+          maturityDays: number(this.ruleAt(rules, appliedAt).maturityWindowDays, 21),
+          observedAt,
+        }).isMatured);
+      });
+    }
     return this.database.jobLead.findMany?.({
       where: { qualifiedCredit: true, appliedDate: { gte: from, lte: to }, ...(parsed.data.bdId ? { createdById: parsed.data.bdId } : {}) },
       orderBy: { appliedDate: "desc" },
@@ -521,61 +543,116 @@ export class PerformanceService {
 
   private async performanceRow(bd: Record<string, unknown>, period: { from: string; to: string }) {
     const from = new Date(period.from); const to = new Date(period.to); const now = this.now();
-    const rule = await this.activeCalendarRule(to);
+    const bdStartedAt = asDate(bd.createdAt) ?? from;
+    const ruleWindowFrom = bdStartedAt < from ? bdStartedAt : from;
+    const ruleWindowTo = now > to ? now : to;
+    const targetWindowFrom = now < from ? now : from;
+    const targetWindowTo = now > to ? now : to;
     const [leads, interviews, followUps, targets, holidays, leaves, rules] = await Promise.all([
       this.database.jobLead.findMany?.({ where: { createdById: String(bd.id), appliedDate: { gte: from, lte: to } } }) ?? [],
       this.database.interviewRound.findMany?.({ where: { lead: { createdById: String(bd.id) }, startsAt: { lte: to } } }) ?? [],
       this.database.performanceFollowUp.findMany?.({ where: { ownerId: String(bd.id), recruiterRespondedAt: { gte: from, lte: to } } }) ?? [],
-      this.database.bdTargetSchedule.findMany?.({ where: { bdId: String(bd.id), effectiveFrom: { lte: to }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: from } }] } }) ?? [],
+      this.database.bdTargetSchedule.findMany?.({ where: { bdId: String(bd.id), effectiveFrom: { lte: targetWindowTo }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: targetWindowFrom } }] } }) ?? [],
       this.database.performanceHoliday.findMany?.({}) ?? [],
       this.database.performanceApprovedLeave.findMany?.({ where: { bdId: String(bd.id), startsAt: { lte: to }, endsAt: { gt: from } } }) ?? [],
-      this.database.performanceRuleSet.findMany?.({ where: { effectiveFrom: { lte: to }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: from } }] }, orderBy: { effectiveFrom: "asc" } }) ?? [],
+      this.database.performanceRuleSet.findMany?.({ where: { effectiveFrom: { lte: ruleWindowTo }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: ruleWindowFrom } }] }, orderBy: { effectiveFrom: "asc" } }) ?? [],
     ]);
+    const rule = this.ruleAt(rules, to);
+    const calendarRule = this.toCalendarRule(rule);
     const schedule = {
-      timeZone: rule.businessCalendarTimeZone, workingDays: rule.workingDays,
-      workday: { startHour: rule.workdayStartHour, endHour: rule.workdayEndHour },
+      timeZone: calendarRule.businessCalendarTimeZone, workingDays: calendarRule.workingDays,
+      workday: { startHour: calendarRule.workdayStartHour, endHour: calendarRule.workdayEndHour },
       holidays: holidays.flatMap((holiday) => asDate(holiday.holidayDate) ? [asDate(holiday.holidayDate)!] : []),
       leaves: leaves.flatMap((leave) => {
         const startsAt = asDate(leave.startsAt); const endsAt = asDate(leave.endsAt);
         return startsAt && endsAt ? [{ startsAt, endsAt, ...(leave.availableStartHour == null || leave.availableEndHour == null ? {} : { availableHours: { startHour: number(leave.availableStartHour), endHour: number(leave.availableEndHour) } }) }] : [];
       }),
     };
+    type RuleSegment = {
+      rule: Record<string, unknown>;
+      targetApplications: number;
+      eligibleWorkingDays: number;
+      qualifiedApplications: number;
+    };
+    const ruleSegments = new Map<string, RuleSegment>();
+    const segmentFor = (datedRule: Record<string, unknown>) => {
+      const key = `${String(datedRule.id ?? "fallback")}:${iso(datedRule.effectiveFrom) ?? ""}`;
+      const existing = ruleSegments.get(key);
+      if (existing) return existing;
+      const created = { rule: datedRule, targetApplications: 0, eligibleWorkingDays: 0, qualifiedApplications: 0 };
+      ruleSegments.set(key, created);
+      return created;
+    };
     let targetApplications = 0; let eligibleWorkingDays = 0;
     for (let date = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate())); date <= to; date.setUTCDate(date.getUTCDate() + 1)) {
       const datedRule = this.ruleAt(rules, date);
-      const datedSchedule = { ...schedule, timeZone: String(datedRule.businessCalendarTimeZone ?? rule.businessCalendarTimeZone), workingDays: Array.isArray(datedRule.workingDays) ? datedRule.workingDays.map(Number) : rule.workingDays, workday: { startHour: number(datedRule.workdayStartHour, rule.workdayStartHour), endHour: number(datedRule.workdayEndHour, rule.workdayEndHour) } };
+      const datedCalendarRule = this.toCalendarRule(datedRule);
+      const datedSchedule = {
+        ...schedule,
+        timeZone: datedCalendarRule.businessCalendarTimeZone,
+        workingDays: datedCalendarRule.workingDays,
+        workday: { startHour: datedCalendarRule.workdayStartHour, endHour: datedCalendarRule.workdayEndHour },
+      };
       if (!isEligibleWorkingDay(date, datedSchedule)) continue;
       eligibleWorkingDays += 1;
-      const activeTarget = targets.find((target) => {
-        const start = asDate(target.effectiveFrom); const end = asDate(target.effectiveTo);
-        return Boolean(start && start <= date && (!end || end > date));
-      });
-      targetApplications += calculateProratedDailyTarget(number(activeTarget?.dailyTarget, number(datedRule.defaultDailyTarget, 70)), date, datedSchedule);
+      const segment = segmentFor(datedRule);
+      segment.eligibleWorkingDays += 1;
+      const activeTarget = this.targetAt(targets, date);
+      const dailyTarget = calculateProratedDailyTarget(number(activeTarget?.dailyTarget, number(datedRule.defaultDailyTarget, 70)), date, datedSchedule);
+      targetApplications += dailyTarget;
+      segment.targetApplications += dailyTarget;
     }
-    const qualified = leads.filter((lead) => lead.qualifiedCredit !== false).length;
+    const qualifiedLeads = leads.filter((lead) => lead.qualifiedCredit !== false);
+    const qualified = qualifiedLeads.length;
+    for (const lead of qualifiedLeads) {
+      const appliedAt = asDate(lead.appliedDate);
+      if (appliedAt) segmentFor(this.ruleAt(rules, appliedAt)).qualifiedApplications += 1;
+    }
     const rawTargetAttainmentPercent = targetApplications ? (qualified / targetApplications) * 100 : 0;
-    const effectiveTargetAttainmentPercent = calculateEffectiveAttainment(rawTargetAttainmentPercent, number((rule as Record<string, unknown>).slowdownThresholdPercent, 120), number((rule as Record<string, unknown>).slowdownMultiplierPercent, 25));
+    const effectiveTargetAttainmentPercent = targetApplications ? Array.from(ruleSegments.values()).reduce((sum, segment) => {
+      if (segment.targetApplications === 0) return sum;
+      const rawSegmentAttainment = (segment.qualifiedApplications / segment.targetApplications) * 100;
+      const effectiveSegmentAttainment = calculateEffectiveAttainment(
+        rawSegmentAttainment,
+        number(segment.rule.slowdownThresholdPercent, 120),
+        number(segment.rule.slowdownMultiplierPercent, 25),
+      );
+      return sum + effectiveSegmentAttainment * segment.targetApplications;
+    }, 0) / targetApplications : 0;
+    const scoreWeightDays = Array.from(ruleSegments.values()).reduce((sum, segment) => sum + segment.eligibleWorkingDays, 0);
+    const scoreWeights = scoreWeightDays === 0
+      ? { applications: number(rule.applicationWeightPercent, 45), followUps: number(rule.followUpWeightPercent, 25), outcomes: number(rule.outcomeWeightPercent, 30) }
+      : Array.from(ruleSegments.values()).reduce((weights, segment) => ({
+        applications: weights.applications + number(segment.rule.applicationWeightPercent, 45) * (segment.eligibleWorkingDays / scoreWeightDays),
+        followUps: weights.followUps + number(segment.rule.followUpWeightPercent, 25) * (segment.eligibleWorkingDays / scoreWeightDays),
+        outcomes: weights.outcomes + number(segment.rule.outcomeWeightPercent, 30) * (segment.eligibleWorkingDays / scoreWeightDays),
+      }), { applications: 0, followUps: 0, outcomes: 0 });
     const interviewsByLead = new Map<string, Record<string, unknown>[]>();
     for (const interview of interviews) interviewsByLead.set(String(interview.leadId), [...(interviewsByLead.get(String(interview.leadId)) ?? []), interview]);
     const ruleForLead = (lead: Record<string, unknown>) => this.ruleAt(rules, asDate(lead.appliedDate) ?? to);
+    const initialRule = this.ruleAt(rules, bdStartedAt);
+    const initialMaturityElapsed = getMaturityCohort({
+      appliedAt: bdStartedAt,
+      maturityDays: number(initialRule.maturityWindowDays, 21),
+      observedAt: now,
+    }).isMatured;
     const matured = leads.filter((lead) => lead.qualifiedCredit !== false && asDate(lead.appliedDate) && getMaturityCohort({ appliedAt: asDate(lead.appliedDate)!, maturityDays: number(ruleForLead(lead).maturityWindowDays, 21), observedAt: now }).isMatured);
-    const maturityElapsed = matured.length > 0;
     const eligibleFollowUps = followUps.filter((followUp) => followUp.status !== "NEEDS_REASSIGNMENT" && (asDate(followUp.completedAt) || asDate(followUp.slaDueAt)?.getTime()! <= now.getTime()));
     const metFollowUps = eligibleFollowUps.filter((followUp) => !asDate(followUp.breachedAt)).length;
     const followUpSlaCompliancePercent = eligibleFollowUps.length ? (metFollowUps / eligibleFollowUps.length) * 100 : null;
-    const maturedOutcomeScorePercent = maturityElapsed ? matured.reduce((sum, lead) => {
+    const maturedOutcomeScorePercent = !initialMaturityElapsed ? null : matured.length === 0 ? 0 : matured.reduce((sum, lead) => {
       const appliedRule = ruleForLead(lead);
       return sum + calculateOutcomeScore([{ highestStage: outcomeStage(lead.status, interviewsByLead.get(String(lead.id)) ?? []) }], {
         POSITIVE_REPLY: number(appliedRule.positiveReplyPoints, 1), SCREENING: number(appliedRule.screeningPoints, 2), INTERVIEW: number(appliedRule.interviewPoints, 3), OFFER: number(appliedRule.offerPoints, 5),
       });
-    }, 0) / matured.length : null;
+    }, 0) / matured.length;
     const balanced = calculateBalancedScore({
       effectiveAttainmentPercent: effectiveTargetAttainmentPercent,
       followUpSlaCompliancePercent,
-      outcome: { scorePercent: maturedOutcomeScorePercent, maturityElapsed },
-      weights: { applications: number((rule as Record<string, unknown>).applicationWeightPercent, 45), followUps: number((rule as Record<string, unknown>).followUpWeightPercent, 25), outcomes: number((rule as Record<string, unknown>).outcomeWeightPercent, 30) },
+      outcome: { scorePercent: maturedOutcomeScorePercent, maturityElapsed: initialMaturityElapsed },
+      weights: scoreWeights,
     });
-    const eligibility = evaluateEligibility({ eligibleWorkingDays, initialMaturityElapsed: maturityElapsed, qualifiedApplications: qualified, maturedApplications: matured.length, evaluatedAt: now });
+    const eligibility = evaluateEligibility({ eligibleWorkingDays, initialMaturityElapsed, qualifiedApplications: qualified, maturedApplications: matured.length, evaluatedAt: now });
     const performance = {
       qualifiedApplications: qualified, targetApplications: Math.round(targetApplications), rawTargetAttainmentPercent: Math.round(rawTargetAttainmentPercent * 10) / 10,
       effectiveTargetAttainmentPercent, recruiterResponses: leads.filter((lead) => outcomeStage(lead.status, interviewsByLead.get(String(lead.id)) ?? []) !== "NONE").length,
@@ -590,7 +667,7 @@ export class PerformanceService {
       ineligibilityReason: eligibility.reasons[0] ?? null,
       eligibilityProgress: Math.min(100, Math.round((eligibleWorkingDays / 10) * 100)),
       estimatedEligibilityDate: null,
-      currentDailyTarget: number(targets.find((target) => asDate(target.effectiveFrom) && asDate(target.effectiveFrom)! <= now)?.dailyTarget, number(this.ruleAt(rules, now).defaultDailyTarget, 70)),
+      currentDailyTarget: number(this.targetAt(targets, now)?.dailyTarget, number(this.ruleAt(rules, now).defaultDailyTarget, 70)),
       duplicateRate: leads.length ? (leads.filter((lead) => lead.duplicateClassification === "CONFIRMED").length / leads.length) * 100 : null,
     };
   }
@@ -622,6 +699,23 @@ export class PerformanceService {
       })
       .sort((left, right) => number(asDate(right.effectiveFrom)?.getTime()) - number(asDate(left.effectiveFrom)?.getTime()))[0]
       ?? fallbackRule;
+  }
+
+  private targetAt(rows: readonly Record<string, unknown>[], at: Date): Record<string, unknown> | undefined {
+    return rows
+      .filter((row) => {
+        const start = asDate(row.effectiveFrom);
+        const end = asDate(row.effectiveTo);
+        return Boolean(start && start <= at && (!end || end > at));
+      })
+      .sort((left, right) => number(asDate(right.effectiveFrom)?.getTime()) - number(asDate(left.effectiveFrom)?.getTime()))[0];
+  }
+
+  private async rulesForPeriod(from: Date, to: Date): Promise<ReadonlyArray<Record<string, unknown>>> {
+    return this.database.performanceRuleSet.findMany?.({
+      where: { effectiveFrom: { lte: to }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: from } }] },
+      orderBy: { effectiveFrom: "asc" },
+    }) ?? [];
   }
 
   private async previewRuleImpact(proposed: Record<string, unknown>) {
@@ -697,13 +791,17 @@ export class PerformanceService {
       where: { effectiveFrom: { lte: at }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }] },
       orderBy: { effectiveFrom: "desc" },
     });
+    return this.toCalendarRule(row ?? {});
+  }
+
+  private toCalendarRule(row: Record<string, unknown>): CalendarRule {
     return {
-      businessCalendarTimeZone: typeof row?.businessCalendarTimeZone === "string" ? row.businessCalendarTimeZone : fallbackRule.businessCalendarTimeZone,
-      workingDays: Array.isArray(row?.workingDays) ? row.workingDays.map(Number) : fallbackRule.workingDays,
-      workdayStartHour: Number(row?.workdayStartHour ?? fallbackRule.workdayStartHour),
-      workdayEndHour: Number(row?.workdayEndHour ?? fallbackRule.workdayEndHour),
-      followUpSlaBusinessHours: Number(row?.followUpSlaBusinessHours ?? fallbackRule.followUpSlaBusinessHours),
-      adminReassignmentSlaBusinessHours: Number(row?.adminReassignmentSlaBusinessHours ?? fallbackRule.adminReassignmentSlaBusinessHours),
+      businessCalendarTimeZone: typeof row.businessCalendarTimeZone === "string" ? row.businessCalendarTimeZone : fallbackRule.businessCalendarTimeZone,
+      workingDays: Array.isArray(row.workingDays) ? row.workingDays.map(Number) : fallbackRule.workingDays,
+      workdayStartHour: number(row.workdayStartHour, fallbackRule.workdayStartHour),
+      workdayEndHour: number(row.workdayEndHour, fallbackRule.workdayEndHour),
+      followUpSlaBusinessHours: number(row.followUpSlaBusinessHours, fallbackRule.followUpSlaBusinessHours),
+      adminReassignmentSlaBusinessHours: number(row.adminReassignmentSlaBusinessHours, fallbackRule.adminReassignmentSlaBusinessHours),
     };
   }
 

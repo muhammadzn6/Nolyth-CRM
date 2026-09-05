@@ -277,4 +277,145 @@ describe("PerformanceService", () => {
     expect(result.peerLeaderboard[1]).not.toHaveProperty("performance");
     expect(result.peerLeaderboard[1]).not.toHaveProperty("currentDailyTarget");
   });
+
+  it("uses each effective rule segment for attainment and score weights", async () => {
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([bd]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue([
+        { id: "lead-one", appliedDate: new Date("2026-09-01T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED" },
+        { id: "lead-two", appliedDate: new Date("2026-09-02T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED" },
+      ]) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceRuleSet: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "rule-two", effectiveFrom: new Date("2026-09-02T00:00:00.000Z"), effectiveTo: null,
+          defaultDailyTarget: 1, businessCalendarTimeZone: "UTC", workingDays: [1, 2, 3, 4, 5], workdayStartHour: 9, workdayEndHour: 17,
+          slowdownThresholdPercent: 50, slowdownMultiplierPercent: 0, applicationWeightPercent: 50, followUpWeightPercent: 50, outcomeWeightPercent: 0,
+        }),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "rule-one", effectiveFrom: new Date("2026-09-01T00:00:00.000Z"), effectiveTo: new Date("2026-09-02T00:00:00.000Z"),
+            defaultDailyTarget: 1, businessCalendarTimeZone: "UTC", workingDays: [1, 2, 3, 4, 5], workdayStartHour: 9, workdayEndHour: 17,
+            slowdownThresholdPercent: 100, slowdownMultiplierPercent: 0, applicationWeightPercent: 100, followUpWeightPercent: 0, outcomeWeightPercent: 0,
+          },
+          {
+            id: "rule-two", effectiveFrom: new Date("2026-09-02T00:00:00.000Z"), effectiveTo: null,
+            defaultDailyTarget: 1, businessCalendarTimeZone: "UTC", workingDays: [1, 2, 3, 4, 5], workdayStartHour: 9, workdayEndHour: 17,
+            slowdownThresholdPercent: 50, slowdownMultiplierPercent: 0, applicationWeightPercent: 50, followUpWeightPercent: 50, outcomeWeightPercent: 0,
+          },
+        ]),
+      },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database),
+      activityEvent: { create: vi.fn() },
+      outboxEvent: { upsert: vi.fn() },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-02T12:00:00.000Z"));
+
+    const result = await service.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" });
+
+    expect(result.buildingBaseline[0].performance.effectiveTargetAttainmentPercent).toBe(75);
+    expect(result.buildingBaseline[0].performance.balancedScore).toBe(75);
+  });
+
+  it("keeps an outcome score of zero after the BD initial maturity window even with no matured applications", async () => {
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([{ ...bd, createdAt: new Date("2026-08-01T00:00:00.000Z") }]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue([]) }, interviewRound: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) }, bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) }, performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) }, $transaction: async (work: any) => work(database),
+      activityEvent: { create: vi.fn() }, outboxEvent: { upsert: vi.fn() },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+
+    const result = await service.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+
+    expect(result.leaderboard[0].performance.maturedOutcomeScorePercent).toBe(0);
+    expect(result.leaderboard[0].warnings).toContain("LOW_OUTCOME_SAMPLE");
+  });
+
+  it("evaluates overdue SLAs on every Admin performance read", async () => {
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([]) }, performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) }, $transaction: async (work: any) => work(database),
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never);
+    const evaluate = vi.spyOn(service, "evaluateOverdueSlas").mockResolvedValue({ reassignmentOverdue: 0, reviewOverdue: 0 });
+
+    await service.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+
+    expect(evaluate).toHaveBeenCalledOnce();
+  });
+
+  it("returns only qualified in-period response leads with no interview for scheduling drill-down", async () => {
+    const database: any = {
+      jobLead: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database),
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never);
+
+    await service.getAdminPerformanceDrilldown(admin, {
+      metric: "INTERVIEWS_NEEDING_SCHEDULING", bdId: bd.id,
+      from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z",
+    });
+
+    expect(database.jobLead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        qualifiedCredit: true, status: "RESPONSE_RECEIVED", createdById: bd.id,
+        appliedDate: { gte: new Date("2026-09-01T00:00:00.000Z"), lte: new Date("2026-09-30T00:00:00.000Z") },
+        interviews: { none: {} },
+      }),
+    }));
+  });
+
+  it("returns the matured zero-point outcome cohort, including APPLIED applications", async () => {
+    const maturedApplied = { id: "matured-applied", appliedDate: new Date("2026-09-01T00:00:00.000Z"), qualifiedCredit: true, status: "APPLIED" };
+    const youngResponse = { id: "young-response", appliedDate: new Date("2026-09-25T00:00:00.000Z"), qualifiedCredit: true, status: "RESPONSE_RECEIVED" };
+    const unqualified = { id: "unqualified", appliedDate: new Date("2026-09-01T00:00:00.000Z"), qualifiedCredit: false, status: "APPLIED" };
+    const database: any = {
+      jobLead: { findMany: vi.fn().mockResolvedValue([maturedApplied, youngResponse, unqualified]) },
+      performanceRuleSet: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database),
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+
+    const result = await service.getAdminPerformanceDrilldown(admin, {
+      metric: "OUTCOMES", bdId: bd.id,
+      from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z",
+    });
+
+    expect(result).toEqual([maturedApplied]);
+  });
+
+  it("uses the latest active target schedule for the BD current daily target", async () => {
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([{ ...bd, createdAt: new Date("2026-08-01T00:00:00.000Z") }]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue([]) }, interviewRound: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      bdTargetSchedule: {
+        findMany: vi.fn().mockResolvedValue([
+          { effectiveFrom: new Date("2026-09-01T00:00:00.000Z"), effectiveTo: new Date("2026-09-15T00:00:00.000Z"), dailyTarget: 10 },
+          { effectiveFrom: new Date("2026-09-15T00:00:00.000Z"), effectiveTo: null, dailyTarget: 90 },
+        ]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) }, performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+
+    const result = await service.getBdPerformance(bd, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+
+    expect(result.currentDailyTarget).toBe(90);
+  });
 });

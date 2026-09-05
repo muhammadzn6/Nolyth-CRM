@@ -70,5 +70,6 @@
 ### Task 4 — complete
 
 - Delivered role-safe Admin/BD performance reads, rules/review/reassignment APIs, authoritative pure-engine calculations, activity events, in-app notifications, and response-to-follow-up integration.
-- Verification: 17 focused service/controller/contract tests, backend/API/contracts typechecks, local Prisma validation, and diff check passed.
+- Final correction: rule-versioned attainment/weights, independent initial-maturity eligibility, Admin read-time SLA evaluation, KPI-exact drill-downs, and latest-active target resolution are covered by regression tests.
+- Verification: 86 focused service/controller/contract/performance tests plus 6 disposable PostgreSQL invariant tests, backend/API/contracts/database typechecks, local Prisma validation, and diff check passed.
 - Note: local `orbit` migration-history drift is pre-existing; Task 4 adds no migration.
