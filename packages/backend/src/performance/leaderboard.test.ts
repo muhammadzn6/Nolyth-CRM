@@ -18,4 +18,14 @@ describe("rankLeaderboard", () => {
       expect.objectContaining({ bdId: "e", rank: null }),
     ]);
   });
+
+  it("never assigns an official numeric rank without a calculable score", () => {
+    expect(rankLeaderboard([
+      { bdId: "a", bdName: "Calculable", rankable: true, balancedScore: 80, effectiveAttainmentPercent: 100, maturedOutcomeScorePercent: 50, followUpSlaCompliancePercent: 90 },
+      { bdId: "b", bdName: "Insufficient data", rankable: true, balancedScore: null, effectiveAttainmentPercent: null, maturedOutcomeScorePercent: null, followUpSlaCompliancePercent: null },
+    ])).toEqual([
+      expect.objectContaining({ bdId: "a", rank: 1 }),
+      expect.objectContaining({ bdId: "b", rank: null }),
+    ]);
+  });
 });

@@ -62,13 +62,27 @@ describe("performance rule persistence", () => {
   it("persists Monday through Friday when a rule set is created without a schedule", async () => {
     const admin = await createUser("performance-admin@orbit.test", "ADMIN");
     const ruleSet = await createRuleSet(admin.id, new Date("2026-09-07T00:00:00.000Z"), null);
-    const rows = await database.$queryRaw<{ workingDays: number[] }[]>`
-      SELECT "working_days" AS "workingDays"
+    const rows = await database.$queryRaw<{
+      workingDays: number[];
+      businessCalendarTimeZone: string;
+      workdayStartHour: number;
+      workdayEndHour: number;
+    }[]>`
+      SELECT
+        "working_days" AS "workingDays",
+        "business_calendar_time_zone" AS "businessCalendarTimeZone",
+        "workday_start_hour" AS "workdayStartHour",
+        "workday_end_hour" AS "workdayEndHour"
       FROM "performance_rule_sets"
       WHERE "id" = ${ruleSet.id}::uuid
     `;
 
-    expect(rows).toEqual([{ workingDays: [1, 2, 3, 4, 5] }]);
+    expect(rows).toEqual([{
+      workingDays: [1, 2, 3, 4, 5],
+      businessCalendarTimeZone: "UTC",
+      workdayStartHour: 9,
+      workdayEndHour: 17,
+    }]);
   });
 
   it("rejects invalid persisted working-day configurations", async () => {
@@ -82,6 +96,26 @@ describe("performance rule persistence", () => {
           effectiveTo: null,
           workingDays: [1, 1],
         },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects invalid persisted business-calendar windows and outcome-point order", async () => {
+    const admin = await createUser("calendar-window-admin@orbit.test", "ADMIN");
+    const ruleSet = {
+      createdById: admin.id,
+      effectiveFrom: new Date("2026-09-07T00:00:00.000Z"),
+      effectiveTo: null,
+    };
+
+    await expect(
+      database.performanceRuleSet.create({
+        data: { ...ruleSet, workdayStartHour: 17, workdayEndHour: 9 },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      database.performanceRuleSet.create({
+        data: { ...ruleSet, positiveReplyPoints: 3, screeningPoints: 2 },
       }),
     ).rejects.toThrow();
   });

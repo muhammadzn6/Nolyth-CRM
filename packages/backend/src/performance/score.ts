@@ -27,6 +27,21 @@ function assertNonNegative(value: number, label: string): void {
   if (!Number.isFinite(value) || value < 0) throw new Error(`${label} must be a non-negative number`);
 }
 
+function assertOutcomeStagePoints(stagePoints: OutcomeStagePoints): void {
+  const values = [
+    stagePoints.POSITIVE_REPLY,
+    stagePoints.SCREENING,
+    stagePoints.INTERVIEW,
+    stagePoints.OFFER,
+  ];
+  const isValid = values.every((value) => Number.isFinite(value) && Number.isInteger(value) && value > 0)
+    && values[0] <= values[1]
+    && values[1] <= values[2]
+    && values[2] <= values[3];
+
+  if (!isValid) throw new Error("Outcome points must be positive and non-decreasing");
+}
+
 export function calculateEffectiveAttainment(
   rawPercent: number,
   thresholdPercent = 120,
@@ -45,13 +60,13 @@ export function calculateOutcomeScore(
   maturedApplications: readonly MaturedApplicationOutcome[],
   stagePoints: OutcomeStagePoints = defaultOutcomeStagePoints,
 ): number {
+  assertOutcomeStagePoints(stagePoints);
   if (maturedApplications.length === 0) return 0;
   const maximum = stagePoints.OFFER;
-  if (!Number.isFinite(maximum) || maximum <= 0) throw new Error("Offer points must be positive");
   const totalPoints = maturedApplications.reduce((total, application) => (
     total + (application.highestStage === "NONE" ? 0 : stagePoints[application.highestStage])
   ), 0);
-  return roundToOneDecimal((totalPoints / (maturedApplications.length * maximum)) * 100);
+  return Math.min(100, roundToOneDecimal((totalPoints / (maturedApplications.length * maximum)) * 100));
 }
 
 export type BalancedScoreInput = {

@@ -35,6 +35,9 @@ describe("performance contracts", () => {
       screeningPoints: 2,
       interviewPoints: 3,
       offerPoints: 5,
+      businessCalendarTimeZone: "UTC",
+      workdayStartHour: 9,
+      workdayEndHour: 17,
       slowdownThresholdPercent: 120,
       slowdownMultiplierPercent: 25,
     });
@@ -139,6 +142,25 @@ describe("performance contracts", () => {
       ruleSet.safeParse({
         effectiveFrom: "2026-09-08T00:00:00.000Z",
         workingDays: [1, 1],
+      }).success,
+    ).toBe(false);
+    expect(
+      ruleSet.safeParse({
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        positiveReplyPoints: 0,
+      }).success,
+    ).toBe(false);
+    expect(
+      ruleSet.safeParse({
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        positiveReplyPoints: 3,
+        screeningPoints: 2,
+      }).success,
+    ).toBe(false);
+    expect(
+      ruleSet.safeParse({
+        effectiveFrom: "2026-09-08T00:00:00.000Z",
+        businessCalendarTimeZone: "Not/A_Timezone",
       }).success,
     ).toBe(false);
   });

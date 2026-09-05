@@ -6,6 +6,7 @@ export type EligibilityInput = {
   initialMaturityElapsed: boolean;
   qualifiedApplications: number;
   maturedApplications: number;
+  evaluatedAt: Date;
   adminOverride?: {
     reason: string;
     expiresAt: Date;
@@ -28,7 +29,9 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
   if (!input.initialMaturityElapsed) reasons.push("INITIAL_MATURITY_WINDOW_NOT_ELAPSED");
   if (input.qualifiedApplications < 20) warnings.push("LOW_APPLICATION_SAMPLE");
   if (input.maturedApplications < 5) warnings.push("LOW_OUTCOME_SAMPLE");
-  if (input.adminOverride) {
+  if (Number.isNaN(input.evaluatedAt.getTime())) throw new Error("Eligibility evaluation requires a valid time");
+
+  if (input.adminOverride && input.adminOverride.expiresAt >= input.evaluatedAt) {
     if (!input.adminOverride.reason.trim() || Number.isNaN(input.adminOverride.expiresAt.getTime())) {
       throw new Error("Admin overrides require a reason and expiry date");
     }

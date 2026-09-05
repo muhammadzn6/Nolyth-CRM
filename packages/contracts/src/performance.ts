@@ -7,6 +7,14 @@ const dateTimeSchema = z.iso.datetime();
 const percentageSchema = z.number().min(0).max(100);
 const nonnegativeNumberSchema = z.number().nonnegative();
 const nonnegativeIntegerSchema = z.number().int().nonnegative();
+const timeZoneSchema = z.string().trim().min(1).refine((timeZone) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}, "Business calendar timezone must be a valid IANA timezone");
 const workingDaysSchema = z
   .array(z.number().int().min(0).max(6))
   .min(1)
@@ -17,6 +25,9 @@ const performanceRuleInputShape = {
   effectiveTo: dateTimeSchema.optional(),
   defaultDailyTarget: z.number().int().positive().default(70),
   workingDays: workingDaysSchema.default([1, 2, 3, 4, 5]),
+  businessCalendarTimeZone: timeZoneSchema.default("UTC"),
+  workdayStartHour: z.number().int().min(0).max(23).default(9),
+  workdayEndHour: z.number().int().min(1).max(24).default(17),
   followUpSlaBusinessHours: z.number().int().positive().default(48),
   adminReassignmentSlaBusinessHours: z.number().int().positive().default(2),
   maturityWindowDays: z.number().int().positive().default(21),
@@ -24,10 +35,10 @@ const performanceRuleInputShape = {
   applicationWeightPercent: percentageSchema.default(45),
   followUpWeightPercent: percentageSchema.default(25),
   outcomeWeightPercent: percentageSchema.default(30),
-  positiveReplyPoints: z.number().int().nonnegative().default(1),
-  screeningPoints: z.number().int().nonnegative().default(2),
-  interviewPoints: z.number().int().nonnegative().default(3),
-  offerPoints: z.number().int().nonnegative().default(5),
+  positiveReplyPoints: z.number().int().positive().default(1),
+  screeningPoints: z.number().int().positive().default(2),
+  interviewPoints: z.number().int().positive().default(3),
+  offerPoints: z.number().int().positive().default(5),
   slowdownThresholdPercent: z.number().positive().default(120),
   slowdownMultiplierPercent: percentageSchema.default(25),
   auditMetadata: z.record(z.string(), z.unknown()).optional(),
@@ -39,6 +50,17 @@ export const performanceRuleInputSchema = z
     ({ applicationWeightPercent, followUpWeightPercent, outcomeWeightPercent }) =>
       applicationWeightPercent + followUpWeightPercent + outcomeWeightPercent === 100,
     { message: "Performance score weights must total 100 percent" },
+  )
+  .refine(
+    ({ workdayStartHour, workdayEndHour }) => workdayStartHour < workdayEndHour,
+    { message: "Workday must end after it starts", path: ["workdayEndHour"] },
+  )
+  .refine(
+    ({ positiveReplyPoints, screeningPoints, interviewPoints, offerPoints }) =>
+      positiveReplyPoints <= screeningPoints
+      && screeningPoints <= interviewPoints
+      && interviewPoints <= offerPoints,
+    { message: "Outcome points must be positive and non-decreasing", path: ["offerPoints"] },
   )
   .refine(
     ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
@@ -62,6 +84,17 @@ export const performanceRuleSchema = z
     { message: "Performance score weights must total 100 percent" },
   )
   .refine(
+    ({ workdayStartHour, workdayEndHour }) => workdayStartHour < workdayEndHour,
+    { message: "Workday must end after it starts", path: ["workdayEndHour"] },
+  )
+  .refine(
+    ({ positiveReplyPoints, screeningPoints, interviewPoints, offerPoints }) =>
+      positiveReplyPoints <= screeningPoints
+      && screeningPoints <= interviewPoints
+      && interviewPoints <= offerPoints,
+    { message: "Outcome points must be positive and non-decreasing", path: ["offerPoints"] },
+  )
+  .refine(
     ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
     { message: "Effective period must end after it starts", path: ["effectiveTo"] },
   );
@@ -72,6 +105,17 @@ export const updatePerformanceRuleInputSchema = z
     ({ applicationWeightPercent, followUpWeightPercent, outcomeWeightPercent }) =>
       applicationWeightPercent + followUpWeightPercent + outcomeWeightPercent === 100,
     { message: "Performance score weights must total 100 percent" },
+  )
+  .refine(
+    ({ workdayStartHour, workdayEndHour }) => workdayStartHour < workdayEndHour,
+    { message: "Workday must end after it starts", path: ["workdayEndHour"] },
+  )
+  .refine(
+    ({ positiveReplyPoints, screeningPoints, interviewPoints, offerPoints }) =>
+      positiveReplyPoints <= screeningPoints
+      && screeningPoints <= interviewPoints
+      && interviewPoints <= offerPoints,
+    { message: "Outcome points must be positive and non-decreasing", path: ["offerPoints"] },
   )
   .refine(
     ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,

@@ -25,9 +25,9 @@ function compareRows(left: LeaderboardRowInput, right: LeaderboardRowInput): num
 
 /** Returns official rows in score order followed by unranked Building Baseline rows. */
 export function rankLeaderboard(rows: readonly LeaderboardRowInput[]): RankedLeaderboardRow[] {
-  const official = rows.filter((row) => row.rankable).sort(compareRows)
+  const official = rows.filter((row) => row.rankable && row.balancedScore !== null).sort(compareRows)
     .map((row, index) => ({ ...row, rank: index + 1 }));
-  const baseline = rows.filter((row) => !row.rankable).sort(compareRows)
+  const baseline = rows.filter((row) => !row.rankable || row.balancedScore === null).sort(compareRows)
     .map((row) => ({ ...row, rank: null }));
   return [...official, ...baseline];
 }

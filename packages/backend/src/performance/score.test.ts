@@ -26,6 +26,35 @@ describe("calculateOutcomeScore", () => {
       { highestStage: "NONE" },
     ])).toBe(45);
   });
+
+  it("uses positive non-decreasing configurable points without exceeding 100 percent", () => {
+    expect(calculateOutcomeScore([
+      { highestStage: "POSITIVE_REPLY" },
+      { highestStage: "SCREENING" },
+      { highestStage: "INTERVIEW" },
+      { highestStage: "OFFER" },
+    ], {
+      POSITIVE_REPLY: 2,
+      SCREENING: 2,
+      INTERVIEW: 4,
+      OFFER: 4,
+    })).toBe(75);
+  });
+
+  it("rejects non-positive or decreasing Admin outcome points", () => {
+    expect(() => calculateOutcomeScore([], {
+      POSITIVE_REPLY: 0,
+      SCREENING: 2,
+      INTERVIEW: 3,
+      OFFER: 5,
+    })).toThrow("Outcome points must be positive and non-decreasing");
+    expect(() => calculateOutcomeScore([], {
+      POSITIVE_REPLY: 3,
+      SCREENING: 2,
+      INTERVIEW: 4,
+      OFFER: 5,
+    })).toThrow("Outcome points must be positive and non-decreasing");
+  });
 });
 
 describe("calculateBalancedScore", () => {

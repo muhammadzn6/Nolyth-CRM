@@ -9,6 +9,7 @@ describe("evaluateEligibility", () => {
       initialMaturityElapsed: true,
       qualifiedApplications: 20,
       maturedApplications: 5,
+      evaluatedAt: new Date("2026-09-05T00:00:00.000Z"),
     })).toEqual({
       eligible: true,
       rankable: true,
@@ -24,6 +25,7 @@ describe("evaluateEligibility", () => {
       initialMaturityElapsed: false,
       qualifiedApplications: 1,
       maturedApplications: 0,
+      evaluatedAt: new Date("2026-09-05T00:00:00.000Z"),
     })).toEqual({
       eligible: false,
       rankable: false,
@@ -39,6 +41,7 @@ describe("evaluateEligibility", () => {
       initialMaturityElapsed: true,
       qualifiedApplications: 8,
       maturedApplications: 2,
+      evaluatedAt: new Date("2026-09-05T00:00:00.000Z"),
     })).toMatchObject({
       eligible: true,
       rankable: true,
@@ -53,6 +56,7 @@ describe("evaluateEligibility", () => {
       initialMaturityElapsed: true,
       qualifiedApplications: 25,
       maturedApplications: 8,
+      evaluatedAt: new Date("2026-09-05T00:00:00.000Z"),
       adminOverride: {
         reason: "Approved data correction is still under review",
         expiresAt: new Date("2026-10-01T00:00:00.000Z"),
@@ -63,6 +67,30 @@ describe("evaluateEligibility", () => {
       section: "BUILDING_BASELINE",
       reasons: ["ADMIN_OVERRIDE_PROVISIONAL"],
       warnings: ["ADMIN_OVERRIDE_PROVISIONAL"],
+    });
+  });
+
+  it("ignores expired Admin exceptions and applies an exception through its exact expiry", () => {
+    const input = {
+      eligibleWorkingDays: 12,
+      initialMaturityElapsed: true,
+      qualifiedApplications: 25,
+      maturedApplications: 8,
+      adminOverride: {
+        reason: "Temporary audit correction",
+        expiresAt: new Date("2026-09-10T12:00:00.000Z"),
+      },
+    };
+
+    expect(evaluateEligibility({ ...input, evaluatedAt: new Date("2026-09-10T12:00:00.000Z") })).toMatchObject({
+      rankable: false,
+      reasons: ["ADMIN_OVERRIDE_PROVISIONAL"],
+    });
+    expect(evaluateEligibility({ ...input, evaluatedAt: new Date("2026-09-10T12:00:00.001Z") })).toMatchObject({
+      eligible: true,
+      rankable: true,
+      reasons: [],
+      warnings: [],
     });
   });
 });

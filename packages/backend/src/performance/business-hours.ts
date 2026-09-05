@@ -6,19 +6,23 @@ export type WorkdayHours = {
 export type ApprovedLeave = {
   startsAt: Date;
   endsAt: Date;
-  /** A reduced working window for each affected day; omitted means unavailable. */
+  /** A reduced local working window for each affected day; omitted means unavailable. */
   availableHours?: WorkdayHours;
 };
 
 export type BusinessHoursSchedule = {
-  /** JavaScript UTC weekday numbers, where Sunday is 0 and Saturday is 6. */
+  /** IANA timezone used for recurring weekday and workday-window evaluation. */
+  timeZone: string;
+  /** JavaScript weekday numbers, where Sunday is 0 and Saturday is 6. */
   workingDays: readonly number[];
   workday: WorkdayHours;
+  /** Date-only holidays, represented by their UTC calendar date. */
   holidays?: readonly Date[];
   leaves?: readonly ApprovedLeave[];
 };
 
 type Interval = { start: Date; end: Date };
+type LocalDate = { year: number; month: number; day: number };
 
 function assertValidInterval(start: Date, end: Date): void {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
@@ -27,25 +31,104 @@ function assertValidInterval(start: Date, end: Date): void {
 }
 
 function validateHours({ startHour, endHour }: WorkdayHours): void {
-  if (!Number.isInteger(startHour) || !Number.isInteger(endHour) || startHour < 0 || endHour > 24 || startHour >= endHour) {
+  if (
+    !Number.isInteger(startHour)
+    || !Number.isInteger(endHour)
+    || startHour < 0
+    || endHour > 24
+    || startHour >= endHour
+  ) {
     throw new Error("Workday hours must be whole hours between 00:00 and 24:00");
   }
 }
 
-function startOfUtcDay(value: Date): Date {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+function assertValidTimeZone(timeZone: string): void {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+  } catch {
+    throw new Error("Expected a valid IANA timezone");
+  }
 }
 
-function nextUtcDay(value: Date): Date {
-  const next = startOfUtcDay(value);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next;
+function assertValidSchedule(schedule: BusinessHoursSchedule): void {
+  assertValidTimeZone(schedule.timeZone);
+  validateHours(schedule.workday);
+  if (schedule.workingDays.length === 0) throw new Error("At least one working day is required");
+  if (schedule.workingDays.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
+    throw new Error("Working days must be JavaScript weekday numbers");
+  }
 }
 
-function sameUtcDay(left: Date, right: Date): boolean {
-  return left.getUTCFullYear() === right.getUTCFullYear()
-    && left.getUTCMonth() === right.getUTCMonth()
-    && left.getUTCDate() === right.getUTCDate();
+function localParts(value: Date, timeZone: string): LocalDate & { hour: number; minute: number; second: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((entry) => entry.type === type)?.value);
+
+  return {
+    year: part("year"),
+    month: part("month"),
+    day: part("day"),
+    hour: part("hour"),
+    minute: part("minute"),
+    second: part("second"),
+  };
+}
+
+function localDate(value: Date, timeZone: string): LocalDate {
+  const { year, month, day } = localParts(value, timeZone);
+  return { year, month, day };
+}
+
+function compareLocalDates(left: LocalDate, right: LocalDate): number {
+  return left.year - right.year || left.month - right.month || left.day - right.day;
+}
+
+function addLocalDays(value: LocalDate, days: number): LocalDate {
+  const next = new Date(Date.UTC(value.year, value.month - 1, value.day + days));
+  return { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1, day: next.getUTCDate() };
+}
+
+function localWeekday(value: LocalDate): number {
+  return new Date(Date.UTC(value.year, value.month - 1, value.day)).getUTCDay();
+}
+
+function localDateKey(value: LocalDate): string {
+  return `${value.year}-${String(value.month).padStart(2, "0")}-${String(value.day).padStart(2, "0")}`;
+}
+
+function holidayDateKey(value: Date): string {
+  if (Number.isNaN(value.getTime())) throw new Error("Expected a valid holiday date");
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+}
+
+function timeZoneOffsetMilliseconds(value: Date, timeZone: string): number {
+  const parts = localParts(value, timeZone);
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - value.getTime();
+}
+
+function localDateTime(value: LocalDate, hour: number, timeZone: string): Date {
+  if (hour === 24) return localDateTime(addLocalDays(value, 1), 0, timeZone);
+  const target = Date.UTC(value.year, value.month - 1, value.day, hour);
+  let result = new Date(target - timeZoneOffsetMilliseconds(new Date(target), timeZone));
+
+  // A second pass resolves offsets that change between UTC midnight and the local workday (DST).
+  result = new Date(target - timeZoneOffsetMilliseconds(result, timeZone));
+  return result;
+}
+
+function dayInterval(day: LocalDate, timeZone: string): Interval {
+  return {
+    start: localDateTime(day, 0, timeZone),
+    end: localDateTime(addLocalDays(day, 1), 0, timeZone),
+  };
 }
 
 function intersects(left: Interval, right: Interval): boolean {
@@ -72,31 +155,31 @@ function subtract(intervals: readonly Interval[], blocked: Interval): Interval[]
   });
 }
 
-function utcHourOnDay(day: Date, hour: number): Date {
-  return new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour));
+function normalIntervalsForDay(day: LocalDate, schedule: BusinessHoursSchedule): Interval[] {
+  if (!schedule.workingDays.includes(localWeekday(day))) return [];
+  if (schedule.holidays?.some((holiday) => holidayDateKey(holiday) === localDateKey(day))) return [];
+
+  return [{
+    start: localDateTime(day, schedule.workday.startHour, schedule.timeZone),
+    end: localDateTime(day, schedule.workday.endHour, schedule.timeZone),
+  }];
 }
 
-function availableIntervalsForDay(day: Date, schedule: BusinessHoursSchedule): Interval[] {
-  validateHours(schedule.workday);
-  if (!schedule.workingDays.includes(day.getUTCDay())) return [];
-  if (schedule.holidays?.some((holiday) => sameUtcDay(holiday, day))) return [];
+function availableIntervalsForDay(day: LocalDate, schedule: BusinessHoursSchedule): Interval[] {
+  let intervals = normalIntervalsForDay(day, schedule);
+  if (intervals.length === 0) return [];
 
-  let intervals: Interval[] = [{
-    start: utcHourOnDay(day, schedule.workday.startHour),
-    end: utcHourOnDay(day, schedule.workday.endHour),
-  }];
-  const dayInterval = { start: day, end: nextUtcDay(day) };
-
+  const localDay = dayInterval(day, schedule.timeZone);
   for (const leave of schedule.leaves ?? []) {
     assertValidInterval(leave.startsAt, leave.endsAt);
     const leaveInterval = { start: leave.startsAt, end: leave.endsAt };
-    if (!intersects(dayInterval, leaveInterval)) continue;
+    if (!intersects(localDay, leaveInterval)) continue;
 
     if (leave.availableHours) {
       validateHours(leave.availableHours);
       const reducedWindow = {
-        start: utcHourOnDay(day, leave.availableHours.startHour),
-        end: utcHourOnDay(day, leave.availableHours.endHour),
+        start: localDateTime(day, leave.availableHours.startHour, schedule.timeZone),
+        end: localDateTime(day, leave.availableHours.endHour, schedule.timeZone),
       };
       intervals = intervals.flatMap((interval) => {
         const available = intersection(interval, reducedWindow);
@@ -111,22 +194,40 @@ function availableIntervalsForDay(day: Date, schedule: BusinessHoursSchedule): I
   return intervals;
 }
 
-export function isEligibleWorkingDay(day: Date, schedule: BusinessHoursSchedule): boolean {
-  if (Number.isNaN(day.getTime())) throw new Error("Expected a valid day");
-  return availableIntervalsForDay(startOfUtcDay(day), schedule).length > 0;
+function durationHours(intervals: readonly Interval[]): number {
+  return intervals.reduce((total, interval) => total + interval.end.getTime() - interval.start.getTime(), 0) / 3_600_000;
 }
 
-/**
- * Calculates elapsed hours in the supplied UTC business calendar. Schedules
- * intentionally use UTC so persisted timestamps can be evaluated without a
- * process-local timezone dependency.
- */
+function roundToOneDecimal(value: number): number {
+  return Math.round((value + Number.EPSILON) * 10) / 10;
+}
+
+export function getEligibleWorkdayCapacity(day: Date, schedule: BusinessHoursSchedule): number {
+  if (Number.isNaN(day.getTime())) throw new Error("Expected a valid day");
+  assertValidSchedule(schedule);
+  const local = localDate(day, schedule.timeZone);
+  const normalHours = durationHours(normalIntervalsForDay(local, { ...schedule, holidays: [] }));
+  if (normalHours === 0) return 0;
+  return roundToOneDecimal(durationHours(availableIntervalsForDay(local, schedule)) / normalHours);
+}
+
+export function calculateProratedDailyTarget(dailyTarget: number, day: Date, schedule: BusinessHoursSchedule): number {
+  if (!Number.isFinite(dailyTarget) || dailyTarget < 0) throw new Error("Daily target must be non-negative");
+  return roundToOneDecimal(dailyTarget * getEligibleWorkdayCapacity(day, schedule));
+}
+
+export function isEligibleWorkingDay(day: Date, schedule: BusinessHoursSchedule): boolean {
+  return getEligibleWorkdayCapacity(day, schedule) > 0;
+}
+
 export function businessHoursBetween(start: Date, end: Date, schedule: BusinessHoursSchedule): number {
   assertValidInterval(start, end);
+  assertValidSchedule(schedule);
   if (start.getTime() === end.getTime()) return 0;
 
   let totalMilliseconds = 0;
-  for (let day = startOfUtcDay(start); day <= end; day = nextUtcDay(day)) {
+  const endDay = localDate(end, schedule.timeZone);
+  for (let day = localDate(start, schedule.timeZone); compareLocalDates(day, endDay) <= 0; day = addLocalDays(day, 1)) {
     for (const available of availableIntervalsForDay(day, schedule)) {
       const overlap = intersection(available, { start, end });
       if (overlap) totalMilliseconds += overlap.end.getTime() - overlap.start.getTime();
@@ -140,26 +241,22 @@ export function addBusinessHours(start: Date, businessHours: number, schedule: B
   if (Number.isNaN(start.getTime()) || businessHours < 0 || !Number.isFinite(businessHours)) {
     throw new Error("Expected a valid start and a non-negative business-hour duration");
   }
+  assertValidSchedule(schedule);
   if (businessHours === 0) return new Date(start);
-  if (schedule.workingDays.length === 0) throw new Error("At least one working day is required");
 
   let remainingMilliseconds = businessHours * 3_600_000;
   let cursor = new Date(start);
-  const lastSearchDay = new Date(start);
-  lastSearchDay.setUTCFullYear(lastSearchDay.getUTCFullYear() + 11);
+  const lastSearchDay = addLocalDays(localDate(start, schedule.timeZone), 11 * 366);
 
-  while (cursor < lastSearchDay) {
-    const day = startOfUtcDay(cursor);
+  for (let day = localDate(start, schedule.timeZone); compareLocalDates(day, lastSearchDay) <= 0; day = addLocalDays(day, 1)) {
     for (const available of availableIntervalsForDay(day, schedule)) {
       const current = available.start > cursor ? available.start : cursor;
       if (current >= available.end) continue;
       const availableMilliseconds = available.end.getTime() - current.getTime();
-      if (remainingMilliseconds <= availableMilliseconds) {
-        return new Date(current.getTime() + remainingMilliseconds);
-      }
+      if (remainingMilliseconds <= availableMilliseconds) return new Date(current.getTime() + remainingMilliseconds);
       remainingMilliseconds -= availableMilliseconds;
     }
-    cursor = nextUtcDay(day);
+    cursor = dayInterval(addLocalDays(day, 1), schedule.timeZone).start;
   }
 
   throw new Error("Business-hour duration could not be scheduled within eleven years");
@@ -176,12 +273,15 @@ export type FollowUpSlaInput = {
 
 export function calculateFollowUpSla(input: FollowUpSlaInput): {
   status: "OPEN" | "COMPLETED" | "OVERDUE" | "PAUSED_FOR_REASSIGNMENT";
+  compliance: "MET" | "MISSED" | "PENDING" | "PAUSED";
+  breached: boolean;
   elapsedBusinessHours: number;
   dueAt: Date;
 } {
   const stoppedAt = input.completedAt ?? input.reassignedAt ?? input.now;
   const dueAt = addBusinessHours(input.startedAt, input.requiredBusinessHours, input.schedule);
   const elapsedBusinessHours = businessHoursBetween(input.startedAt, stoppedAt, input.schedule);
+  const completedLate = Boolean(input.completedAt && input.completedAt > dueAt);
   const status = input.completedAt
     ? "COMPLETED"
     : input.reassignedAt
@@ -189,8 +289,13 @@ export function calculateFollowUpSla(input: FollowUpSlaInput): {
       : input.now > dueAt
         ? "OVERDUE"
         : "OPEN";
+  const compliance = input.completedAt
+    ? completedLate ? "MISSED" : "MET"
+    : input.reassignedAt
+      ? "PAUSED"
+      : input.now > dueAt ? "MISSED" : "PENDING";
 
-  return { status, elapsedBusinessHours, dueAt };
+  return { status, compliance, breached: compliance === "MISSED", elapsedBusinessHours, dueAt };
 }
 
 export type AdminReassignmentSlaInput = {
