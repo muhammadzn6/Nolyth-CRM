@@ -51,8 +51,8 @@ describe("PerformanceService", () => {
       status: "REJECTED",
       reviewerId: admin.id,
       reviewReason: "Same requisition and candidate.",
-      reviewedAt: new Date("2026-09-05T12:00:00.000Z"),
-      provisionalCreditResolvedAt: new Date("2026-09-05T12:00:00.000Z"),
+      reviewedAt: "2026-09-05T12:00:00.000Z",
+      provisionalCreditResolvedAt: "2026-09-05T12:00:00.000Z",
       updatedAt: new Date("2026-09-05T12:00:00.000Z"),
       version: 2,
     };
@@ -75,8 +75,8 @@ describe("PerformanceService", () => {
       status: "REJECTED",
       reviewerId: admin.id,
       version: 2,
-      reviewedAt: new Date("2026-09-05T12:00:00.000Z"),
-      provisionalCreditResolvedAt: new Date("2026-09-05T12:00:00.000Z"),
+      reviewedAt: "2026-09-05T12:00:00.000Z",
+      provisionalCreditResolvedAt: "2026-09-05T12:00:00.000Z",
     });
 
     expect(database.jobLead.updateMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -114,7 +114,12 @@ describe("PerformanceService", () => {
     await expect(service.getAdminPerformanceDrilldown(admin, {
       metric: "RECRUITER_RESPONSES", bdId: bd.id,
       from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z",
-    })).resolves.toEqual([responseLead]);
+    })).resolves.toEqual([
+      expect.objectContaining({
+        kind: "LEAD",
+        lead: expect.objectContaining({ id: responseLead.id, appliedDate: "2026-09-02", status: "RESPONSE_RECEIVED" }),
+      }),
+    ]);
 
     expect(database.jobLead.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
@@ -147,7 +152,18 @@ describe("PerformanceService", () => {
     await expect(service.getAdminPerformanceDrilldown(admin, {
       metric: "FOLLOW_UP_SLA", bdId: replacementBdId,
       from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z",
-    })).resolves.toEqual([activeFollowUp]);
+    })).resolves.toEqual([
+      expect.objectContaining({
+        kind: "FOLLOW_UP",
+        followUp: expect.objectContaining({
+          id: activeFollowUp.id,
+          ownerId: replacementBdId,
+          status: "COMPLETED",
+          recruiterRespondedAt: "2026-09-02T00:00:00.000Z",
+          completedAt: "2026-09-03T00:00:00.000Z",
+        }),
+      }),
+    ]);
 
     expect(database.performanceFollowUp.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
       where: expect.objectContaining({
@@ -453,8 +469,9 @@ describe("PerformanceService", () => {
 
     const result = await service.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-02T00:00:00.000Z" });
 
-    expect(result.buildingBaseline[0].performance.effectiveTargetAttainmentPercent).toBe(75);
-    expect(result.buildingBaseline[0].performance.balancedScore).toBe(75);
+    const performance = result.buildingBaseline[0].performance as { effectiveTargetAttainmentPercent: number; balancedScore: number | null };
+    expect(performance.effectiveTargetAttainmentPercent).toBe(75);
+    expect(performance.balancedScore).toBe(75);
   });
 
   it("keeps an outcome score of zero after the BD initial maturity window even with no matured applications", async () => {
@@ -471,7 +488,7 @@ describe("PerformanceService", () => {
 
     const result = await service.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
 
-    expect(result.leaderboard[0].performance.maturedOutcomeScorePercent).toBe(0);
+    expect((result.leaderboard[0].performance as { maturedOutcomeScorePercent: number | null }).maturedOutcomeScorePercent).toBe(0);
     expect(result.leaderboard[0].warnings).toContain("LOW_OUTCOME_SAMPLE");
   });
 
@@ -529,7 +546,12 @@ describe("PerformanceService", () => {
       from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z",
     });
 
-    expect(result).toEqual([maturedApplied]);
+    expect(result).toEqual([
+      expect.objectContaining({
+        kind: "LEAD",
+        lead: expect.objectContaining({ id: maturedApplied.id, appliedDate: "2026-09-01", status: "APPLIED" }),
+      }),
+    ]);
   });
 
   it("uses the latest active target schedule for the BD current daily target", async () => {
@@ -568,7 +590,7 @@ describe("PerformanceService", () => {
         { leadId: correctedLead.id, action: "performance.record_audit_failed", occurredAt: new Date("2026-09-04T00:00:00.000Z") },
         { leadId: correctedLead.id, action: "lead.updated", occurredAt: new Date("2026-09-05T00:00:00.000Z") },
       ]) },
-      duplicateReview: { findMany: vi.fn().mockResolvedValue([{ leadId: firstLead.id, status: "PENDING" }, { leadId: duplicateLead.id, status: "REJECTED" }] },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([{ leadId: firstLead.id, status: "PENDING" }, { leadId: duplicateLead.id, status: "REJECTED" }]) },
       $transaction: async (work: any) => work(database), outboxEvent: { upsert: vi.fn() },
     };
     const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));

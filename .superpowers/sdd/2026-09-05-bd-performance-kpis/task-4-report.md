@@ -2,7 +2,14 @@
 
 ## Status
 
-Correction pass committed with remaining follow-up explicitly recorded.
+Complete. The final controller contract boundary pass is committed after the SLA/workflow correction pass.
+
+### Final controller contract boundary pass
+
+- Every performance controller response is now parsed through its strict shared contract: Admin performance, BD performance, drill-downs, rule reads, rule previews and updates, duplicate-review queue and decisions, and follow-up reassignment.
+- Strict nested parsing rejects unexpected service fields, preventing peer/private information from reaching the frontend if a service projection regresses.
+- Added controller-level valid-response coverage for every endpoint, contract-breaking response coverage for every endpoint, and an incompatible drill-down status validation regression.
+- Corrected stale Task 4 service-test expectations to assert the contract-shaped drill-down and ISO-date projections, plus the syntax/type issues that had prevented the required focused suite from executing.
 
 ### Latest correction pass
 
@@ -13,9 +20,8 @@ Correction pass committed with remaining follow-up explicitly recorded.
 - Added server-side quality-rate calculation from saved leads, duplicate reviews, and auditable activity events: record health, audit pass, correction, confirmed duplicate, pending override, rejected override, and total duplicate rate. Admin/BD responses and the peer-safe existing quality fields consume these values.
 - Began projecting performance drill-down, duplicate-review, and follow-up responses into dedicated shared response shapes.
 
-### Deliberately recorded remaining work
+### Deferred follow-up
 
-- Controller-level strict response parsing for every performance endpoint has not yet been completed in this correction pass. The response shapes and service projections were added, but the controller still needs to parse every returned payload through those shared schemas and the corresponding endpoint-level regression tests need to be completed.
 - The new quality contracts require the existing dashboard/client task to consume the additional fields; this is intentionally deferred to the planned UI tasks.
 
 ## Delivered
@@ -51,9 +57,9 @@ Correction pass committed with remaining follow-up explicitly recorded.
 
 ## Verification
 
-- `npx vitest run packages/backend/src/performance/performance.service.test.ts packages/backend/src/performance/score.test.ts packages/backend/src/performance/eligibility.test.ts packages/backend/src/performance/maturity.test.ts packages/backend/src/performance/business-hours.test.ts packages/backend/src/leads/collaboration.service.test.ts packages/backend/src/leads/application-intake.test.ts apps/api/src/modules/performance/performance.controller.test.ts packages/contracts/src/performance.test.ts` — 88 tests pass.
+- `npx vitest run apps/api/src/modules/performance/performance.controller.test.ts packages/backend/src/performance/performance.service.test.ts packages/backend/src/performance/score.test.ts packages/backend/src/performance/eligibility.test.ts packages/backend/src/performance/maturity.test.ts packages/backend/src/performance/business-hours.test.ts packages/backend/src/leads/collaboration.service.test.ts packages/backend/src/leads/application-intake.test.ts packages/contracts/src/performance.test.ts` — 97 tests pass.
 - Backend, API, contracts, and database TypeScript checks pass.
-- Local Prisma schema validation passes, including migration `20260905050000_duplicate_review_overdue`.
+- Local Prisma schema validation passes.
 - `git diff --check` passes.
 
 ## Concern
