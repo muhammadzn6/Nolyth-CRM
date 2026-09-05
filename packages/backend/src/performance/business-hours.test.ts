@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   addBusinessHours,
+  businessCalendarDate,
   businessHoursBetween,
   calculateProratedDailyTarget,
   calculateAdminReassignmentSla,
   calculateFollowUpSla,
   getEligibleWorkdayCapacity,
   isEligibleWorkingDay,
+  nextEligibleWorkingDay,
   type BusinessHoursSchedule,
 } from "./business-hours";
 
@@ -327,6 +329,19 @@ describe("follow-up SLA timing", () => {
   it("adds business hours across non-working time", () => {
     expect(addBusinessHours(new Date("2026-09-04T16:00:00.000Z"), 2, schedule)).toEqual(
       new Date("2026-09-07T10:00:00.000Z"),
+    );
+  });
+
+  it("finds the next eligible business-day boundary after the current local day", () => {
+    expect(nextEligibleWorkingDay(new Date("2026-09-10T16:00:00.000Z"), {
+      ...schedule,
+      holidays: [new Date("2026-09-11T00:00:00.000Z")],
+    })).toEqual(new Date("2026-09-14T00:00:00.000Z"));
+  });
+
+  it("preserves the current business-calendar date across timezone boundaries", () => {
+    expect(businessCalendarDate(new Date("2026-09-10T21:00:00.000Z"), "Asia/Karachi")).toEqual(
+      new Date("2026-09-11T00:00:00.000Z"),
     );
   });
 });

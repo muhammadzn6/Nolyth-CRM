@@ -92,3 +92,16 @@ The local `orbit` database still has the pre-existing migration-history drift re
 ### Remaining environment note
 
 The local `orbit` database still has the pre-existing migration-history drift. The disposable `orbit_task3_test` database applied the full migration sequence and passed the new persistence coverage.
+
+## Final lifecycle correction
+
+- Updating a started BD target now creates a replacement schedule at the next eligible working-day boundary. The previous schedule is closed in the same optimistic, transactional write; its history remains intact. Successive changes create successive versions without overlapping periods.
+- Performance target and eligible-working-day accumulation now starts on the later of the reporting-period start and the BD account/start date. New BDs no longer inherit targets or leaderboard working days from before they existed.
+- Started/past holidays and approved leave can no longer be updated or deleted. Holiday checks use the active business-calendar timezone, preventing timezone-boundary edits from changing historical scores or SLA calculations.
+
+### Final lifecycle verification
+
+- Focused API/backend/contracts/worker tests: **120 passed**.
+- Disposable PostgreSQL persistence tests: **7 passed**.
+- TypeScript checks passed for backend, API, contracts, database, and worker.
+- Prisma schema validation and `git diff --check` passed.

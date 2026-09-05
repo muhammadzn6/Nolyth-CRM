@@ -22,7 +22,7 @@ import {
 
 import { AuthorizationError, ConflictError, NotFoundError, StaleVersionError, ValidationError } from "../errors/app-error";
 import type { Actor } from "../identity/session.service";
-import { addBusinessHours, calculateProratedDailyTarget, isEligibleWorkingDay } from "./business-hours";
+import { addBusinessHours, businessCalendarDate, calculateProratedDailyTarget, isEligibleWorkingDay, nextEligibleWorkingDay } from "./business-hours";
 import { evaluateEligibility } from "./eligibility";
 import { getMaturityCohort } from "./maturity";
 import { rankLeaderboard } from "./leaderboard";
@@ -337,7 +337,48 @@ export class PerformanceService {
     if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
     await this.assertActiveBd(parsed.data.bdId);
     const effectiveFrom = new Date(parsed.data.effectiveFrom);
-    if (effectiveFrom < this.now()) throw new ConflictError("BD target changes cannot rewrite historical performance");
+    const now = this.now();
+    const currentStartsAt = asDate(current.effectiveFrom);
+    const currentEndsAt = asDate(current.effectiveTo);
+    if (currentStartsAt && currentStartsAt <= now && (!currentEndsAt || currentEndsAt > now)) {
+      if (String(current.bdId) !== parsed.data.bdId) throw new ConflictError("Started BD target schedules cannot change ownership");
+      const replacementFrom = await this.nextTargetChangeBoundary(now);
+      const replacementTo = parsed.data.effectiveTo ? new Date(parsed.data.effectiveTo) : null;
+      if (replacementTo && replacementTo <= replacementFrom) {
+        throw new ConflictError("The replacement target period must end after its next working-day boundary");
+      }
+      const replacement = await this.database.$transaction(async (transaction) => {
+        const closed = await transaction.bdTargetSchedule.updateMany?.({
+          where: { id: scheduleId, version: parsed.data.expectedVersion },
+          data: { effectiveTo: replacementFrom, version: { increment: 1 } },
+        });
+        if (!closed?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+        await this.assertTargetWindowAvailable(transaction, parsed.data.bdId, replacementFrom, replacementTo, scheduleId);
+        const created = await transaction.bdTargetSchedule.create?.({
+          data: {
+            bdId: parsed.data.bdId,
+            dailyTarget: parsed.data.dailyTarget,
+            effectiveFrom: replacementFrom,
+            effectiveTo: replacementTo,
+            createdById: actor.id,
+            auditMetadata: { ...(parsed.data.auditMetadata ?? {}), supersedesTargetScheduleId: scheduleId },
+          },
+        }) as Record<string, unknown> | undefined;
+        if (!created) throw new NotFoundError("The replacement BD target schedule was not created");
+        await this.auditPerformanceControl(
+          transaction,
+          actor,
+          "performance.bd_target_versioned",
+          "bd_target_schedule",
+          String(created.id),
+          this.targetScheduleSummary(current),
+          this.targetScheduleSummary(created),
+        );
+        return created;
+      });
+      return this.targetScheduleSummary(replacement);
+    }
+    if (effectiveFrom < now) throw new ConflictError("BD target changes cannot rewrite historical performance");
     const updated = await this.database.$transaction(async (transaction) => {
       await this.assertTargetWindowAvailable(transaction, parsed.data.bdId, effectiveFrom, parsed.data.effectiveTo ? new Date(parsed.data.effectiveTo) : null, scheduleId);
       const changed = await transaction.bdTargetSchedule.updateMany?.({
@@ -403,6 +444,9 @@ export class PerformanceService {
     if (!current) throw new NotFoundError("The holiday was not found");
     if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
     const holidayDate = new Date(`${parsed.data.holidayDate}T00:00:00.000Z`);
+    if (await this.isStartedHoliday(current) || holidayDate <= await this.currentCalendarDate()) {
+      throw new ConflictError("Started holidays cannot rewrite historical performance");
+    }
     const existing = await this.database.performanceHoliday.findFirst?.({ where: { holidayDate, id: { not: holidayId } } });
     if (existing) throw new ConflictError("A holiday already exists on this date");
     const updated = await this.database.$transaction(async (transaction) => {
@@ -423,6 +467,7 @@ export class PerformanceService {
     const current = await this.database.performanceHoliday.findUnique?.({ where: { id: holidayId } });
     if (!current) throw new NotFoundError("The holiday was not found");
     if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    if (await this.isStartedHoliday(current)) throw new ConflictError("Started holidays cannot rewrite historical performance");
     await this.database.$transaction(async (transaction) => {
       const deleted = await transaction.performanceHoliday.deleteMany?.({ where: { id: holidayId, version: parsed.data.expectedVersion } });
       if (!deleted?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
@@ -461,8 +506,10 @@ export class PerformanceService {
     const current = await this.database.performanceApprovedLeave.findUnique?.({ where: { id: leaveId } });
     if (!current) throw new NotFoundError("The approved leave was not found");
     if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    if (this.isStartedLeave(current)) throw new ConflictError("Started approved leave cannot rewrite historical performance");
     await this.assertActiveBd(parsed.data.bdId);
     const startsAt = new Date(parsed.data.startsAt); const endsAt = new Date(parsed.data.endsAt);
+    if (startsAt <= this.now()) throw new ConflictError("Started approved leave cannot rewrite historical performance");
     const updated = await this.database.$transaction(async (transaction) => {
       await this.assertLeaveWindowAvailable(transaction, parsed.data.bdId, startsAt, endsAt, leaveId);
       const changed = await transaction.performanceApprovedLeave.updateMany?.({ where: { id: leaveId, version: parsed.data.expectedVersion }, data: { bdId: parsed.data.bdId, startsAt, endsAt, reason: parsed.data.reason ?? null, availableStartHour: parsed.data.availableStartHour ?? null, availableEndHour: parsed.data.availableEndHour ?? null, version: { increment: 1 } } });
@@ -482,6 +529,7 @@ export class PerformanceService {
     const current = await this.database.performanceApprovedLeave.findUnique?.({ where: { id: leaveId } });
     if (!current) throw new NotFoundError("The approved leave was not found");
     if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    if (this.isStartedLeave(current)) throw new ConflictError("Started approved leave cannot rewrite historical performance");
     await this.database.$transaction(async (transaction) => {
       const deleted = await transaction.performanceApprovedLeave.deleteMany?.({ where: { id: leaveId, version: parsed.data.expectedVersion } });
       if (!deleted?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
@@ -944,6 +992,7 @@ export class PerformanceService {
   private async performanceRow(bd: Record<string, unknown>, period: { from: string; to: string }, activeException?: Record<string, unknown>) {
     const from = new Date(period.from); const to = new Date(period.to); const now = this.now();
     const bdStartedAt = asDate(bd.createdAt) ?? from;
+    const accumulationFrom = bdStartedAt > from ? new Date(Date.UTC(bdStartedAt.getUTCFullYear(), bdStartedAt.getUTCMonth(), bdStartedAt.getUTCDate())) : from;
     const ruleWindowFrom = bdStartedAt < from ? bdStartedAt : from;
     const ruleWindowTo = now > to ? now : to;
     const targetWindowFrom = now < from ? now : from;
@@ -1000,7 +1049,7 @@ export class PerformanceService {
       return created;
     };
     let targetApplications = 0; let eligibleWorkingDays = 0;
-    for (let date = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate())); date <= to; date.setUTCDate(date.getUTCDate() + 1)) {
+    for (let date = new Date(Date.UTC(accumulationFrom.getUTCFullYear(), accumulationFrom.getUTCMonth(), accumulationFrom.getUTCDate())); date <= to; date.setUTCDate(date.getUTCDate() + 1)) {
       const datedRule = this.ruleAt(rules, date);
       const datedCalendarRule = this.toCalendarRule(datedRule);
       const datedSchedule = {
@@ -1294,6 +1343,35 @@ export class PerformanceService {
   private async assertActiveBd(bdId: string) {
     const bd = await this.database.user.findUnique?.({ where: { id: bdId } });
     if (!bd || bd.role !== "BD" || !bd.isActive) throw new ValidationError("The selected user is not an active BD");
+  }
+
+  private async nextTargetChangeBoundary(at: Date): Promise<Date> {
+    const [rule, holidays] = await Promise.all([
+      this.activeCalendarRule(at),
+      this.database.performanceHoliday.findMany?.({}) ?? [],
+    ]);
+    return nextEligibleWorkingDay(at, {
+      timeZone: rule.businessCalendarTimeZone,
+      workingDays: rule.workingDays,
+      workday: { startHour: rule.workdayStartHour, endHour: rule.workdayEndHour },
+      holidays: holidays.flatMap((holiday) => asDate(holiday.holidayDate) ? [asDate(holiday.holidayDate)!] : []),
+    });
+  }
+
+  private async currentCalendarDate(): Promise<Date> {
+    const now = this.now();
+    const rule = await this.activeCalendarRule(now);
+    return businessCalendarDate(now, rule.businessCalendarTimeZone);
+  }
+
+  private async isStartedHoliday(holiday: Record<string, unknown>): Promise<boolean> {
+    const holidayDate = asDate(holiday.holidayDate);
+    return Boolean(holidayDate && holidayDate <= await this.currentCalendarDate());
+  }
+
+  private isStartedLeave(leave: Record<string, unknown>): boolean {
+    const startsAt = asDate(leave.startsAt);
+    return Boolean(startsAt && startsAt <= this.now());
   }
 
   private intervalsOverlap(start: Date, end: Date | null, candidateStart: Date, candidateEnd: Date | null) {

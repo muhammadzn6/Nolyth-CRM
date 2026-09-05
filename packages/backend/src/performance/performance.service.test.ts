@@ -84,6 +84,7 @@ describe("PerformanceService", () => {
       user: { findUnique: vi.fn().mockResolvedValue(bd) },
       bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue(target), findUnique: vi.fn().mockResolvedValue(target), updateMany: vi.fn().mockResolvedValue({ count: 1 }), deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       performanceHoliday: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue(holiday), findUnique: vi.fn().mockResolvedValue(holiday), updateMany: vi.fn().mockResolvedValue({ count: 1 }), deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null) },
       performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue(leave), findUnique: vi.fn().mockResolvedValue(leave), updateMany: vi.fn().mockResolvedValue({ count: 1 }), deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       performanceLeaderboardException: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue(exception), findUnique: vi.fn().mockResolvedValue(exception), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
@@ -788,5 +789,156 @@ describe("PerformanceService", () => {
     const result = await service.getBdPerformance(bd, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
 
     expect(result.performance.interviewsNeedingScheduling).toBe(1);
+  });
+
+  it("versions a started BD target at the next eligible working-day boundary", async () => {
+    const current = {
+      id: "10000000-0000-4000-8000-000000000081", bdId: bd.id, dailyTarget: 70,
+      effectiveFrom: new Date("2026-09-07T00:00:00.000Z"), effectiveTo: null,
+      createdById: admin.id, auditMetadata: null, version: 1,
+      createdAt: new Date("2026-09-07T00:00:00.000Z"), updatedAt: new Date("2026-09-07T00:00:00.000Z"),
+    };
+    const replacement = {
+      ...current, id: "10000000-0000-4000-8000-000000000082", dailyTarget: 90,
+      effectiveFrom: new Date("2026-09-14T00:00:00.000Z"), version: 1,
+    };
+    const database: any = {
+      $transaction: async (work: any) => work(database),
+      user: { findUnique: vi.fn().mockResolvedValue(bd) },
+      bdTargetSchedule: {
+        findUnique: vi.fn().mockResolvedValue(current),
+        findMany: vi.fn().mockImplementation((args: any) => args?.where?.id ? [] : [current]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn().mockResolvedValue(replacement),
+      },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([{
+        holidayDate: new Date("2026-09-11T00:00:00.000Z"),
+      }]) },
+      activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-10T12:00:00.000Z"));
+
+    await expect(service.updateBdTargetSchedule(admin, current.id, {
+      bdId: bd.id, dailyTarget: 90, effectiveFrom: "2026-09-10T12:00:00.000Z", expectedVersion: 1,
+    })).resolves.toMatchObject({ id: replacement.id, dailyTarget: 90, effectiveFrom: "2026-09-14T00:00:00.000Z" });
+
+    expect(database.bdTargetSchedule.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: current.id, version: 1 },
+      data: expect.objectContaining({ effectiveTo: new Date("2026-09-14T00:00:00.000Z"), version: { increment: 1 } }),
+    }));
+    expect(database.bdTargetSchedule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ bdId: bd.id, dailyTarget: 90, effectiveFrom: new Date("2026-09-14T00:00:00.000Z") }),
+    }));
+  });
+
+  it("versions each successive started target change without rewriting earlier target history", async () => {
+    const first = {
+      id: "10000000-0000-4000-8000-000000000085", bdId: bd.id, dailyTarget: 70,
+      effectiveFrom: new Date("2026-09-07T00:00:00.000Z"), effectiveTo: new Date("2026-09-11T00:00:00.000Z"),
+      createdById: admin.id, auditMetadata: null, version: 1,
+      createdAt: new Date("2026-09-07T00:00:00.000Z"), updatedAt: new Date("2026-09-07T00:00:00.000Z"),
+    };
+    const second = {
+      ...first, id: "10000000-0000-4000-8000-000000000086", dailyTarget: 90,
+      effectiveFrom: new Date("2026-09-11T00:00:00.000Z"), effectiveTo: null, version: 1,
+    };
+    const third = {
+      ...second, id: "10000000-0000-4000-8000-000000000087", dailyTarget: 100,
+      effectiveFrom: new Date("2026-09-17T00:00:00.000Z"), version: 1,
+    };
+    const database: any = {
+      $transaction: async (work: any) => work(database),
+      user: { findUnique: vi.fn().mockResolvedValue(bd) },
+      bdTargetSchedule: {
+        findUnique: vi.fn().mockResolvedValue(second),
+        findMany: vi.fn().mockImplementation((args: any) => args?.where?.id ? [first] : [first, second]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn().mockResolvedValue(third),
+      },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
+      activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-16T12:00:00.000Z"));
+
+    await expect(service.updateBdTargetSchedule(admin, second.id, {
+      bdId: bd.id, dailyTarget: 100, effectiveFrom: "2026-09-16T12:00:00.000Z", expectedVersion: 1,
+    })).resolves.toMatchObject({ id: third.id, effectiveFrom: "2026-09-17T00:00:00.000Z" });
+
+    expect(database.bdTargetSchedule.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: second.id, version: 1 },
+      data: expect.objectContaining({ effectiveTo: new Date("2026-09-17T00:00:00.000Z") }),
+    }));
+    expect(database.bdTargetSchedule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ effectiveFrom: new Date("2026-09-17T00:00:00.000Z") }),
+    }));
+  });
+
+  it("starts target and eligibility accumulation when a new BD starts", async () => {
+    const newBd = { ...bd, createdAt: new Date("2026-09-25T12:00:00.000Z") };
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([newBd]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue([]) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceRuleSet: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
+      performanceLeaderboardException: { findMany: vi.fn().mockResolvedValue([]) },
+      activityEvent: { findMany: vi.fn().mockResolvedValue([]) },
+      duplicateReview: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database),
+      outboxEvent: { upsert: vi.fn() },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+
+    const result = await service.getAdminBdPerformance(admin, {
+      from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z",
+    });
+
+    const baseline = result.buildingBaseline[0] as {
+      performance: { targetApplications: number };
+      eligibilityProgress: number;
+    } | undefined;
+    expect(baseline?.performance.targetApplications).toBe(280);
+    expect(baseline?.eligibilityProgress).toBe(40);
+  });
+
+  it("rejects edits and deletion of started holidays and approved leave", async () => {
+    const holiday = {
+      id: "10000000-0000-4000-8000-000000000083", holidayDate: new Date("2026-09-09T00:00:00.000Z"),
+      name: "Past holiday", createdById: admin.id, auditMetadata: null, version: 1,
+      createdAt: new Date("2026-09-01T00:00:00.000Z"), updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+    };
+    const leave = {
+      id: "10000000-0000-4000-8000-000000000084", bdId: bd.id,
+      startsAt: new Date("2026-09-09T09:00:00.000Z"), endsAt: new Date("2026-09-10T17:00:00.000Z"),
+      reason: null, availableStartHour: null, availableEndHour: null, approvedById: admin.id,
+      approvedAt: new Date("2026-09-01T00:00:00.000Z"), auditMetadata: null, version: 1,
+      createdAt: new Date("2026-09-01T00:00:00.000Z"), updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+    };
+    const database: any = {
+      user: { findUnique: vi.fn().mockResolvedValue(bd) },
+      performanceHoliday: { findUnique: vi.fn().mockResolvedValue(holiday), findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn(), deleteMany: vi.fn() },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null) },
+      performanceApprovedLeave: { findUnique: vi.fn().mockResolvedValue(leave), findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn(), deleteMany: vi.fn() },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-10T12:00:00.000Z"));
+
+    await expect(service.updatePerformanceHoliday(admin, holiday.id, {
+      holidayDate: "2026-09-12", name: "Moved holiday", expectedVersion: 1,
+    })).rejects.toThrow("historical performance");
+    await expect(service.deletePerformanceHoliday(admin, holiday.id, { expectedVersion: 1 })).rejects.toThrow("historical performance");
+    await expect(service.updatePerformanceApprovedLeave(admin, leave.id, {
+      bdId: bd.id, startsAt: "2026-09-11T09:00:00.000Z", endsAt: "2026-09-11T17:00:00.000Z", expectedVersion: 1,
+    })).rejects.toThrow("historical performance");
+    await expect(service.deletePerformanceApprovedLeave(admin, leave.id, { expectedVersion: 1 })).rejects.toThrow("historical performance");
+
+    expect(database.performanceHoliday.updateMany).not.toHaveBeenCalled();
+    expect(database.performanceHoliday.deleteMany).not.toHaveBeenCalled();
+    expect(database.performanceApprovedLeave.updateMany).not.toHaveBeenCalled();
+    expect(database.performanceApprovedLeave.deleteMany).not.toHaveBeenCalled();
   });
 });

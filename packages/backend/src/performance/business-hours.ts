@@ -266,6 +266,32 @@ export function isEligibleWorkingDay(day: Date, schedule: BusinessHoursSchedule)
   return getEligibleWorkdayCapacity(day, schedule) > 0;
 }
 
+/** Converts an instant to its date-only business-calendar representation. */
+export function businessCalendarDate(value: Date, timeZone: string): Date {
+  assertValidTimeZone(timeZone);
+  if (Number.isNaN(value.getTime())) throw new Error("Expected a valid time");
+  const local = localDate(value, timeZone);
+  return new Date(Date.UTC(local.year, local.month - 1, local.day));
+}
+
+/**
+ * Returns the next local calendar day that can carry work. The returned Date
+ * is a date-only UTC value so it can be safely compared with persisted DATE
+ * and effective-date values elsewhere in the performance domain.
+ */
+export function nextEligibleWorkingDay(after: Date, schedule: BusinessHoursSchedule): Date {
+  assertValidSchedule(schedule);
+  if (Number.isNaN(after.getTime())) throw new Error("Expected a valid starting time");
+
+  const local = localDate(after, schedule.timeZone);
+  for (let candidate = addLocalDays(local, 1), attempts = 0; attempts < 11 * 366; candidate = addLocalDays(candidate, 1), attempts += 1) {
+    const day = new Date(Date.UTC(candidate.year, candidate.month - 1, candidate.day));
+    if (isEligibleWorkingDay(day, schedule)) return day;
+  }
+
+  throw new Error("An eligible working day could not be found within eleven years");
+}
+
 export function businessHoursBetween(start: Date, end: Date, schedule: BusinessHoursSchedule): number {
   assertValidInterval(start, end);
   assertValidSchedule(schedule);
