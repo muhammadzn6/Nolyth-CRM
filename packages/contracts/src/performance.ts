@@ -141,6 +141,12 @@ const performanceApprovedLeaveInputShape = {
   availableEndHour: leaveHourEndSchema.nullable().optional(),
 };
 
+const performanceHolidayInputShape = {
+  holidayDate: z.iso.date(),
+  name: textSchema,
+  auditMetadata: z.record(z.string(), z.unknown()).optional(),
+};
+
 function validateApprovedLeaveWindow(
   value: { startsAt: string; endsAt: string; availableStartHour?: number | null; availableEndHour?: number | null },
 ) {
@@ -165,6 +171,7 @@ export const performanceApprovedLeaveSchema = z
     approvedById: uuidSchema,
     approvedAt: dateTimeSchema,
     auditMetadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    version: z.number().int().positive(),
     createdAt: dateTimeSchema,
     updatedAt: dateTimeSchema,
   })
@@ -172,6 +179,30 @@ export const performanceApprovedLeaveSchema = z
     message: "Approved leave must have a valid period and complete reduced availability window",
     path: ["availableEndHour"],
   });
+
+export const updatePerformanceApprovedLeaveInputSchema = z
+  .strictObject({ ...performanceApprovedLeaveInputShape, expectedVersion: z.number().int().positive() })
+  .refine(validateApprovedLeaveWindow, {
+    message: "Approved leave must have a valid period and complete reduced availability window",
+    path: ["availableEndHour"],
+  });
+
+export const performanceHolidayInputSchema = z.strictObject(performanceHolidayInputShape);
+
+export const updatePerformanceHolidayInputSchema = z.strictObject({
+  ...performanceHolidayInputShape,
+  expectedVersion: z.number().int().positive(),
+});
+
+export const performanceHolidaySchema = z.strictObject({
+  ...performanceHolidayInputShape,
+  id: uuidSchema,
+  auditMetadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  createdById: uuidSchema,
+  version: z.number().int().positive(),
+  createdAt: dateTimeSchema,
+  updatedAt: dateTimeSchema,
+});
 
 export const bdTargetScheduleInputSchema = z
   .strictObject(bdTargetScheduleInputShape)
@@ -186,6 +217,60 @@ export const updateBdTargetScheduleInputSchema = z
     ({ effectiveFrom, effectiveTo }) => !effectiveTo || effectiveFrom < effectiveTo,
     { message: "Effective period must end after it starts", path: ["effectiveTo"] },
   );
+
+export const performanceVersionInputSchema = z.strictObject({ expectedVersion: z.number().int().positive() });
+
+const leaderboardExceptionInputShape = {
+  bdId: uuidSchema,
+  type: z.enum(["EXCLUDE", "PROVISIONAL"]),
+  reason: textSchema,
+  effectiveFrom: dateTimeSchema.optional(),
+  expiresAt: dateTimeSchema,
+  auditMetadata: z.record(z.string(), z.unknown()).optional(),
+};
+
+function validateLeaderboardExceptionPeriod(value: { effectiveFrom?: string; expiresAt: string }) {
+  return !value.effectiveFrom || value.effectiveFrom < value.expiresAt;
+}
+
+export const performanceLeaderboardExceptionInputSchema = z
+  .strictObject(leaderboardExceptionInputShape)
+  .refine(validateLeaderboardExceptionPeriod, {
+    message: "Leaderboard exception must expire after it begins",
+    path: ["expiresAt"],
+  });
+
+export const revokePerformanceLeaderboardExceptionInputSchema = z.strictObject({
+  expectedVersion: z.number().int().positive(),
+  reason: textSchema,
+});
+
+export const performanceLeaderboardExceptionSchema = z
+  .strictObject({
+    ...leaderboardExceptionInputShape,
+    id: uuidSchema,
+    effectiveFrom: dateTimeSchema,
+    createdById: uuidSchema,
+    revokedAt: dateTimeSchema.nullable(),
+    revokedById: uuidSchema.nullable(),
+    revocationReason: textSchema.nullable(),
+    auditMetadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    version: z.number().int().positive(),
+    createdAt: dateTimeSchema,
+    updatedAt: dateTimeSchema,
+    active: z.boolean(),
+  })
+  .refine(validateLeaderboardExceptionPeriod, {
+    message: "Leaderboard exception must expire after it begins",
+    path: ["expiresAt"],
+  });
+
+const optionalBdFilterSchema = z.strictObject({ bdId: uuidSchema.optional() });
+export const performanceLeaderboardExceptionListQuerySchema = optionalBdFilterSchema.extend({
+  activeOnly: z.union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")]).optional(),
+});
+export const bdTargetScheduleListQuerySchema = optionalBdFilterSchema;
+export const performanceApprovedLeaveListQuerySchema = optionalBdFilterSchema;
 
 export const bdTargetScheduleSchema = z
   .strictObject({
@@ -321,6 +406,7 @@ export const performanceLeaderboardRowSchema = z.strictObject({
   ineligibilityReason: textSchema.nullable().optional(),
   estimatedEligibilityDate: dateTimeSchema.nullable().optional(),
   warnings: z.array(z.enum(["LOW_APPLICATION_SAMPLE", "LOW_OUTCOME_SAMPLE", "ADMIN_OVERRIDE_PROVISIONAL"])).default([]),
+  adminException: performanceLeaderboardExceptionSchema.nullable().optional(),
   quality: performanceQualityIndicatorsSchema,
 });
 
@@ -494,7 +580,15 @@ export type PerformanceRuleSet = z.infer<typeof performanceRuleSchema>;
 export type UpdatePerformanceRuleInput = z.infer<typeof updatePerformanceRuleInputSchema>;
 export type BdTargetSchedule = z.infer<typeof bdTargetScheduleSchema>;
 export type PerformanceApprovedLeave = z.infer<typeof performanceApprovedLeaveSchema>;
+export type UpdatePerformanceApprovedLeaveInput = z.infer<typeof updatePerformanceApprovedLeaveInputSchema>;
+export type PerformanceHoliday = z.infer<typeof performanceHolidaySchema>;
+export type PerformanceHolidayInput = z.infer<typeof performanceHolidayInputSchema>;
+export type UpdatePerformanceHolidayInput = z.infer<typeof updatePerformanceHolidayInputSchema>;
 export type UpdateBdTargetScheduleInput = z.infer<typeof updateBdTargetScheduleInputSchema>;
+export type PerformanceVersionInput = z.infer<typeof performanceVersionInputSchema>;
+export type PerformanceLeaderboardException = z.infer<typeof performanceLeaderboardExceptionSchema>;
+export type PerformanceLeaderboardExceptionInput = z.infer<typeof performanceLeaderboardExceptionInputSchema>;
+export type RevokePerformanceLeaderboardExceptionInput = z.infer<typeof revokePerformanceLeaderboardExceptionInputSchema>;
 export type DuplicateReview = z.infer<typeof duplicateReviewSchema>;
 export type UpdateDuplicateReviewInput = z.infer<typeof updateDuplicateReviewInputSchema>;
 export type PerformanceRecordAuditInput = z.infer<typeof performanceRecordAuditInputSchema>;

@@ -74,3 +74,21 @@ Complete. The final controller contract boundary pass is committed after the SLA
 ## Concern
 
 The local `orbit` database still has the pre-existing migration-history drift reported by Tasks 1–3. This correction adds an additive migration for duplicate-review overdue state, and schema validation is clean. Full dashboard/browser integration remains deliberately in later Tasks 5–8.
+
+## Final Admin controls and quality aggregation correction
+
+- Team quality is now calculated from summed raw numerators and denominators across saved applications, audits, and duplicate reviews. It no longer averages BD-level percentages, and unequal-volume regressions cover record health, audit pass, correction, confirmed duplicate, rejected override, and total duplicate rates.
+- Added Admin-only list/create/update/delete workflows for individual BD target schedules, performance holidays, and approved leave. Target and leave periods are overlap-protected, all mutations use optimistic versions, leave supports persisted reduced availability, and each mutation writes an immutable activity audit record.
+- Added a persisted `PerformanceLeaderboardException` lifecycle with an additive migration, mandatory reason/expiry, active-only list behavior, explicit revocation, optimistic versioning, and audit records. Active exceptions move the BD to Building Baseline with the `ADMIN_OVERRIDE_PROVISIONAL` warning and no numeric rank; expired or revoked exceptions do not affect eligibility.
+- Added strict shared request/response contracts and controller routes for every new Admin operation.
+
+### Final verification
+
+- Focused API/backend/contracts/worker tests: 114 passed.
+- Disposable PostgreSQL migration and persistence tests: 7 passed.
+- TypeScript checks passed for worker, API, backend, contracts, and database.
+- Prisma schema validation and `git diff --check` passed.
+
+### Remaining environment note
+
+The local `orbit` database still has the pre-existing migration-history drift. The disposable `orbit_task3_test` database applied the full migration sequence and passed the new persistence coverage.

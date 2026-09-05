@@ -50,7 +50,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await database.performanceLeaderboardException.deleteMany();
   await database.performanceApprovedLeave.deleteMany();
+  await database.performanceHoliday.deleteMany();
   await database.bdTargetSchedule.deleteMany();
   await database.performanceRuleSet.deleteMany();
   await database.user.deleteMany();
@@ -61,6 +63,26 @@ afterAll(async () => {
 });
 
 describe("performance rule persistence", () => {
+  it("persists versioned Admin controls and a revocable leaderboard exception", async () => {
+    const [admin, bd] = await Promise.all([
+      createUser("performance-controls-admin@orbit.test", "ADMIN"),
+      createUser("performance-controls-bd@orbit.test", "BD"),
+    ]);
+    const [holiday, leave, exception] = await Promise.all([
+      database.performanceHoliday.create({ data: { holidayDate: new Date("2026-09-23T00:00:00.000Z"), name: "Pakistan Day", createdById: admin.id } }),
+      database.performanceApprovedLeave.create({ data: { bdId: bd.id, approvedById: admin.id, startsAt: new Date("2026-10-05T00:00:00.000Z"), endsAt: new Date("2026-10-06T00:00:00.000Z"), availableStartHour: 9, availableEndHour: 13 } }),
+      database.performanceLeaderboardException.create({ data: { bdId: bd.id, type: "PROVISIONAL", reason: "Migration review", effectiveFrom: new Date("2026-09-05T00:00:00.000Z"), expiresAt: new Date("2026-10-01T00:00:00.000Z"), createdById: admin.id } }),
+    ]);
+    const revoked = await database.performanceLeaderboardException.update({
+      where: { id: exception.id },
+      data: { revokedAt: new Date("2026-09-10T00:00:00.000Z"), revokedById: admin.id, revocationReason: "Reviewed", version: { increment: 1 } },
+    });
+
+    expect(holiday.version).toBe(1);
+    expect(leave).toMatchObject({ version: 1, availableStartHour: 9, availableEndHour: 13 });
+    expect(revoked).toMatchObject({ version: 2, revocationReason: "Reviewed", revokedById: admin.id });
+  });
+
   it("persists reduced leave availability for a half-day target", async () => {
     const [admin, bd] = await Promise.all([
       createUser("leave-window-admin@orbit.test", "ADMIN"),

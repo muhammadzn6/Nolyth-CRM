@@ -83,6 +83,31 @@ describe("performance contracts", () => {
     }).success).toBe(false);
   });
 
+  it("validates versioned Admin calendar controls and a reasoned leaderboard exception", () => {
+    expect(schema("performanceHolidayInputSchema").parse({
+      holidayDate: "2026-09-23",
+      name: "Pakistan Day",
+    })).toMatchObject({ holidayDate: "2026-09-23", name: "Pakistan Day" });
+    expect(schema("updatePerformanceApprovedLeaveInputSchema").safeParse({
+      bdId,
+      startsAt: "2026-09-08T00:00:00.000Z",
+      endsAt: "2026-09-09T00:00:00.000Z",
+      expectedVersion: 1,
+    }).success).toBe(true);
+    expect(schema("performanceLeaderboardExceptionInputSchema").safeParse({
+      bdId,
+      type: "PROVISIONAL",
+      reason: "Data migration requires a short review window.",
+      expiresAt: "2026-10-01T00:00:00.000Z",
+    }).success).toBe(true);
+    expect(schema("performanceLeaderboardExceptionInputSchema").safeParse({
+      bdId,
+      type: "PROVISIONAL",
+      reason: "",
+      expiresAt: "2026-10-01T00:00:00.000Z",
+    }).success).toBe(false);
+  });
+
   it("exposes pending duplicate reviews with provisional-credit and audit state", () => {
     expect(
       schema("duplicateReviewSchema").parse({

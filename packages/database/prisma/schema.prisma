@@ -183,6 +183,11 @@ enum PerformanceFollowUpStatus {
   ADMIN_REASSIGNMENT_OVERDUE
 }
 
+enum PerformanceLeaderboardExceptionType {
+  EXCLUDE
+  PROVISIONAL
+}
+
 model User {
   id                     String                     @id @default(uuid()) @db.Uuid
   displayName            String                     @map("display_name")
@@ -245,6 +250,9 @@ model User {
   createdPerformanceHolidays  PerformanceHoliday[] @relation("PerformanceHolidayCreatedBy")
   performanceLeaves           PerformanceApprovedLeave[] @relation("PerformanceLeaveBd")
   approvedPerformanceLeaves   PerformanceApprovedLeave[] @relation("PerformanceLeaveApprovedBy")
+  leaderboardExceptions       PerformanceLeaderboardException[] @relation("PerformanceLeaderboardExceptionBd")
+  createdLeaderboardExceptions PerformanceLeaderboardException[] @relation("PerformanceLeaderboardExceptionCreatedBy")
+  revokedLeaderboardExceptions PerformanceLeaderboardException[] @relation("PerformanceLeaderboardExceptionRevokedBy")
   createdDuplicateReviews     DuplicateReview[] @relation("DuplicateReviewCreatedBy")
   reviewedDuplicateReviews    DuplicateReview[] @relation("DuplicateReviewReviewer")
   ownedPerformanceFollowUps   PerformanceFollowUp[] @relation("PerformanceFollowUpOwner")
@@ -549,6 +557,7 @@ model PerformanceHoliday {
   auditMetadata Json?    @map("audit_metadata")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version       Int      @default(1)
   createdBy     User     @relation("PerformanceHolidayCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@unique([holidayDate])
@@ -569,12 +578,37 @@ model PerformanceApprovedLeave {
   auditMetadata Json?    @map("audit_metadata")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version       Int      @default(1)
   bd            User     @relation("PerformanceLeaveBd", fields: [bdId], references: [id], onDelete: Restrict)
   approvedBy    User     @relation("PerformanceLeaveApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
 
   @@index([bdId, startsAt, endsAt])
   @@index([startsAt, endsAt])
   @@map("performance_approved_leaves")
+}
+
+model PerformanceLeaderboardException {
+  id               String                               @id @default(uuid()) @db.Uuid
+  bdId             String                               @map("bd_id") @db.Uuid
+  type             PerformanceLeaderboardExceptionType
+  reason           String
+  effectiveFrom    DateTime                             @map("effective_from") @db.Timestamptz(6)
+  expiresAt        DateTime                             @map("expires_at") @db.Timestamptz(6)
+  createdById      String                               @map("created_by_id") @db.Uuid
+  revokedAt        DateTime?                            @map("revoked_at") @db.Timestamptz(6)
+  revokedById      String?                              @map("revoked_by_id") @db.Uuid
+  revocationReason String?                              @map("revocation_reason")
+  auditMetadata    Json?                                @map("audit_metadata")
+  createdAt        DateTime                             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version          Int                                  @default(1)
+  bd               User                                 @relation("PerformanceLeaderboardExceptionBd", fields: [bdId], references: [id], onDelete: Restrict)
+  createdBy        User                                 @relation("PerformanceLeaderboardExceptionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  revokedBy        User?                                @relation("PerformanceLeaderboardExceptionRevokedBy", fields: [revokedById], references: [id], onDelete: Restrict)
+
+  @@index([bdId, effectiveFrom, expiresAt])
+  @@index([expiresAt, revokedAt])
+  @@map("performance_leaderboard_exceptions")
 }
 
 model DuplicateReview {

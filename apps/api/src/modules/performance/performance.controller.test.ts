@@ -237,6 +237,36 @@ describe("PerformanceController", () => {
     await expect(controller.auditRecord(lead.id, { outcome: "PASSED", reason: "Verified." }, request())).resolves.toEqual(auditRecord);
   });
 
+  it("routes Admin calendar controls and leaderboard exceptions through strict contracts", async () => {
+    const target = { id: "10000000-0000-4000-8000-000000000071", bdId: bd.id, dailyTarget: 80, effectiveFrom: date, effectiveTo: null, createdById: admin.id, auditMetadata: null, version: 1, createdAt: date, updatedAt: date };
+    const holiday = { id: "10000000-0000-4000-8000-000000000072", holidayDate: "2026-09-23", name: "Pakistan Day", createdById: admin.id, auditMetadata: null, version: 1, createdAt: date, updatedAt: date };
+    const leave = { id: "10000000-0000-4000-8000-000000000073", bdId: bd.id, startsAt: date, endsAt: "2026-09-06T00:00:00.000Z", reason: null, availableStartHour: null, availableEndHour: null, approvedById: admin.id, approvedAt: date, auditMetadata: null, version: 1, createdAt: date, updatedAt: date };
+    const exception = { id: "10000000-0000-4000-8000-000000000074", bdId: bd.id, type: "PROVISIONAL", reason: "Review data.", effectiveFrom: date, expiresAt: "2026-10-01T00:00:00.000Z", createdById: admin.id, revokedAt: null, revokedById: null, revocationReason: null, auditMetadata: null, version: 1, createdAt: date, updatedAt: date, active: true };
+    const service = {
+      listBdTargetSchedules: vi.fn().mockResolvedValue([target]), createBdTargetSchedule: vi.fn().mockResolvedValue(target),
+      listPerformanceHolidays: vi.fn().mockResolvedValue([holiday]), createPerformanceHoliday: vi.fn().mockResolvedValue(holiday),
+      listPerformanceApprovedLeaves: vi.fn().mockResolvedValue([leave]), createPerformanceApprovedLeave: vi.fn().mockResolvedValue(leave),
+      listLeaderboardExceptions: vi.fn().mockResolvedValue([exception]), createLeaderboardException: vi.fn().mockResolvedValue(exception),
+    };
+    const controller = new PerformanceController(service as unknown as PerformanceService);
+
+    await expect(controller.targets({ bdId: bd.id }, request())).resolves.toEqual([target]);
+    await expect(controller.createTarget({ bdId: bd.id, dailyTarget: 80, effectiveFrom: date }, request())).resolves.toEqual(target);
+    expect(typeof controller.updateTarget).toBe("function");
+    expect(typeof controller.deleteTarget).toBe("function");
+    await expect(controller.holidays(request())).resolves.toEqual([holiday]);
+    await expect(controller.createHoliday({ holidayDate: "2026-09-23", name: "Pakistan Day" }, request())).resolves.toEqual(holiday);
+    expect(typeof controller.updateHoliday).toBe("function");
+    expect(typeof controller.deleteHoliday).toBe("function");
+    await expect(controller.leaves({ bdId: bd.id }, request())).resolves.toEqual([leave]);
+    await expect(controller.createLeave({ bdId: bd.id, startsAt: date, endsAt: "2026-09-06T00:00:00.000Z" }, request())).resolves.toEqual(leave);
+    expect(typeof controller.updateLeave).toBe("function");
+    expect(typeof controller.deleteLeave).toBe("function");
+    await expect(controller.leaderboardExceptions({}, request())).resolves.toEqual([exception]);
+    await expect(controller.createLeaderboardException({ bdId: bd.id, type: "PROVISIONAL", reason: "Review data.", expiresAt: "2026-10-01T00:00:00.000Z" }, request())).resolves.toEqual(exception);
+    expect(typeof controller.revokeLeaderboardException).toBe("function");
+  });
+
   it("rejects a private peer field from the BD performance response", async () => {
     const service = {
       getBdPerformance: vi.fn().mockResolvedValue({

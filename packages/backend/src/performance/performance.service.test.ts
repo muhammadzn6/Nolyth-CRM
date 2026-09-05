@@ -37,6 +37,73 @@ describe("PerformanceService", () => {
     })).rejects.toEqual(new AuthorizationError());
   });
 
+  it("aggregates team quality from raw unequal-volume counts instead of BD percentages", () => {
+    const service = new PerformanceService({} as never, { assertRole: vi.fn() } as never);
+    const aggregate = (service as unknown as { aggregateQuality(rows: Array<Record<string, unknown>>): Record<string, number | null> }).aggregateQuality([
+      {
+        qualityCounts: {
+          recordHealth: { numerator: 0, denominator: 1 },
+          adminAuditPass: { numerator: 0, denominator: 1 },
+          corrections: { numerator: 1, denominator: 1 },
+          confirmedDuplicates: { numerator: 1, denominator: 1 },
+          pendingOverrides: { numerator: 0, denominator: 1 },
+          rejectedOverrides: { numerator: 1, denominator: 1 },
+          duplicates: { numerator: 1, denominator: 1 },
+        },
+      },
+      {
+        qualityCounts: {
+          recordHealth: { numerator: 99, denominator: 99 },
+          adminAuditPass: { numerator: 99, denominator: 99 },
+          corrections: { numerator: 0, denominator: 99 },
+          confirmedDuplicates: { numerator: 0, denominator: 99 },
+          pendingOverrides: { numerator: 0, denominator: 99 },
+          rejectedOverrides: { numerator: 0, denominator: 99 },
+          duplicates: { numerator: 0, denominator: 99 },
+        },
+      },
+    ]);
+
+    expect(aggregate).toMatchObject({
+      recordHealthRate: 99,
+      adminAuditPassRate: 99,
+      correctionRate: 1,
+      confirmedDuplicateRate: 1,
+      rejectedOverrideRate: 1,
+      duplicateRate: 1,
+    });
+  });
+
+  it("lets Admin maintain versioned BD targets, holidays, leave, and temporary leaderboard exceptions", async () => {
+    const target = { id: "10000000-0000-4000-8000-000000000071", bdId: bd.id, dailyTarget: 80, effectiveFrom: new Date("2026-10-01T00:00:00.000Z"), effectiveTo: null, createdById: admin.id, auditMetadata: null, version: 1, createdAt: new Date("2026-09-05T00:00:00.000Z"), updatedAt: new Date("2026-09-05T00:00:00.000Z") };
+    const holiday = { id: "10000000-0000-4000-8000-000000000072", holidayDate: new Date("2026-09-23T00:00:00.000Z"), name: "Pakistan Day", createdById: admin.id, auditMetadata: null, version: 1, createdAt: new Date("2026-09-05T00:00:00.000Z"), updatedAt: new Date("2026-09-05T00:00:00.000Z") };
+    const leave = { id: "10000000-0000-4000-8000-000000000073", bdId: bd.id, startsAt: new Date("2026-10-05T00:00:00.000Z"), endsAt: new Date("2026-10-06T00:00:00.000Z"), reason: "Medical appointment", availableStartHour: 9, availableEndHour: 13, approvedById: admin.id, approvedAt: new Date("2026-09-05T00:00:00.000Z"), auditMetadata: null, version: 1, createdAt: new Date("2026-09-05T00:00:00.000Z"), updatedAt: new Date("2026-09-05T00:00:00.000Z") };
+    const exception = { id: "10000000-0000-4000-8000-000000000074", bdId: bd.id, type: "PROVISIONAL", reason: "Data migration requires review.", effectiveFrom: new Date("2026-09-05T00:00:00.000Z"), expiresAt: new Date("2026-10-01T00:00:00.000Z"), createdById: admin.id, revokedAt: null, revokedById: null, revocationReason: null, auditMetadata: null, version: 1, createdAt: new Date("2026-09-05T00:00:00.000Z"), updatedAt: new Date("2026-09-05T00:00:00.000Z") };
+    const database: any = {
+      $transaction: async (work: any) => work(database),
+      user: { findUnique: vi.fn().mockResolvedValue(bd) },
+      bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue(target), findUnique: vi.fn().mockResolvedValue(target), updateMany: vi.fn().mockResolvedValue({ count: 1 }), deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      performanceHoliday: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue(holiday), findUnique: vi.fn().mockResolvedValue(holiday), updateMany: vi.fn().mockResolvedValue({ count: 1 }), deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue(leave), findUnique: vi.fn().mockResolvedValue(leave), updateMany: vi.fn().mockResolvedValue({ count: 1 }), deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      performanceLeaderboardException: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue(exception), findUnique: vi.fn().mockResolvedValue(exception), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      activityEvent: { create: vi.fn().mockResolvedValue(undefined) },
+    };
+    const service = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-05T12:00:00.000Z"));
+
+    await expect(service.createBdTargetSchedule(admin, { bdId: bd.id, dailyTarget: 80, effectiveFrom: "2026-10-01T00:00:00.000Z" })).resolves.toMatchObject({ dailyTarget: 80, version: 1 });
+    await expect(service.updateBdTargetSchedule(admin, target.id, { bdId: bd.id, dailyTarget: 85, effectiveFrom: "2026-10-01T00:00:00.000Z", expectedVersion: 1 })).resolves.toMatchObject({ id: target.id });
+    await expect(service.deleteBdTargetSchedule(admin, target.id, { expectedVersion: 1 })).resolves.toBeUndefined();
+    await expect(service.createPerformanceHoliday(admin, { holidayDate: "2026-09-23", name: "Pakistan Day" })).resolves.toMatchObject({ name: "Pakistan Day", version: 1 });
+    await expect(service.updatePerformanceHoliday(admin, holiday.id, { holidayDate: "2026-09-24", name: "Observed Pakistan Day", expectedVersion: 1 })).resolves.toMatchObject({ id: holiday.id });
+    await expect(service.deletePerformanceHoliday(admin, holiday.id, { expectedVersion: 1 })).resolves.toBeUndefined();
+    await expect(service.createPerformanceApprovedLeave(admin, { bdId: bd.id, startsAt: "2026-10-05T00:00:00.000Z", endsAt: "2026-10-06T00:00:00.000Z", availableStartHour: 9, availableEndHour: 13 })).resolves.toMatchObject({ availableEndHour: 13, version: 1 });
+    await expect(service.updatePerformanceApprovedLeave(admin, leave.id, { bdId: bd.id, startsAt: "2026-10-05T00:00:00.000Z", endsAt: "2026-10-06T00:00:00.000Z", availableStartHour: 9, availableEndHour: 13, expectedVersion: 1 })).resolves.toMatchObject({ id: leave.id });
+    await expect(service.deletePerformanceApprovedLeave(admin, leave.id, { expectedVersion: 1 })).resolves.toBeUndefined();
+    await expect(service.createLeaderboardException(admin, { bdId: bd.id, type: "PROVISIONAL", reason: "Data migration requires review.", expiresAt: "2026-10-01T00:00:00.000Z" })).resolves.toMatchObject({ type: "PROVISIONAL", revokedAt: null });
+    await expect(service.revokeLeaderboardException(admin, exception.id, { expectedVersion: 1, reason: "Review completed." })).resolves.toMatchObject({ id: exception.id });
+    expect(database.activityEvent.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "performance.leaderboard_exception_revoked" }) }));
+  });
+
   it("records Admin audit outcomes and rejects a correction without a prior audit failure", async () => {
     const lead = { id: leadId, profileId: "10000000-0000-4000-8000-000000000005", jobTitle: "Platform Engineer" };
     const database: any = {
@@ -461,6 +528,30 @@ describe("PerformanceService", () => {
     expect(result.peerLeaderboard[1]).toEqual(expect.objectContaining({ bdId: peer.id, qualifiedApplications: 0, duplicateRate: null }));
     expect(result.peerLeaderboard[1]).not.toHaveProperty("performance");
     expect(result.peerLeaderboard[1]).not.toHaveProperty("currentDailyTarget");
+  });
+
+  it("keeps active Admin leaderboard exceptions provisional and ignores expired exceptions", async () => {
+    const exception = {
+      id: "10000000-0000-4000-8000-000000000075", bdId: bd.id, type: "PROVISIONAL", reason: "Data migration review.",
+      effectiveFrom: new Date("2026-09-01T00:00:00.000Z"), expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+      createdById: admin.id, revokedAt: null, revokedById: null, revocationReason: null, auditMetadata: null, version: 1,
+      createdAt: new Date("2026-09-01T00:00:00.000Z"), updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+    };
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([{ ...bd, createdAt: new Date("2026-08-01T00:00:00.000Z") }]) },
+      jobLead: { findMany: vi.fn().mockResolvedValue([]) }, interviewRound: { findMany: vi.fn().mockResolvedValue([]) }, performanceFollowUp: { findMany: vi.fn().mockResolvedValue([]) },
+      bdTargetSchedule: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) }, performanceHoliday: { findMany: vi.fn().mockResolvedValue([]) }, performanceApprovedLeave: { findMany: vi.fn().mockResolvedValue([]) }, performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
+      performanceLeaderboardException: { findMany: vi.fn().mockResolvedValue([exception]) }, duplicateReview: { findMany: vi.fn().mockResolvedValue([]) }, activityEvent: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: async (work: any) => work(database), outboxEvent: { upsert: vi.fn() },
+    };
+    const duringException = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-30T12:00:00.000Z"));
+    const provisional = await duringException.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+    expect(provisional.leaderboard).toHaveLength(0);
+    expect(provisional.buildingBaseline[0]).toMatchObject({ rank: null, warnings: expect.arrayContaining(["ADMIN_OVERRIDE_PROVISIONAL"]), adminException: { active: true } });
+
+    const afterExpiry = new PerformanceService(database as never, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-10-02T12:00:00.000Z"));
+    const normal = await afterExpiry.getAdminBdPerformance(admin, { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" });
+    expect(normal.leaderboard[0]).toMatchObject({ bdId: bd.id, adminException: null });
   });
 
   it("uses each effective rule segment for attainment and score weights", async () => {

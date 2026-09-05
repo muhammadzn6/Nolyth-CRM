@@ -1,11 +1,23 @@
 import {
   performanceDrilldownQuerySchema,
+  bdTargetScheduleInputSchema,
+  bdTargetScheduleListQuerySchema,
+  performanceApprovedLeaveInputSchema,
+  performanceApprovedLeaveListQuerySchema,
+  performanceHolidayInputSchema,
+  performanceLeaderboardExceptionInputSchema,
+  performanceLeaderboardExceptionListQuerySchema,
   performanceRecordAuditInputSchema,
   performancePeriodQuerySchema,
   performanceRuleInputSchema,
   performanceRuleMutationSchema,
   reassignPerformanceFollowUpInputSchema,
+  revokePerformanceLeaderboardExceptionInputSchema,
+  performanceVersionInputSchema,
+  updateBdTargetScheduleInputSchema,
   updateDuplicateReviewInputSchema,
+  updatePerformanceApprovedLeaveInputSchema,
+  updatePerformanceHolidayInputSchema,
 } from "@orbit/contracts";
 
 import { AuthorizationError, ConflictError, NotFoundError, StaleVersionError, ValidationError } from "../errors/app-error";
@@ -22,6 +34,7 @@ type Store = {
   findMany?(args?: Record<string, unknown>): Promise<ReadonlyArray<Record<string, unknown>>>;
   updateMany?(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<{ count: number }>;
   create?(args: { data: Record<string, unknown> }): Promise<unknown>;
+  deleteMany?(args: { where: Record<string, unknown> }): Promise<{ count: number }>;
   upsert?(args: { where: Record<string, unknown>; create: Record<string, unknown>; update: Record<string, never> }): Promise<unknown>;
 };
 
@@ -34,6 +47,7 @@ export type PerformanceDatabase = {
   performanceApprovedLeave: Store;
   performanceFollowUp: Store;
   bdTargetSchedule: Store;
+  performanceLeaderboardException: Store;
   interviewRound: Store;
   leadStatusTransition: Store;
   outboxEvent: Store;
@@ -275,6 +289,257 @@ export class PerformanceService {
       orderBy: { effectiveFrom: "desc" },
     });
     return rule ? this.ruleSummary(rule) : null;
+  }
+
+  async listBdTargetSchedules(actor: Actor, query: unknown = {}) {
+    this.assertAdmin(actor);
+    const parsed = bdTargetScheduleListQuerySchema.safeParse(query);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const schedules = await this.database.bdTargetSchedule.findMany?.({
+      where: parsed.data.bdId ? { bdId: parsed.data.bdId } : {},
+      orderBy: { effectiveFrom: "asc" },
+    }) ?? [];
+    return schedules.map((schedule) => this.targetScheduleSummary(schedule));
+  }
+
+  async createBdTargetSchedule(actor: Actor, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = bdTargetScheduleInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    await this.assertActiveBd(parsed.data.bdId);
+    const effectiveFrom = new Date(parsed.data.effectiveFrom);
+    if (effectiveFrom < this.now()) throw new ConflictError("BD target changes cannot rewrite historical performance");
+    const created = await this.database.$transaction(async (transaction) => {
+      await this.assertTargetWindowAvailable(transaction, parsed.data.bdId, effectiveFrom, parsed.data.effectiveTo ? new Date(parsed.data.effectiveTo) : null);
+      const row = await transaction.bdTargetSchedule.create?.({
+        data: {
+          bdId: parsed.data.bdId,
+          dailyTarget: parsed.data.dailyTarget,
+          effectiveFrom,
+          effectiveTo: parsed.data.effectiveTo ? new Date(parsed.data.effectiveTo) : null,
+          createdById: actor.id,
+          auditMetadata: parsed.data.auditMetadata ?? null,
+        },
+      }) as Record<string, unknown> | undefined;
+      if (!row) throw new NotFoundError("The BD target schedule was not created");
+      await this.auditPerformanceControl(transaction, actor, "performance.bd_target_created", "bd_target_schedule", String(row.id), null, this.targetScheduleSummary(row));
+      return row;
+    });
+    return this.targetScheduleSummary(created);
+  }
+
+  async updateBdTargetSchedule(actor: Actor, scheduleId: string, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = updateBdTargetScheduleInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const current = await this.database.bdTargetSchedule.findUnique?.({ where: { id: scheduleId } });
+    if (!current) throw new NotFoundError("The BD target schedule was not found");
+    if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    await this.assertActiveBd(parsed.data.bdId);
+    const effectiveFrom = new Date(parsed.data.effectiveFrom);
+    if (effectiveFrom < this.now()) throw new ConflictError("BD target changes cannot rewrite historical performance");
+    const updated = await this.database.$transaction(async (transaction) => {
+      await this.assertTargetWindowAvailable(transaction, parsed.data.bdId, effectiveFrom, parsed.data.effectiveTo ? new Date(parsed.data.effectiveTo) : null, scheduleId);
+      const changed = await transaction.bdTargetSchedule.updateMany?.({
+        where: { id: scheduleId, version: parsed.data.expectedVersion },
+        data: {
+          bdId: parsed.data.bdId, dailyTarget: parsed.data.dailyTarget, effectiveFrom,
+          effectiveTo: parsed.data.effectiveTo ? new Date(parsed.data.effectiveTo) : null,
+          auditMetadata: parsed.data.auditMetadata ?? current.auditMetadata ?? null,
+          version: { increment: 1 },
+        },
+      });
+      if (!changed?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+      const row = await transaction.bdTargetSchedule.findUnique?.({ where: { id: scheduleId } });
+      if (!row) throw new NotFoundError("The BD target schedule was not found after it was updated");
+      await this.auditPerformanceControl(transaction, actor, "performance.bd_target_updated", "bd_target_schedule", scheduleId, this.targetScheduleSummary(current), this.targetScheduleSummary(row));
+      return row;
+    });
+    return this.targetScheduleSummary(updated);
+  }
+
+  async deleteBdTargetSchedule(actor: Actor, scheduleId: string, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = performanceVersionInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const current = await this.database.bdTargetSchedule.findUnique?.({ where: { id: scheduleId } });
+    if (!current) throw new NotFoundError("The BD target schedule was not found");
+    if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    if ((asDate(current.effectiveFrom) ?? this.now()) < this.now()) throw new ConflictError("Started BD target schedules are retained for performance history");
+    await this.database.$transaction(async (transaction) => {
+      const deleted = await transaction.bdTargetSchedule.deleteMany?.({ where: { id: scheduleId, version: parsed.data.expectedVersion } });
+      if (!deleted?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+      await this.auditPerformanceControl(transaction, actor, "performance.bd_target_deleted", "bd_target_schedule", scheduleId, this.targetScheduleSummary(current), null);
+    });
+  }
+
+  async listPerformanceHolidays(actor: Actor) {
+    this.assertAdmin(actor);
+    const holidays = await this.database.performanceHoliday.findMany?.({ orderBy: { holidayDate: "asc" } }) ?? [];
+    return holidays.map((holiday) => this.holidaySummary(holiday));
+  }
+
+  async createPerformanceHoliday(actor: Actor, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = performanceHolidayInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const holidayDate = new Date(`${parsed.data.holidayDate}T00:00:00.000Z`);
+    const existing = await this.database.performanceHoliday.findFirst?.({ where: { holidayDate } });
+    if (existing) throw new ConflictError("A holiday already exists on this date");
+    const created = await this.database.$transaction(async (transaction) => {
+      const row = await transaction.performanceHoliday.create?.({ data: { holidayDate, name: parsed.data.name, createdById: actor.id, auditMetadata: parsed.data.auditMetadata ?? null } }) as Record<string, unknown> | undefined;
+      if (!row) throw new NotFoundError("The holiday was not created");
+      await this.auditPerformanceControl(transaction, actor, "performance.holiday_created", "performance_holiday", String(row.id), null, this.holidaySummary(row));
+      return row;
+    });
+    return this.holidaySummary(created);
+  }
+
+  async updatePerformanceHoliday(actor: Actor, holidayId: string, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = updatePerformanceHolidayInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const current = await this.database.performanceHoliday.findUnique?.({ where: { id: holidayId } });
+    if (!current) throw new NotFoundError("The holiday was not found");
+    if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    const holidayDate = new Date(`${parsed.data.holidayDate}T00:00:00.000Z`);
+    const existing = await this.database.performanceHoliday.findFirst?.({ where: { holidayDate, id: { not: holidayId } } });
+    if (existing) throw new ConflictError("A holiday already exists on this date");
+    const updated = await this.database.$transaction(async (transaction) => {
+      const changed = await transaction.performanceHoliday.updateMany?.({ where: { id: holidayId, version: parsed.data.expectedVersion }, data: { holidayDate, name: parsed.data.name, auditMetadata: parsed.data.auditMetadata ?? current.auditMetadata ?? null, version: { increment: 1 } } });
+      if (!changed?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+      const row = await transaction.performanceHoliday.findUnique?.({ where: { id: holidayId } });
+      if (!row) throw new NotFoundError("The holiday was not found after it was updated");
+      await this.auditPerformanceControl(transaction, actor, "performance.holiday_updated", "performance_holiday", holidayId, this.holidaySummary(current), this.holidaySummary(row));
+      return row;
+    });
+    return this.holidaySummary(updated);
+  }
+
+  async deletePerformanceHoliday(actor: Actor, holidayId: string, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = performanceVersionInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const current = await this.database.performanceHoliday.findUnique?.({ where: { id: holidayId } });
+    if (!current) throw new NotFoundError("The holiday was not found");
+    if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    await this.database.$transaction(async (transaction) => {
+      const deleted = await transaction.performanceHoliday.deleteMany?.({ where: { id: holidayId, version: parsed.data.expectedVersion } });
+      if (!deleted?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+      await this.auditPerformanceControl(transaction, actor, "performance.holiday_deleted", "performance_holiday", holidayId, this.holidaySummary(current), null);
+    });
+  }
+
+  async listPerformanceApprovedLeaves(actor: Actor, query: unknown = {}) {
+    this.assertAdmin(actor);
+    const parsed = performanceApprovedLeaveListQuerySchema.safeParse(query);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const leaves = await this.database.performanceApprovedLeave.findMany?.({ where: parsed.data.bdId ? { bdId: parsed.data.bdId } : {}, orderBy: { startsAt: "asc" } }) ?? [];
+    return leaves.map((leave) => this.leaveSummary(leave));
+  }
+
+  async createPerformanceApprovedLeave(actor: Actor, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = performanceApprovedLeaveInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    await this.assertActiveBd(parsed.data.bdId);
+    const startsAt = new Date(parsed.data.startsAt); const endsAt = new Date(parsed.data.endsAt);
+    const created = await this.database.$transaction(async (transaction) => {
+      await this.assertLeaveWindowAvailable(transaction, parsed.data.bdId, startsAt, endsAt);
+      const row = await transaction.performanceApprovedLeave.create?.({ data: { ...parsed.data, startsAt, endsAt, reason: parsed.data.reason ?? null, availableStartHour: parsed.data.availableStartHour ?? null, availableEndHour: parsed.data.availableEndHour ?? null, auditMetadata: null, approvedById: actor.id } }) as Record<string, unknown> | undefined;
+      if (!row) throw new NotFoundError("The approved leave was not created");
+      await this.auditPerformanceControl(transaction, actor, "performance.leave_created", "performance_approved_leave", String(row.id), null, this.leaveSummary(row));
+      return row;
+    });
+    return this.leaveSummary(created);
+  }
+
+  async updatePerformanceApprovedLeave(actor: Actor, leaveId: string, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = updatePerformanceApprovedLeaveInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const current = await this.database.performanceApprovedLeave.findUnique?.({ where: { id: leaveId } });
+    if (!current) throw new NotFoundError("The approved leave was not found");
+    if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    await this.assertActiveBd(parsed.data.bdId);
+    const startsAt = new Date(parsed.data.startsAt); const endsAt = new Date(parsed.data.endsAt);
+    const updated = await this.database.$transaction(async (transaction) => {
+      await this.assertLeaveWindowAvailable(transaction, parsed.data.bdId, startsAt, endsAt, leaveId);
+      const changed = await transaction.performanceApprovedLeave.updateMany?.({ where: { id: leaveId, version: parsed.data.expectedVersion }, data: { bdId: parsed.data.bdId, startsAt, endsAt, reason: parsed.data.reason ?? null, availableStartHour: parsed.data.availableStartHour ?? null, availableEndHour: parsed.data.availableEndHour ?? null, version: { increment: 1 } } });
+      if (!changed?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+      const row = await transaction.performanceApprovedLeave.findUnique?.({ where: { id: leaveId } });
+      if (!row) throw new NotFoundError("The approved leave was not found after it was updated");
+      await this.auditPerformanceControl(transaction, actor, "performance.leave_updated", "performance_approved_leave", leaveId, this.leaveSummary(current), this.leaveSummary(row));
+      return row;
+    });
+    return this.leaveSummary(updated);
+  }
+
+  async deletePerformanceApprovedLeave(actor: Actor, leaveId: string, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = performanceVersionInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const current = await this.database.performanceApprovedLeave.findUnique?.({ where: { id: leaveId } });
+    if (!current) throw new NotFoundError("The approved leave was not found");
+    if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    await this.database.$transaction(async (transaction) => {
+      const deleted = await transaction.performanceApprovedLeave.deleteMany?.({ where: { id: leaveId, version: parsed.data.expectedVersion } });
+      if (!deleted?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+      await this.auditPerformanceControl(transaction, actor, "performance.leave_deleted", "performance_approved_leave", leaveId, this.leaveSummary(current), null);
+    });
+  }
+
+  async listLeaderboardExceptions(actor: Actor, query: unknown = {}) {
+    this.assertAdmin(actor);
+    const parsed = performanceLeaderboardExceptionListQuerySchema.safeParse(query);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const now = this.now();
+    const exceptions = await this.database.performanceLeaderboardException?.findMany?.({
+      where: {
+        ...(parsed.data.bdId ? { bdId: parsed.data.bdId } : {}),
+        ...(parsed.data.activeOnly ? { effectiveFrom: { lte: now }, expiresAt: { gt: now }, revokedAt: null } : {}),
+      },
+      orderBy: { effectiveFrom: "desc" },
+    }) ?? [];
+    return exceptions.map((exception) => this.leaderboardExceptionSummary(exception, now));
+  }
+
+  async createLeaderboardException(actor: Actor, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = performanceLeaderboardExceptionInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    await this.assertActiveBd(parsed.data.bdId);
+    const effectiveFrom = parsed.data.effectiveFrom ? new Date(parsed.data.effectiveFrom) : this.now();
+    const expiresAt = new Date(parsed.data.expiresAt);
+    if (expiresAt <= this.now()) throw new ConflictError("Leaderboard exceptions must expire in the future");
+    const created = await this.database.$transaction(async (transaction) => {
+      await this.assertExceptionWindowAvailable(transaction, parsed.data.bdId, effectiveFrom, expiresAt);
+      const row = await transaction.performanceLeaderboardException.create?.({ data: { bdId: parsed.data.bdId, type: parsed.data.type, reason: parsed.data.reason, effectiveFrom, expiresAt, createdById: actor.id, auditMetadata: parsed.data.auditMetadata ?? null } }) as Record<string, unknown> | undefined;
+      if (!row) throw new NotFoundError("The leaderboard exception was not created");
+      await this.auditPerformanceControl(transaction, actor, "performance.leaderboard_exception_created", "performance_leaderboard_exception", String(row.id), null, this.leaderboardExceptionSummary(row, this.now()));
+      return row;
+    });
+    return this.leaderboardExceptionSummary(created, this.now());
+  }
+
+  async revokeLeaderboardException(actor: Actor, exceptionId: string, input: unknown) {
+    this.assertAdmin(actor);
+    const parsed = revokePerformanceLeaderboardExceptionInputSchema.safeParse(input);
+    if (!parsed.success) throw invalid(parsed.error.issues);
+    const current = await this.database.performanceLeaderboardException.findUnique?.({ where: { id: exceptionId } });
+    if (!current) throw new NotFoundError("The leaderboard exception was not found");
+    if (current.revokedAt) throw new ConflictError("The leaderboard exception is already revoked");
+    if (number(current.version) !== parsed.data.expectedVersion) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+    const revokedAt = this.now();
+    const updated = await this.database.$transaction(async (transaction) => {
+      const changed = await transaction.performanceLeaderboardException.updateMany?.({ where: { id: exceptionId, version: parsed.data.expectedVersion, revokedAt: null }, data: { revokedAt, revokedById: actor.id, revocationReason: parsed.data.reason, version: { increment: 1 } } });
+      if (!changed?.count) throw new StaleVersionError(parsed.data.expectedVersion, number(current.version));
+      const row = await transaction.performanceLeaderboardException.findUnique?.({ where: { id: exceptionId } });
+      if (!row) throw new NotFoundError("The leaderboard exception was not found after revocation");
+      await this.auditPerformanceControl(transaction, actor, "performance.leaderboard_exception_revoked", "performance_leaderboard_exception", exceptionId, this.leaderboardExceptionSummary(current, revokedAt), this.leaderboardExceptionSummary(row, revokedAt));
+      return row;
+    });
+    return this.leaderboardExceptionSummary(updated, revokedAt);
   }
 
   async previewPerformanceRules(actor: Actor, input: unknown) {
@@ -663,10 +928,20 @@ export class PerformanceService {
   private async performanceRows(period: { from: string; to: string; bdId?: string }) {
     const bds = await this.database.user.findMany?.({ where: { role: "BD", isActive: true }, orderBy: { displayName: "asc" } }) ?? [];
     const selected = period.bdId ? bds.filter((bd) => String(bd.id) === period.bdId) : bds;
-    return Promise.all(selected.map((bd) => this.performanceRow(bd, period)));
+    const observedAt = this.now();
+    const exceptions = await this.database.performanceLeaderboardException?.findMany?.({
+      where: { effectiveFrom: { lte: observedAt }, expiresAt: { gt: observedAt }, revokedAt: null },
+    }) ?? [];
+    const activeExceptions = exceptions.filter((exception) => {
+      const effectiveFrom = asDate(exception.effectiveFrom);
+      const expiresAt = asDate(exception.expiresAt);
+      return Boolean(effectiveFrom && expiresAt && effectiveFrom <= observedAt && expiresAt > observedAt && !exception.revokedAt);
+    });
+    const exceptionByBdId = new Map(activeExceptions.map((exception) => [String(exception.bdId), exception]));
+    return Promise.all(selected.map((bd) => this.performanceRow(bd, period, exceptionByBdId.get(String(bd.id)))));
   }
 
-  private async performanceRow(bd: Record<string, unknown>, period: { from: string; to: string }) {
+  private async performanceRow(bd: Record<string, unknown>, period: { from: string; to: string }, activeException?: Record<string, unknown>) {
     const from = new Date(period.from); const to = new Date(period.to); const now = this.now();
     const bdStartedAt = asDate(bd.createdAt) ?? from;
     const ruleWindowFrom = bdStartedAt < from ? bdStartedAt : from;
@@ -793,7 +1068,14 @@ export class PerformanceService {
       outcome: { scorePercent: maturedOutcomeScorePercent, maturityElapsed: initialMaturityElapsed },
       weights: scoreWeights,
     });
-    const eligibility = evaluateEligibility({ eligibleWorkingDays, initialMaturityElapsed, qualifiedApplications: qualified, maturedApplications: matured.length, evaluatedAt: now });
+    const eligibility = evaluateEligibility({
+      eligibleWorkingDays,
+      initialMaturityElapsed,
+      qualifiedApplications: qualified,
+      maturedApplications: matured.length,
+      evaluatedAt: now,
+      ...(activeException ? { adminOverride: { reason: String(activeException.reason), expiresAt: asDate(activeException.expiresAt) ?? now } } : {}),
+    });
     const performance = {
       qualifiedApplications: qualified, targetApplications: Math.round(targetApplications), rawTargetAttainmentPercent: Math.round(rawTargetAttainmentPercent * 10) / 10,
       effectiveTargetAttainmentPercent, recruiterResponses: qualifiedLeads.filter((lead) => outcomeStage(lead.status, interviewsByLead.get(String(lead.id)) ?? []) !== "NONE").length,
@@ -802,7 +1084,7 @@ export class PerformanceService {
       followUpSlaCompliancePercent: followUpSlaCompliancePercent === null ? null : Math.round(followUpSlaCompliancePercent * 10) / 10,
       maturedOutcomeScorePercent, balancedScore: balanced.score, scoreCoverage: balanced.status,
     };
-    const quality = this.qualityIndicators(leads, qualityEvents, duplicateReviews);
+    const qualityResult = this.qualityIndicators(leads, qualityEvents, duplicateReviews);
     return {
       bdId: String(bd.id), bdName: String(bd.displayName), rank: null, eligible: eligibility.eligible, qualifiedApplications: qualified,
       performance, warnings: eligibility.warnings,
@@ -810,7 +1092,9 @@ export class PerformanceService {
       eligibilityProgress: Math.min(100, Math.round((eligibleWorkingDays / 10) * 100)),
       estimatedEligibilityDate: null,
       currentDailyTarget: number(this.targetAt(targets, now)?.dailyTarget, number(this.ruleAt(rules, now).defaultDailyTarget, 70)),
-      quality,
+      quality: qualityResult.values,
+      qualityCounts: qualityResult.counts,
+      adminException: activeException ? this.leaderboardExceptionSummary(activeException, now) : null,
     };
   }
 
@@ -882,23 +1166,50 @@ export class PerformanceService {
     const audited = Array.from(latestAudit.values());
     const duplicateLeadIds = new Set(leads.filter((lead) => lead.duplicateClassification === "CONFIRMED").map((lead) => String(lead.id)));
     for (const review of reviews) if (review.status === "REJECTED") duplicateLeadIds.add(String(review.leadId));
-    return {
-      recordHealthRate: percentage(healthy, total),
-      adminAuditPassRate: percentage(audited.filter((event) => event.action === "performance.record_audit_passed").length, audited.length),
-      correctionRate: percentage(corrections.size, total),
-      confirmedDuplicateRate: percentage(leads.filter((lead) => lead.duplicateClassification === "CONFIRMED").length, total),
-      pendingOverrideRate: percentage(reviews.filter((review) => review.status === "PENDING").length, total),
-      rejectedOverrideRate: percentage(reviews.filter((review) => review.status === "REJECTED").length, total),
-      duplicateRate: percentage(duplicateLeadIds.size, total),
+    const counts = {
+      recordHealth: { numerator: healthy, denominator: total },
+      adminAuditPass: { numerator: audited.filter((event) => event.action === "performance.record_audit_passed").length, denominator: audited.length },
+      corrections: { numerator: corrections.size, denominator: total },
+      confirmedDuplicates: { numerator: leads.filter((lead) => lead.duplicateClassification === "CONFIRMED").length, denominator: total },
+      pendingOverrides: { numerator: reviews.filter((review) => review.status === "PENDING").length, denominator: total },
+      rejectedOverrides: { numerator: reviews.filter((review) => review.status === "REJECTED").length, denominator: total },
+      duplicates: { numerator: duplicateLeadIds.size, denominator: total },
     };
+    return { counts, values: {
+      recordHealthRate: percentage(counts.recordHealth.numerator, counts.recordHealth.denominator),
+      adminAuditPassRate: percentage(counts.adminAuditPass.numerator, counts.adminAuditPass.denominator),
+      correctionRate: percentage(counts.corrections.numerator, counts.corrections.denominator),
+      confirmedDuplicateRate: percentage(counts.confirmedDuplicates.numerator, counts.confirmedDuplicates.denominator),
+      pendingOverrideRate: percentage(counts.pendingOverrides.numerator, counts.pendingOverrides.denominator),
+      rejectedOverrideRate: percentage(counts.rejectedOverrides.numerator, counts.rejectedOverrides.denominator),
+      duplicateRate: percentage(counts.duplicates.numerator, counts.duplicates.denominator),
+    } };
   }
 
   private aggregateQuality(rows: Array<Record<string, unknown>>) {
-    const keys = ["recordHealthRate", "adminAuditPassRate", "correctionRate", "confirmedDuplicateRate", "pendingOverrideRate", "rejectedOverrideRate", "duplicateRate"] as const;
-    return Object.fromEntries(keys.map((key) => {
-      const values = rows.map((row) => row[key]).filter((value): value is number => typeof value === "number");
-      return [key, values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null];
-    }));
+    const empty = { numerator: 0, denominator: 0 };
+    const totals = {
+      recordHealth: { ...empty }, adminAuditPass: { ...empty }, corrections: { ...empty },
+      confirmedDuplicates: { ...empty }, pendingOverrides: { ...empty }, rejectedOverrides: { ...empty }, duplicates: { ...empty },
+    };
+    for (const row of rows) {
+      const counts = row.qualityCounts as Record<string, { numerator?: unknown; denominator?: unknown }> | undefined;
+      if (!counts) continue;
+      for (const [key, total] of Object.entries(totals)) {
+        const count = counts[key];
+        total.numerator += number(count?.numerator);
+        total.denominator += number(count?.denominator);
+      }
+    }
+    return {
+      recordHealthRate: percentage(totals.recordHealth.numerator, totals.recordHealth.denominator),
+      adminAuditPassRate: percentage(totals.adminAuditPass.numerator, totals.adminAuditPass.denominator),
+      correctionRate: percentage(totals.corrections.numerator, totals.corrections.denominator),
+      confirmedDuplicateRate: percentage(totals.confirmedDuplicates.numerator, totals.confirmedDuplicates.denominator),
+      pendingOverrideRate: percentage(totals.pendingOverrides.numerator, totals.pendingOverrides.denominator),
+      rejectedOverrideRate: percentage(totals.rejectedOverrides.numerator, totals.rejectedOverrides.denominator),
+      duplicateRate: percentage(totals.duplicates.numerator, totals.duplicates.denominator),
+    };
   }
 
   private leaderboardRow(row: Record<string, unknown>) {
@@ -907,6 +1218,7 @@ export class PerformanceService {
       eligible: Boolean(row.eligible), qualifiedApplications: number(row.qualifiedApplications), performance: row.performance,
       eligibilityProgress: number(row.eligibilityProgress), ineligibilityReason: typeof row.ineligibilityReason === "string" ? row.ineligibilityReason : null,
       estimatedEligibilityDate: iso(row.estimatedEligibilityDate), warnings: Array.isArray(row.warnings) ? row.warnings : [], quality: row.quality,
+      adminException: row.adminException ?? null,
     };
   }
 
@@ -972,6 +1284,100 @@ export class PerformanceService {
         return Boolean(start && start <= at && (!end || end > at));
       })
       .sort((left, right) => number(asDate(right.effectiveFrom)?.getTime()) - number(asDate(left.effectiveFrom)?.getTime()))[0];
+  }
+
+  private assertAdmin(actor: Actor) {
+    if (!actor.isActive || actor.role !== "ADMIN") throw new AuthorizationError();
+    this.authorization.assertRole(actor, ["ADMIN"]);
+  }
+
+  private async assertActiveBd(bdId: string) {
+    const bd = await this.database.user.findUnique?.({ where: { id: bdId } });
+    if (!bd || bd.role !== "BD" || !bd.isActive) throw new ValidationError("The selected user is not an active BD");
+  }
+
+  private intervalsOverlap(start: Date, end: Date | null, candidateStart: Date, candidateEnd: Date | null) {
+    return start.getTime() < (candidateEnd?.getTime() ?? Number.POSITIVE_INFINITY)
+      && candidateStart.getTime() < (end?.getTime() ?? Number.POSITIVE_INFINITY);
+  }
+
+  private async assertTargetWindowAvailable(database: PerformanceDatabase, bdId: string, effectiveFrom: Date, effectiveTo: Date | null, exceptId?: string) {
+    const rows = await database.bdTargetSchedule.findMany?.({ where: { bdId, ...(exceptId ? { id: { not: exceptId } } : {}) } }) ?? [];
+    if (rows.some((row) => {
+      const start = asDate(row.effectiveFrom); if (!start) return false;
+      return this.intervalsOverlap(effectiveFrom, effectiveTo, start, asDate(row.effectiveTo));
+    })) throw new ConflictError("BD target schedule effective dates overlap an existing schedule");
+  }
+
+  private async assertLeaveWindowAvailable(database: PerformanceDatabase, bdId: string, startsAt: Date, endsAt: Date, exceptId?: string) {
+    const rows = await database.performanceApprovedLeave.findMany?.({ where: { bdId, ...(exceptId ? { id: { not: exceptId } } : {}) } }) ?? [];
+    if (rows.some((row) => {
+      const start = asDate(row.startsAt); const end = asDate(row.endsAt);
+      return Boolean(start && end && this.intervalsOverlap(startsAt, endsAt, start, end));
+    })) throw new ConflictError("Approved leave overlaps an existing leave period");
+  }
+
+  private async assertExceptionWindowAvailable(database: PerformanceDatabase, bdId: string, effectiveFrom: Date, expiresAt: Date) {
+    const rows = await database.performanceLeaderboardException.findMany?.({ where: { bdId, revokedAt: null } }) ?? [];
+    if (rows.some((row) => {
+      const start = asDate(row.effectiveFrom); const end = asDate(row.expiresAt);
+      return Boolean(start && end && this.intervalsOverlap(effectiveFrom, expiresAt, start, end));
+    })) throw new ConflictError("A leaderboard exception already applies during this period");
+  }
+
+  private async auditPerformanceControl(
+    database: PerformanceDatabase,
+    actor: Actor,
+    action: string,
+    entityType: string,
+    entityId: string,
+    oldSnapshot: Record<string, unknown> | null,
+    newSnapshot: Record<string, unknown> | null,
+  ) {
+    await database.activityEvent.create?.({ data: {
+      action, actorId: actor.id, actorNameSnapshot: actor.displayName, actorRoleSnapshot: actor.role,
+      profileId: null, leadId: null, entityType, entityId, oldSnapshot, newSnapshot,
+      metadata: { source: "performance_admin_controls" }, requestId: null,
+    } });
+  }
+
+  private targetScheduleSummary(schedule: Record<string, unknown>) {
+    return {
+      id: String(schedule.id), bdId: String(schedule.bdId), dailyTarget: number(schedule.dailyTarget, 70),
+      effectiveFrom: iso(schedule.effectiveFrom), effectiveTo: iso(schedule.effectiveTo), createdById: String(schedule.createdById),
+      auditMetadata: schedule.auditMetadata ?? null, version: number(schedule.version, 1), createdAt: iso(schedule.createdAt), updatedAt: iso(schedule.updatedAt),
+    };
+  }
+
+  private holidaySummary(holiday: Record<string, unknown>) {
+    return {
+      id: String(holiday.id), holidayDate: isoDate(holiday.holidayDate), name: String(holiday.name), createdById: String(holiday.createdById),
+      auditMetadata: holiday.auditMetadata ?? null, version: number(holiday.version, 1), createdAt: iso(holiday.createdAt), updatedAt: iso(holiday.updatedAt),
+    };
+  }
+
+  private leaveSummary(leave: Record<string, unknown>) {
+    return {
+      id: String(leave.id), bdId: String(leave.bdId), startsAt: iso(leave.startsAt), endsAt: iso(leave.endsAt),
+      reason: typeof leave.reason === "string" ? leave.reason : null,
+      availableStartHour: leave.availableStartHour == null ? null : number(leave.availableStartHour),
+      availableEndHour: leave.availableEndHour == null ? null : number(leave.availableEndHour),
+      approvedById: String(leave.approvedById), approvedAt: iso(leave.approvedAt), auditMetadata: leave.auditMetadata ?? null,
+      version: number(leave.version, 1), createdAt: iso(leave.createdAt), updatedAt: iso(leave.updatedAt),
+    };
+  }
+
+  private leaderboardExceptionSummary(exception: Record<string, unknown>, observedAt: Date) {
+    const effectiveFrom = asDate(exception.effectiveFrom);
+    const expiresAt = asDate(exception.expiresAt);
+    return {
+      id: String(exception.id), bdId: String(exception.bdId), type: String(exception.type), reason: String(exception.reason),
+      effectiveFrom: iso(exception.effectiveFrom), expiresAt: iso(exception.expiresAt), createdById: String(exception.createdById),
+      revokedAt: iso(exception.revokedAt), revokedById: exception.revokedById ? String(exception.revokedById) : null,
+      revocationReason: typeof exception.revocationReason === "string" ? exception.revocationReason : null,
+      auditMetadata: exception.auditMetadata ?? null, version: number(exception.version, 1), createdAt: iso(exception.createdAt), updatedAt: iso(exception.updatedAt),
+      active: Boolean(effectiveFrom && expiresAt && effectiveFrom <= observedAt && expiresAt > observedAt && !exception.revokedAt),
+    };
   }
 
   private async rulesForPeriod(from: Date, to: Date): Promise<ReadonlyArray<Record<string, unknown>>> {
