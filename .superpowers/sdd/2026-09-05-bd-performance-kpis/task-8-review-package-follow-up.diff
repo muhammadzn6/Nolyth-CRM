@@ -1,0 +1,213 @@
+diff --git a/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-8-report.md b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-8-report.md
+index a431f85..e7ea1cf 100644
+--- a/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-8-report.md
++++ b/.superpowers/sdd/2026-09-05-bd-performance-kpis/task-8-report.md
+@@ -14,6 +14,12 @@
+ - Admin: rolling-period controls, KPI drill-down, Building Baseline, reassignment queue, rule impact preview, future-effective save, and rule history.
+ - Duplicate workflow: server rejection of incomplete intake, automatic applied date, confirmed duplicate traceability with zero credit, likely-duplicate warning and mandatory override, Admin approval retention, Admin rejection, and rejected-review qualified-credit removal.
+ 
++## Review follow-up coverage
++
++- Duplicate rejection now captures the provisional lead and owner, proves that lead appears in the owner’s Admin-authorized qualified-applications drill-down before review, and proves it is absent after Admin rejection. This verifies the target-credit projection rather than only the lead flag.
++- A signed-in BD now receives an `/unauthorized` redirect for the Admin rules screen and HTTP `403` from the Admin performance summary, performance drill-down, rules, and reassignment-queue APIs. The assertions also reject any leaked qualified-application KPI data.
++- Dedicated 390px viewport checks cover the BD dashboard plus the Admin dashboard and performance-rules route. Each asserts its operational cards are visible and the document has no horizontal overflow.
++
+ ## Verification evidence
+ 
+ Passed:
+@@ -26,11 +32,15 @@ Passed:
+ - `npm --prefix packages/contracts run typecheck`.
+ - `packages/database/node_modules/.bin/prisma validate --schema packages/database/prisma/schema.prisma`.
+ - `git diff --check`.
++- `npm --prefix apps/web run test:e2e -- --list e2e/bd-performance.spec.ts e2e/admin-bd-performance.spec.ts e2e/duplicate-review.spec.ts` — 6 tests discovered across the 3 required specs after the review follow-up.
++- `npm --prefix apps/web run typecheck`.
++- `npm --prefix apps/web run lint`.
+ - Playwright CLI opened and snapshotted `http://localhost:3100/login` successfully.
+ - Controlled local stack startup used only `PORT=3100` and `API_PORT=3101`; `GET http://localhost:3101/health/ready` returned HTTP 200 and `GET http://localhost:3100/login` returned HTTP 200.
+ 
+ Blocked live verification:
+ 
++- The current shell has neither `ORBIT_E2E_ADMIN_PASSWORD` nor `ORBIT_E2E_BD_PASSWORD`, and neither `http://localhost:3100/login` nor `http://localhost:3101/health/ready` is running. An authenticated browser run cannot safely start without the environment-supplied credentials.
+ - `prisma migrate status` against the configured shared local `orbit` database at `localhost:55432` reports migration-history drift: database-only `20260724111622_auth_api_updated` plus seven unapplied BD-performance migrations beginning `20260905010000_harden_performance_rule_invariants`.
+ - The running worker logged `worker.performance_sla_evaluation_failed` with `PrismaClientKnownRequestError`, consistent with that drift.
+ - The full browser run on `3100/3101` executed all three required specs and failed at sign-in. A direct API login with the environment-backed `ORBIT_SEED_ADMIN_PASSWORD` and `Origin: http://localhost:3100` returned HTTP 401 `Invalid email or password`. No fallback or committed credential was introduced.
+diff --git a/apps/web/e2e/admin-bd-performance.spec.ts b/apps/web/e2e/admin-bd-performance.spec.ts
+index acea4ec..76c669a 100644
+--- a/apps/web/e2e/admin-bd-performance.spec.ts
++++ b/apps/web/e2e/admin-bd-performance.spec.ts
+@@ -1,5 +1,5 @@
+ import { expect, test } from "@playwright/test";
+-import { assertPerformancePorts, auditBrowser, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
++import { assertPerformancePorts, auditBrowser, expectNoHorizontalOverflow, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
+ 
+ test.describe("Admin BD performance workflow", () => {
+   test("reviews leaderboard state, drill-downs, baseline, reassignment queue, and future rule history", async ({ page }, testInfo) => {
+@@ -35,4 +35,22 @@ test.describe("Admin BD performance workflow", () => {
+     await saveBrowserScreenshot(page, testInfo, "admin-performance");
+     audit.expectClean();
+   });
++
++  test("keeps Admin dashboard and rules surfaces inside a narrow viewport", async ({ page }, testInfo) => {
++    assertPerformancePorts(testInfo.project.use.baseURL);
++    const adminPassword = requiredE2eCredential("ORBIT_E2E_ADMIN_PASSWORD");
++    const audit = auditBrowser(page);
++    await page.setViewportSize({ width: 390, height: 844 });
++    await signIn(page, "admin@orbit.local", adminPassword);
++
++    await expect(page.getByLabel("BD team performance KPIs")).toBeVisible();
++    await expect(page.getByLabel("Building baseline")).toBeVisible();
++    await expect(page.getByLabel("Admin reassignment queue")).toBeVisible();
++    await expectNoHorizontalOverflow(page);
++
++    await page.goto("/admin/performance");
++    await expect(page.getByRole("heading", { name: "Performance rules" })).toBeVisible();
++    await expectNoHorizontalOverflow(page);
++    audit.expectClean();
++  });
+ });
+diff --git a/apps/web/e2e/bd-performance.spec.ts b/apps/web/e2e/bd-performance.spec.ts
+index 3396740..82faaa8 100644
+--- a/apps/web/e2e/bd-performance.spec.ts
++++ b/apps/web/e2e/bd-performance.spec.ts
+@@ -1,5 +1,5 @@
+ import { expect, test } from "@playwright/test";
+-import { assertPerformancePorts, auditBrowser, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
++import { assertPerformancePorts, auditBrowser, expectNoHorizontalOverflow, getPerformanceApiResponse, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
+ 
+ test.describe("BD performance workflow", () => {
+   test("shows target progress, score coverage, peer-safe metrics, and interview actions", async ({ page }, testInfo) => {
+@@ -51,4 +51,45 @@ test.describe("BD performance workflow", () => {
+     await saveBrowserScreenshot(page, testInfo, "bd-performance");
+     audit.expectClean();
+   });
++
++  test("denies Admin performance routes and APIs to a BD", async ({ page }, testInfo) => {
++    assertPerformancePorts(testInfo.project.use.baseURL);
++    const bdPassword = requiredE2eCredential("ORBIT_E2E_BD_PASSWORD");
++    const audit = auditBrowser(page);
++    await signIn(page, "maya.bd@orbit.local", bdPassword);
++
++    await page.goto("/admin/performance");
++    await expect(page).toHaveURL(/\/unauthorized$/);
++    await expect(page.getByRole("heading", { name: "Performance rules" })).toHaveCount(0);
++    await expect(page.getByText("Rule version history")).toHaveCount(0);
++
++    const now = new Date().toISOString();
++    const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
++    for (const path of [
++      `/performance/admin?${new URLSearchParams({ from, to: now })}`,
++      `/performance/admin/drilldown?${new URLSearchParams({ from, to: now, metric: "QUALIFIED_APPLICATIONS" })}`,
++      "/performance/rules",
++      "/performance/admin/reassignment-queue",
++    ]) {
++      const response = await getPerformanceApiResponse(page, path);
++      expect(response.status, `${path} must deny a BD`).toBe(403);
++      expect(JSON.stringify(response.body)).not.toContain("qualifiedApplications");
++      audit.allowResponse(path.split("?")[0]!);
++    }
++    audit.expectClean();
++  });
++
++  test("keeps BD performance surfaces inside a narrow viewport", async ({ page }, testInfo) => {
++    assertPerformancePorts(testInfo.project.use.baseURL);
++    const bdPassword = requiredE2eCredential("ORBIT_E2E_BD_PASSWORD");
++    const audit = auditBrowser(page);
++    await page.setViewportSize({ width: 390, height: 844 });
++    await signIn(page, "maya.bd@orbit.local", bdPassword);
++
++    await expect(page.getByLabel("BD work queue")).toBeVisible();
++    await expect(page.getByLabel("Personal BD performance")).toBeVisible();
++    await expect(page.getByLabel("BD team ranking")).toBeVisible();
++    await expectNoHorizontalOverflow(page);
++    audit.expectClean();
++  });
+ });
+diff --git a/apps/web/e2e/duplicate-review.spec.ts b/apps/web/e2e/duplicate-review.spec.ts
+index b4a23cb..daf7530 100644
+--- a/apps/web/e2e/duplicate-review.spec.ts
++++ b/apps/web/e2e/duplicate-review.spec.ts
+@@ -1,9 +1,28 @@
+ import { expect, test } from "@playwright/test";
+-import { assertPerformancePorts, auditBrowser, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
++import { assertPerformancePorts, auditBrowser, getPerformanceApiResponse, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
+ 
+-type IntakeResponse = { data?: { duplicate?: { classification?: string; qualifiedCredit?: boolean; reviewId?: string | null }; lead?: { appliedDate?: string } } };
++type IntakeResponse = { data?: { duplicate?: { classification?: string; qualifiedCredit?: boolean; reviewId?: string | null }; lead?: { id?: string; createdById?: string; appliedDate?: string } } };
+ type DuplicateReviewResponse = { data?: { status?: string; provisionalCreditGranted?: boolean; lead?: { qualifiedCredit?: boolean; duplicateClassification?: string } } };
+ 
++function qualifiedLeadIds(body: unknown): string[] {
++  if (!body || typeof body !== "object") return [];
++  const data = (body as { data?: unknown }).data;
++  if (!Array.isArray(data)) return [];
++  return data.flatMap((item) => {
++    if (!item || typeof item !== "object") return [];
++    const lead = (item as { lead?: unknown }).lead;
++    if (!lead || typeof lead !== "object") return [];
++    const id = (lead as { id?: unknown }).id;
++    return typeof id === "string" ? [id] : [];
++  });
++}
++
++function todayPerformanceRange() {
++  const now = new Date();
++  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
++  return { from: from.toISOString(), to: now.toISOString() };
++}
++
+ async function fillApplication(page: import("@playwright/test").Page, input: { company: string; title: string; url: string }) {
+   const form = page.getByRole("form", { name: "Add application" });
+   await form.getByLabel("Job title").fill(input.title);
+@@ -84,9 +103,16 @@ test.describe("Duplicate review workflow", () => {
+     const rejectedProvisional = await submitIntake(page);
+     expect(rejectedProvisional.status).toBe(201);
+     expect(rejectedProvisional.body.data?.duplicate).toMatchObject({ classification: "LIKELY", qualifiedCredit: true });
++    const rejectedLead = rejectedProvisional.body.data?.lead;
++    if (!rejectedLead?.id || !rejectedLead.createdById) throw new Error("The likely-duplicate intake response must identify its lead and BD owner.");
+ 
+     await page.context().clearCookies();
+     await signIn(page, "admin@orbit.local", adminPassword);
++    const period = todayPerformanceRange();
++    const qualifiedDrilldown = new URLSearchParams({ ...period, metric: "QUALIFIED_APPLICATIONS", bdId: rejectedLead.createdById });
++    const beforeRejection = await getPerformanceApiResponse(page, `/performance/admin/drilldown?${qualifiedDrilldown}`);
++    expect(beforeRejection.status).toBe(200);
++    expect(qualifiedLeadIds(beforeRejection.body)).toContain(rejectedLead.id);
+     await page.goto("/admin/performance");
+     const approvedReview = page.locator("article").filter({ hasText: `${approved.company} · ${approved.title}` });
+     await expect(approvedReview).toBeVisible();
+@@ -104,6 +130,9 @@ test.describe("Duplicate review workflow", () => {
+     expect((await rejection).ok()).toBeTruthy();
+     await expect(page.getByRole("status")).toContainText("Duplicate override rejected.");
+     await expect(page.getByText(`${rejected.company} · ${rejected.title}`)).toHaveCount(0);
++    const afterRejection = await getPerformanceApiResponse(page, `/performance/admin/drilldown?${new URLSearchParams({ ...todayPerformanceRange(), metric: "QUALIFIED_APPLICATIONS", bdId: rejectedLead.createdById })}`);
++    expect(afterRejection.status).toBe(200);
++    expect(qualifiedLeadIds(afterRejection.body)).not.toContain(rejectedLead.id);
+     await saveBrowserScreenshot(page, testInfo, "duplicate-review");
+     audit.expectClean();
+   });
+diff --git a/apps/web/e2e/performance-helpers.ts b/apps/web/e2e/performance-helpers.ts
+index cf120f7..1afdcfb 100644
+--- a/apps/web/e2e/performance-helpers.ts
++++ b/apps/web/e2e/performance-helpers.ts
+@@ -25,6 +25,22 @@ export function assertPerformancePorts(baseURL: string | undefined) {
+   expect([web.port, api.port]).not.toContain("3001");
+ }
+ 
++export async function getPerformanceApiResponse(page: Page, path: string): Promise<{ status: number; body: unknown }> {
++  const apiOrigin = process.env.ORBIT_E2E_API_ORIGIN ?? "http://localhost:3101";
++  return page.evaluate(async ({ apiOrigin, path }) => {
++    const response = await fetch(`${apiOrigin}/api/v1${path}`, { credentials: "include" });
++    return { status: response.status, body: await response.json().catch(() => null) };
++  }, { apiOrigin, path });
++}
++
++export async function expectNoHorizontalOverflow(page: Page) {
++  const dimensions = await page.locator("html").evaluate((element) => ({
++    clientWidth: element.clientWidth,
++    scrollWidth: element.scrollWidth,
++  }));
++  expect(dimensions.scrollWidth, `horizontal overflow: ${dimensions.scrollWidth}px content in ${dimensions.clientWidth}px viewport`).toBeLessThanOrEqual(dimensions.clientWidth + 1);
++}
++
+ export async function signIn(page: Page, email: string, password: string) {
+   await page.goto("/login");
+   await page.getByLabel("Work email").fill(email);
