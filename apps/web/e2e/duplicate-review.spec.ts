@@ -1,8 +1,27 @@
 import { expect, test } from "@playwright/test";
-import { assertPerformancePorts, auditBrowser, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
+import { assertPerformancePorts, auditBrowser, getPerformanceApiResponse, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
 
-type IntakeResponse = { data?: { duplicate?: { classification?: string; qualifiedCredit?: boolean; reviewId?: string | null }; lead?: { appliedDate?: string } } };
+type IntakeResponse = { data?: { duplicate?: { classification?: string; qualifiedCredit?: boolean; reviewId?: string | null }; lead?: { id?: string; createdById?: string; appliedDate?: string } } };
 type DuplicateReviewResponse = { data?: { status?: string; provisionalCreditGranted?: boolean; lead?: { qualifiedCredit?: boolean; duplicateClassification?: string } } };
+
+function qualifiedLeadIds(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
+  const data = (body as { data?: unknown }).data;
+  if (!Array.isArray(data)) return [];
+  return data.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const lead = (item as { lead?: unknown }).lead;
+    if (!lead || typeof lead !== "object") return [];
+    const id = (lead as { id?: unknown }).id;
+    return typeof id === "string" ? [id] : [];
+  });
+}
+
+function todayPerformanceRange() {
+  const now = new Date();
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return { from: from.toISOString(), to: now.toISOString() };
+}
 
 async function fillApplication(page: import("@playwright/test").Page, input: { company: string; title: string; url: string }) {
   const form = page.getByRole("form", { name: "Add application" });
@@ -84,9 +103,16 @@ test.describe("Duplicate review workflow", () => {
     const rejectedProvisional = await submitIntake(page);
     expect(rejectedProvisional.status).toBe(201);
     expect(rejectedProvisional.body.data?.duplicate).toMatchObject({ classification: "LIKELY", qualifiedCredit: true });
+    const rejectedLead = rejectedProvisional.body.data?.lead;
+    if (!rejectedLead?.id || !rejectedLead.createdById) throw new Error("The likely-duplicate intake response must identify its lead and BD owner.");
 
     await page.context().clearCookies();
     await signIn(page, "admin@orbit.local", adminPassword);
+    const period = todayPerformanceRange();
+    const qualifiedDrilldown = new URLSearchParams({ ...period, metric: "QUALIFIED_APPLICATIONS", bdId: rejectedLead.createdById });
+    const beforeRejection = await getPerformanceApiResponse(page, `/performance/admin/drilldown?${qualifiedDrilldown}`);
+    expect(beforeRejection.status).toBe(200);
+    expect(qualifiedLeadIds(beforeRejection.body)).toContain(rejectedLead.id);
     await page.goto("/admin/performance");
     const approvedReview = page.locator("article").filter({ hasText: `${approved.company} · ${approved.title}` });
     await expect(approvedReview).toBeVisible();
@@ -104,6 +130,9 @@ test.describe("Duplicate review workflow", () => {
     expect((await rejection).ok()).toBeTruthy();
     await expect(page.getByRole("status")).toContainText("Duplicate override rejected.");
     await expect(page.getByText(`${rejected.company} · ${rejected.title}`)).toHaveCount(0);
+    const afterRejection = await getPerformanceApiResponse(page, `/performance/admin/drilldown?${new URLSearchParams({ ...todayPerformanceRange(), metric: "QUALIFIED_APPLICATIONS", bdId: rejectedLead.createdById })}`);
+    expect(afterRejection.status).toBe(200);
+    expect(qualifiedLeadIds(afterRejection.body)).not.toContain(rejectedLead.id);
     await saveBrowserScreenshot(page, testInfo, "duplicate-review");
     audit.expectClean();
   });

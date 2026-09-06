@@ -25,6 +25,22 @@ export function assertPerformancePorts(baseURL: string | undefined) {
   expect([web.port, api.port]).not.toContain("3001");
 }
 
+export async function getPerformanceApiResponse(page: Page, path: string): Promise<{ status: number; body: unknown }> {
+  const apiOrigin = process.env.ORBIT_E2E_API_ORIGIN ?? "http://localhost:3101";
+  return page.evaluate(async ({ apiOrigin, path }) => {
+    const response = await fetch(`${apiOrigin}/api/v1${path}`, { credentials: "include" });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  }, { apiOrigin, path });
+}
+
+export async function expectNoHorizontalOverflow(page: Page) {
+  const dimensions = await page.locator("html").evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(dimensions.scrollWidth, `horizontal overflow: ${dimensions.scrollWidth}px content in ${dimensions.clientWidth}px viewport`).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+}
+
 export async function signIn(page: Page, email: string, password: string) {
   await page.goto("/login");
   await page.getByLabel("Work email").fill(email);

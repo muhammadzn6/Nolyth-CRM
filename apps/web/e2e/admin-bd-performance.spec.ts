@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { assertPerformancePorts, auditBrowser, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
+import { assertPerformancePorts, auditBrowser, expectNoHorizontalOverflow, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
 
 test.describe("Admin BD performance workflow", () => {
   test("reviews leaderboard state, drill-downs, baseline, reassignment queue, and future rule history", async ({ page }, testInfo) => {
@@ -33,6 +33,24 @@ test.describe("Admin BD performance workflow", () => {
     await expect(page.getByRole("status")).toContainText("Future-effective performance rules saved.");
     await expect(page.getByRole("heading", { name: "Rule version history" })).toBeVisible();
     await saveBrowserScreenshot(page, testInfo, "admin-performance");
+    audit.expectClean();
+  });
+
+  test("keeps Admin dashboard and rules surfaces inside a narrow viewport", async ({ page }, testInfo) => {
+    assertPerformancePorts(testInfo.project.use.baseURL);
+    const adminPassword = requiredE2eCredential("ORBIT_E2E_ADMIN_PASSWORD");
+    const audit = auditBrowser(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page, "admin@orbit.local", adminPassword);
+
+    await expect(page.getByLabel("BD team performance KPIs")).toBeVisible();
+    await expect(page.getByLabel("Building baseline")).toBeVisible();
+    await expect(page.getByLabel("Admin reassignment queue")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await page.goto("/admin/performance");
+    await expect(page.getByRole("heading", { name: "Performance rules" })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
     audit.expectClean();
   });
 });
