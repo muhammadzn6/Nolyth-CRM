@@ -67,6 +67,7 @@ test.describe("BD performance workflow", () => {
     const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     for (const path of [
       `/performance/admin?${new URLSearchParams({ from, to: now })}`,
+      `/performance/admin/drilldown?${new URLSearchParams({ from, to: now, metric: "QUALIFIED_APPLICATIONS" })}`,
       "/performance/rules",
       "/performance/admin/reassignment-queue",
     ]) {

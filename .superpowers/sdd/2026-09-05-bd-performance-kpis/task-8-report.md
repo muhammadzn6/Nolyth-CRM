@@ -17,7 +17,7 @@
 ## Review follow-up coverage
 
 - Duplicate rejection now captures the provisional lead and owner, proves that lead appears in the owner’s Admin-authorized qualified-applications drill-down before review, and proves it is absent after Admin rejection. This verifies the target-credit projection rather than only the lead flag.
-- A signed-in BD now receives an `/unauthorized` redirect for the Admin rules screen and HTTP `403` from the Admin performance, rules, and reassignment-queue APIs. The assertions also reject any leaked qualified-application KPI data.
+- A signed-in BD now receives an `/unauthorized` redirect for the Admin rules screen and HTTP `403` from the Admin performance summary, performance drill-down, rules, and reassignment-queue APIs. The assertions also reject any leaked qualified-application KPI data.
 - Dedicated 390px viewport checks cover the BD dashboard plus the Admin dashboard and performance-rules route. Each asserts its operational cards are visible and the document has no horizontal overflow.
 
 ## Verification evidence
