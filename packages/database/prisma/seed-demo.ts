@@ -1,5 +1,6 @@
 import { argon2id, hash } from "argon2";
 import { database } from "../src/client";
+import { assertDemoSeedDatabaseAllowed } from "../src/demo-seed-safety";
 
 const DEMO_PASSWORD = process.env.ORBIT_DEMO_PASSWORD;
 const ids = {
@@ -24,6 +25,11 @@ const ids = {
 };
 
 async function main() {
+  assertDemoSeedDatabaseAllowed({
+    databaseUrl: process.env.DATABASE_URL,
+    nodeEnv: process.env.NODE_ENV,
+    allowDemoSeed: process.env.ORBIT_ALLOW_DEMO_SEED === "true",
+  });
   if (!DEMO_PASSWORD) throw new Error("ORBIT_DEMO_PASSWORD must be set before running the disposable demo seed.");
   const passwordHash = await hash(DEMO_PASSWORD, { type: argon2id });
   const admin = await database.user.findUnique({ where: { email: "admin@orbit.local" } });

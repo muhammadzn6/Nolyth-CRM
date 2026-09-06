@@ -8,6 +8,13 @@
 - Documented disposable-database seed/start/test commands using `3100` and `3101` only.
 - Made the demo seed require `ORBIT_DEMO_PASSWORD` and removed its password echo.
 
+## Final review follow-up
+
+- Added an enforceable demo-seed guard before any hashing or Prisma query. It permits only `orbit_task3_test` and `orbit_e2e` database names by default.
+- An explicit `ORBIT_ALLOW_DEMO_SEED=true` override is available for a deliberate non-production local exception; the guard rejects every production invocation, including that override.
+- Added a four-case safety test covering shared-database rejection, approved non-production override, production override rejection, and the `orbit_e2e` allowlist path.
+- Extended authenticated-BD denial coverage to `GET /performance/rules/history`, `POST /performance/rules/preview`, and `PATCH /performance/rules`. These calls use Playwright's browser-context API client (shared signed-in cookie storage), assert `403`, and reject leaked rule or KPI data.
+
 ## Browser coverage
 
 - BD: daily target progress, remaining target, personal score coverage, personal drill-down, peer-safe quality summary, and Edit/Open application/Open calendar interview actions.
@@ -32,6 +39,12 @@ Passed:
 - `npm --prefix packages/contracts run typecheck`.
 - `packages/database/node_modules/.bin/prisma validate --schema packages/database/prisma/schema.prisma`.
 - `git diff --check`.
+- `npx vitest run packages/database/prisma/seed-demo-safety.test.ts` — 4/4 passed.
+- `npm --prefix packages/database run typecheck`.
+- `npm --prefix apps/web run typecheck`.
+- `npm --prefix apps/web run lint`.
+- `npm --prefix apps/web run test:e2e -- --list e2e/bd-performance.spec.ts e2e/admin-bd-performance.spec.ts e2e/duplicate-review.spec.ts` — 6 tests discovered across the 3 required specs.
+- `NODE_ENV=production DATABASE_URL=…/orbit_e2e pnpm db:seed:demo` — rejected by the demo-seed guard before any database connection or mutation.
 - `npm --prefix apps/web run test:e2e -- --list e2e/bd-performance.spec.ts e2e/admin-bd-performance.spec.ts e2e/duplicate-review.spec.ts` — 6 tests discovered across the 3 required specs after the review follow-up.
 - `npm --prefix apps/web run typecheck`.
 - `npm --prefix apps/web run lint`.
@@ -40,7 +53,7 @@ Passed:
 
 Blocked live verification:
 
-- The current shell has neither `ORBIT_E2E_ADMIN_PASSWORD` nor `ORBIT_E2E_BD_PASSWORD`, and neither `http://localhost:3100/login` nor `http://localhost:3101/health/ready` is running. An authenticated browser run cannot safely start without the environment-supplied credentials.
+- The current shell has neither `ORBIT_E2E_ADMIN_PASSWORD` nor `ORBIT_E2E_BD_PASSWORD`, and fresh checks returned `000` for both `http://localhost:3100/login` and `http://localhost:3101/health/ready`. An authenticated browser run cannot safely start without the environment-supplied credentials.
 - `prisma migrate status` against the configured shared local `orbit` database at `localhost:55432` reports migration-history drift: database-only `20260724111622_auth_api_updated` plus seven unapplied BD-performance migrations beginning `20260905010000_harden_performance_rule_invariants`.
 - The running worker logged `worker.performance_sla_evaluation_failed` with `PrismaClientKnownRequestError`, consistent with that drift.
 - The full browser run on `3100/3101` executed all three required specs and failed at sign-in. A direct API login with the environment-backed `ORBIT_SEED_ADMIN_PASSWORD` and `Origin: http://localhost:3100` returned HTTP 401 `Invalid email or password`. No fallback or committed credential was introduced.

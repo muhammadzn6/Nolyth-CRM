@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { assertPerformancePorts, auditBrowser, expectNoHorizontalOverflow, getPerformanceApiResponse, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
+import { assertPerformancePorts, auditBrowser, expectNoHorizontalOverflow, getPerformanceApiResponse, requestPerformanceApiResponse, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
 
 test.describe("BD performance workflow", () => {
   test("shows target progress, score coverage, peer-safe metrics, and interview actions", async ({ page }, testInfo) => {
@@ -75,6 +75,26 @@ test.describe("BD performance workflow", () => {
       expect(response.status, `${path} must deny a BD`).toBe(403);
       expect(JSON.stringify(response.body)).not.toContain("qualifiedApplications");
       audit.allowResponse(path.split("?")[0]!);
+    }
+
+    const futureEffectiveFrom = "2030-01-01T00:00:00.000Z";
+    for (const request of [
+      { path: "/performance/rules/history", method: "GET" as const },
+      { path: "/performance/rules/preview", method: "POST" as const, data: { effectiveFrom: futureEffectiveFrom } },
+      {
+        path: "/performance/rules",
+        method: "PATCH" as const,
+        data: {
+          id: "10000000-0000-4000-8000-000000000001",
+          expectedVersion: 1,
+          effectiveFrom: futureEffectiveFrom,
+        },
+      },
+    ]) {
+      const response = await requestPerformanceApiResponse(page, request);
+      expect(response.status, `${request.method} ${request.path} must deny a BD`).toBe(403);
+      expect(JSON.stringify(response.body)).not.toContain("defaultDailyTarget");
+      expect(JSON.stringify(response.body)).not.toContain("qualifiedApplications");
     }
     audit.expectClean();
   });

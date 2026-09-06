@@ -33,6 +33,22 @@ export async function getPerformanceApiResponse(page: Page, path: string): Promi
   }, { apiOrigin, path });
 }
 
+export async function requestPerformanceApiResponse(
+  page: Page,
+  request: { path: string; method: "GET" | "PATCH" | "POST"; data?: unknown },
+): Promise<{ status: number; body: unknown }> {
+  const apiOrigin = process.env.ORBIT_E2E_API_ORIGIN ?? "http://localhost:3101";
+  const webOrigin = process.env.ORBIT_E2E_WEB_ORIGIN ?? "http://localhost:3100";
+  const response = await page.context().request.fetch(`${apiOrigin}/api/v1${request.path}`, {
+    method: request.method,
+    data: request.data,
+    headers: { origin: webOrigin },
+    failOnStatusCode: false,
+  });
+
+  return { status: response.status(), body: await response.json().catch(() => null) };
+}
+
 export async function expectNoHorizontalOverflow(page: Page) {
   const dimensions = await page.locator("html").evaluate((element) => ({
     clientWidth: element.clientWidth,

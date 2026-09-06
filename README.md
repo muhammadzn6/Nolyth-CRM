@@ -76,12 +76,13 @@ Server processes read variables from their process environment. Run the `set -a`
 
 ### BD performance browser checks
 
-Use a disposable local database for performance browser checks. Set `DATABASE_URL` to that throwaway database before running migration or seed commands; never point these commands at a shared local database. Start the local stack only on web port `3100` and API port `3101`; do not use `3000` or `3001`, which may belong to other services.
+Use a disposable local database for performance browser checks. `pnpm db:seed:demo` fails closed unless `DATABASE_URL` names `orbit_task3_test` or `orbit_e2e`. For an intentional non-production exception only, set `ORBIT_ALLOW_DEMO_SEED=true`; the command always refuses when `NODE_ENV=production`. Never point these commands at a shared local database. Start the local stack only on web port `3100` and API port `3101`; do not use `3000` or `3001`, which may belong to other services.
 
 ```bash
 set -a
 source .env
 set +a
+export DATABASE_URL='postgresql://orbit:orbit@localhost:55432/orbit_e2e'
 export ORBIT_SEED_ADMIN_PASSWORD='choose-a-local-admin-password'
 export ORBIT_DEMO_PASSWORD='choose-a-local-demo-password'
 pnpm db:migrate
