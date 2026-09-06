@@ -66,3 +66,10 @@ Do not migrate, reset, or reseed the configured shared local database. A clean d
 ## Commit scope
 
 Only Task 8 specs, helper, Playwright configuration, README, demo/local seed adjustment, and Task 8 review artifacts are staged. Existing calendar, dashboard, lead-intake, CSS, and ledger edits remain uncommitted.
+
+## Final runtime recheck
+
+- Frontend is currently running at `http://localhost:3100` and `/login` returned HTTP 200.
+- Backend is currently running at `http://localhost:3101`; `/health/live` and `/health/ready` both returned HTTP 200.
+- No process was started on ports 3000 or 3001.
+- Authenticated E2E remains pending until valid `ORBIT_E2E_ADMIN_PASSWORD` and `ORBIT_E2E_BD_PASSWORD` values are supplied and the shared database migration drift is resolved on a disposable database.

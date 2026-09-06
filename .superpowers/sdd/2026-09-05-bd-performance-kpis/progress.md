@@ -79,3 +79,45 @@
 
 - Final commit records server-owned target creation, GiST exclusion constraints for BD leave and active leaderboard-exception intervals, and distinct `EXCLUDE` and `PROVISIONAL` leaderboard projections.
 - Ruling: revoked leaderboard exceptions do not participate in the database interval constraint, because revocation ends their operational effect and a later exception must be permitted for the same period. Cost if wrong: an Admin would have to wait for the prior exception period to end before recording a replacement.
+
+### Task 4 — final SLA correction and approval
+
+- Final commit: `aff0deb`; reassigned owners use rules effective at handoff time, and late Admin reassignment durably records the overdue transition, audit event, and idempotent notifications before reopening the follow-up.
+- Final review: approved in `task-4-review-report-final12.md`; no Critical, Important, or Minor findings.
+- Verification: 130 focused tests, 9 disposable PostgreSQL persistence tests, five TypeScript checks, Prisma validation, and diff checks passed.
+
+### Task 5 — complete
+
+- Commits: `4988856`, `1aff133`, `8ab883d`, `0930353`
+- Delivered typed performance API helpers, Admin performance rules/review UI, future holiday/leave controls, effective-date history/provenance, and field-level validation.
+- Final review: approved in `task-5-review-report-final3.md`; no remaining findings.
+- Verification: 67 focused tests, web/backend/API typechecks, Prisma validation, and diff checks passed.
+
+### Task 6 — complete
+
+- Commits: `e06f69a`, `0930353`
+- Delivered Admin BD performance dashboard, KPI drill-downs, leaderboard, Building Baseline, quality guardrails, resilient reassignment queue, and Admin-only queue API.
+- Final review: approved in `task-6-review-report-final.md`; no remaining findings.
+- Verification: 90 web, 112 API, and 177 backend tests, all TypeScript checks, web lint, Prisma validation, and diff checks passed.
+
+### Task 7 — complete
+
+- Commits: `ab04559`, `ed3aca7`, `d9b52d8`, `c611075`, `8a60e77`, `21ec4df`
+- Delivered BD operational dashboard, server-authoritative high-volume work-queue totals, personal score/coverage, peer-safe ranking, selected-interview quick actions, degraded performance states, and calendar date navigation.
+- Final review: approved after the selected-date regression correction; isolated suite passed with no remaining findings.
+- Verification: 102 web tests, web typecheck, web lint, and diff checks passed in the isolated committed checkout. Existing unrelated uncommitted calendar/visual changes remain separate.
+
+### Task 6 — in progress
+
+- Base commit: `aff0deb`.
+- Ruling: Task 5's typed web-client performance reader has not been implemented, but Task 6 must remain limited to its listed files. The allowed server page will therefore make the smallest contract-validated request to the existing Admin performance endpoints and pass their server-owned values into Task 6 components. Cost if wrong: the helper is temporarily route-local until Task 5 can consolidate typed performance reads into the shared client.
+- Blocker: Task 4 exposes no Admin-readable queue for `NEEDS_REASSIGNMENT` or `ADMIN_REASSIGNMENT_OVERDUE` follow-ups. Its `REASSIGNMENTS` drill-down only returns persisted handoff history after `reassignedAt`, which cannot truthfully power the Task 6 open reassignment queue. A minimal authenticated queue read is required before this task can meet its acceptance criteria without inventing client data.
+
+### Task 5 — in progress
+
+- Base: `aff0deb`; implementing typed performance API helpers and the Admin Performance Rules/duplicate-review UI from `task-5-brief.md`.
+
+### Task 7 — in progress
+
+- Base commit: `0930353`.
+- Ruling: `BdPerformanceResponse` exposes the effective current target and next effective date, but no historical target-series or next-target value. The BD surface will render only those server-owned values and label the current target as the effective target context. Cost if wrong: a later contract extension can add a historical target timeline without changing peer privacy.
