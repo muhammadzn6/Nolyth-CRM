@@ -1,5 +1,7 @@
 # Task 8 — final review-fix package
 
+**Review range:** `506cccb..7e91635`
+
 ## Scope
 
 This follow-up resolves every Important finding in `task-8-review-report-final.md` without touching the unrelated calendar, dashboard, or intake work in the working tree.
