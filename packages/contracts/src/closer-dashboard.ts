@@ -7,6 +7,14 @@ import { taskSummarySchema } from "./tasks";
 
 const text = z.string().trim().min(1);
 
+export const closerDashboardLifetimeFunnelSchema = z.strictObject({
+  applicationsHandled: z.number().int().nonnegative(),
+  interviewsScheduled: z.number().int().nonnegative(),
+  callsAttended: z.number().int().nonnegative(),
+  offers: z.number().int().nonnegative(),
+  placements: z.number().int().nonnegative(),
+});
+
 export const closerDashboardMeetingSchema = interviewSummarySchema.extend({
   candidateName: text,
   profileName: text,
@@ -47,6 +55,7 @@ export const closerDashboardDataSchema = z.strictObject({
   conflicts: z.array(interviewSummarySchema),
   notifications: z.array(notificationSummarySchema),
   recentActivity: z.array(activityEventSummarySchema),
+  lifetimeFunnel: closerDashboardLifetimeFunnelSchema,
   calendarConnection: calendarConnectionSchema,
 });
 
@@ -54,3 +63,4 @@ export type CloserDashboardData = z.infer<typeof closerDashboardDataSchema>;
 export type CloserDashboardMeeting = z.infer<typeof closerDashboardMeetingSchema>;
 export type CloserDashboardExternalMeeting = z.infer<typeof closerDashboardExternalMeetingSchema>;
 export type CloserDashboardApplication = z.infer<typeof closerDashboardApplicationSchema>;
+export type CloserDashboardLifetimeFunnel = z.infer<typeof closerDashboardLifetimeFunnelSchema>;
