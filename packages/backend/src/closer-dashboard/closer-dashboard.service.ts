@@ -160,6 +160,42 @@ function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
 }
 
+function lifetimeFunnel(leads: readonly Record<string, unknown>[]): CloserDashboardData["lifetimeFunnel"] {
+  const applicationsHandled = new Set<string>();
+  const interviewsScheduled = new Set<string>();
+  const callsAttended = new Set<string>();
+  const offers = new Set<string>();
+  const placements = new Set<string>();
+  const offerStatuses = new Set(["OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"]);
+  const placementStatuses = new Set(["PLACED", "STARTED"]);
+
+  for (const lead of leads) {
+    const id = String(lead.id);
+    applicationsHandled.add(id);
+
+    const interviews = Array.isArray(lead.interviews) ? lead.interviews.map(record) : [];
+    if (interviews.length === 0) continue;
+    interviewsScheduled.add(id);
+
+    if (!interviews.some((round) => round.attendance === "ATTENDED")) continue;
+    callsAttended.add(id);
+
+    const statuses = [lead.status, ...(Array.isArray(lead.statusTransitions) ? lead.statusTransitions.map(record).map((transition) => transition.toStatus) : [])];
+    const hasOffer = (Array.isArray(lead.offers) && lead.offers.length > 0) || statuses.some((status) => offerStatuses.has(String(status)));
+    const hasPlacement = Boolean(lead.placedAt || lead.startDate || lead.startedAt) || statuses.some((status) => placementStatuses.has(String(status)));
+    if (hasOffer) offers.add(id);
+    if (hasPlacement) placements.add(id);
+  }
+
+  return {
+    applicationsHandled: applicationsHandled.size,
+    interviewsScheduled: interviewsScheduled.size,
+    callsAttended: callsAttended.size,
+    offers: offers.size,
+    placements: placements.size,
+  };
+}
+
 function meetingWithContext(row: Record<string, unknown>): CloserDashboardMeeting {
   const lead = record(row.lead);
   const profile = record(lead.profile);
@@ -236,24 +272,44 @@ export class CloserDashboardService {
     // `timezone` remains the closer's preference for activity timestamps.
     const calendarTimezone = "Asia/Karachi";
     const { start: startOfToday, end: endOfToday } = zonedDayBounds(now, calendarTimezone);
-    const assignedLeads = await this.database.jobLead.findMany({
-      where: { responsibleCloserId: actor.id, status: { notIn: ["CLOSED", "STARTED"] } },
-      select: {
-        id: true,
-        profileId: true,
-        jobTitle: true,
-        companyName: true,
-        companyId: true,
-        status: true,
-        interviews: {
-          where: { status: "SCHEDULED", startsAt: { gte: now } },
-          orderBy: { startsAt: "asc" },
-          take: 1,
-          select: { startsAt: true },
+    const [assignedLeads, lifetimeLeads] = await Promise.all([
+      this.database.jobLead.findMany({
+        where: { responsibleCloserId: actor.id, status: { notIn: ["CLOSED", "STARTED"] } },
+        select: {
+          id: true,
+          profileId: true,
+          jobTitle: true,
+          companyName: true,
+          companyId: true,
+          status: true,
+          interviews: {
+            where: { status: "SCHEDULED", startsAt: { gte: now } },
+            orderBy: { startsAt: "asc" },
+            take: 1,
+            select: { startsAt: true },
+          },
+          profile: { select: { name: true, candidate: { select: { firstName: true, lastName: true, preferredName: true } } } },
         },
-        profile: { select: { name: true, candidate: { select: { firstName: true, lastName: true, preferredName: true } } } },
-      },
-    });
+      }),
+      this.database.jobLead.findMany({
+        where: {
+          OR: [
+            { responsibleCloserId: actor.id },
+            { interviews: { some: { closerId: actor.id } } },
+          ],
+        },
+        select: {
+          id: true,
+          status: true,
+          placedAt: true,
+          startDate: true,
+          startedAt: true,
+          interviews: { where: { closerId: actor.id }, select: { closerId: true, attendance: true } },
+          offers: { select: { id: true } },
+          statusTransitions: { select: { toStatus: true } },
+        },
+      }),
+    ]);
     const profileIds = [...new Set(assignedLeads.map((row) => String(row.profileId)))];
     console.info("[Orbit backend] closer dashboard request", { actorId: actor.id, timezone, calendarTimezone, now: now.toISOString(), startOfToday: startOfToday.toISOString(), endOfToday: endOfToday.toISOString() });
     const externalEvents = this.googleCalendar
@@ -336,6 +392,7 @@ export class CloserDashboardService {
       conflicts: conflicts.map(interview),
       notifications: notifications.map(notification),
       recentActivity: recentActivity as ActivityEventSummary[],
+      lifetimeFunnel: lifetimeFunnel(lifetimeLeads),
       calendarConnection,
       externalMeetings,
     };

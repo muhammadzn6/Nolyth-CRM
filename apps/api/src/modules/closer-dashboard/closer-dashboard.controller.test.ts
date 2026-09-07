@@ -18,6 +18,7 @@ const closer = {
 function dashboard() {
   return {
     timezone: "UTC",
+    assignedApplications: [],
     nextMeeting: null,
     todayMeetings: [],
     externalMeetings: [],
@@ -26,6 +27,13 @@ function dashboard() {
     conflicts: [],
     notifications: [],
     recentActivity: [],
+    lifetimeFunnel: {
+      applicationsHandled: 0,
+      interviewsScheduled: 0,
+      callsAttended: 0,
+      offers: 0,
+      placements: 0,
+    },
     calendarConnection: {
       connected: false,
       email: null,

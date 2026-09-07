@@ -102,16 +102,33 @@ function notification(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function lifetimeLead(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "30000000-0000-4000-8000-000000000100",
+    responsibleCloserId: closer.id,
+    status: "APPLIED",
+    placedAt: null,
+    startDate: null,
+    startedAt: null,
+    interviews: [],
+    offers: [],
+    statusTransitions: [],
+    ...overrides,
+  };
+}
+
 function createPersistence({
   interviews = [] as Array<Record<string, unknown>>,
   tasks = [] as Array<Record<string, unknown>>,
   notifications = [] as Array<Record<string, unknown>>,
+  lifetimeLeads = [] as Array<Record<string, unknown>>,
   companyIds = ["30000000-0000-4000-8000-000000000001"],
   timezone = "UTC",
 }: {
   interviews?: Array<Record<string, unknown>>;
   tasks?: Array<Record<string, unknown>>;
   notifications?: Array<Record<string, unknown>>;
+  lifetimeLeads?: Array<Record<string, unknown>>;
   companyIds?: string[];
   timezone?: string;
 } = {}) {
@@ -163,17 +180,29 @@ function createPersistence({
     task: taskStore,
     notification: notificationStore,
     user: userStore,
-      jobLead: {
-      findMany: vi.fn().mockResolvedValue(companyIds.map((companyId, index) => ({
-        id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-        profileId: "50000000-0000-4000-8000-000000000001",
-        companyId,
-        jobTitle: "Backend Engineer",
-        companyName: "Northstar Labs",
-        status: "INTERVIEWING",
-        interviews: interviews.filter((item) => item.leadId === `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` && item.status === "SCHEDULED" && (item.startsAt as Date) >= NOW).sort((left, right) => Number(left.startsAt) - Number(right.startsAt)).slice(0, 1),
-        profile: { name: "Backend Engineering", candidate: { firstName: "Eyong", lastName: "Candidate", preferredName: null } },
-      }))),
+    jobLead: {
+      findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        if (Array.isArray(where.OR)) {
+          const closerId = String((where.OR[0] as Record<string, unknown>).responsibleCloserId);
+          return lifetimeLeads
+            .filter((lead) => lead.responsibleCloserId === closerId || (lead.interviews as Array<Record<string, unknown>>).some((round) => round.closerId === closerId))
+            .map((lead) => ({
+              ...lead,
+              interviews: (lead.interviews as Array<Record<string, unknown>>).filter((round) => round.closerId === closerId),
+            }));
+        }
+
+        return companyIds.map((companyId, index) => ({
+          id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          profileId: "50000000-0000-4000-8000-000000000001",
+          companyId,
+          jobTitle: "Backend Engineer",
+          companyName: "Northstar Labs",
+          status: "INTERVIEWING",
+          interviews: interviews.filter((item) => item.leadId === `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` && item.status === "SCHEDULED" && (item.startsAt as Date) >= NOW).sort((left, right) => Number(left.startsAt) - Number(right.startsAt)).slice(0, 1),
+          profile: { name: "Backend Engineering", candidate: { firstName: "Eyong", lastName: "Candidate", preferredName: null } },
+        }));
+      }),
     },
   };
 }
@@ -185,6 +214,7 @@ function createService(options: {
   activity?: ActivityEventSummary[];
   timezone?: string;
   companyIds?: string[];
+  lifetimeLeads?: Array<Record<string, unknown>>;
   googleCalendar?: { statusForProfile: ReturnType<typeof vi.fn>; listUpcomingEventsForProfile: ReturnType<typeof vi.fn> };
 } = {}) {
   const database = createPersistence(options);
@@ -237,6 +267,70 @@ describe("CloserDashboardService", () => {
     expect(dashboard.conflicts.map((item) => item.id)).toEqual(["20000000-0000-4000-8000-000000000003"]);
     expect(dashboard.openTasks.map((item) => item.id)).toEqual(["40000000-0000-4000-8000-000000000001"]);
     expect(dashboard.notifications.map((item) => item.id)).toEqual(["60000000-0000-4000-8000-000000000001"]);
+  });
+
+  it("aggregates all-time distinct applications credited to the closer", async () => {
+    const { service, database } = createService({
+      lifetimeLeads: [
+        lifetimeLead({ id: "30000000-0000-4000-8000-000000000101" }),
+        lifetimeLead({
+          id: "30000000-0000-4000-8000-000000000102",
+          responsibleCloserId: otherCloserId,
+          interviews: [{ closerId: closer.id, attendance: "UNKNOWN" }],
+        }),
+        lifetimeLead({
+          id: "30000000-0000-4000-8000-000000000103",
+          interviews: [
+            { closerId: closer.id, attendance: "ATTENDED" },
+            { closerId: closer.id, attendance: "ATTENDED" },
+            { closerId: otherCloserId, attendance: "ATTENDED" },
+          ],
+          offers: [{ id: "70000000-0000-4000-8000-000000000001" }],
+        }),
+        lifetimeLead({
+          id: "30000000-0000-4000-8000-000000000104",
+          responsibleCloserId: otherCloserId,
+          status: "CLOSED",
+          interviews: [{ closerId: closer.id, attendance: "ATTENDED" }],
+          statusTransitions: [{ toStatus: "PLACED" }],
+        }),
+        lifetimeLead({
+          id: "30000000-0000-4000-8000-000000000105",
+          interviews: [{ closerId: closer.id, attendance: "MISSED" }],
+          offers: [{ id: "70000000-0000-4000-8000-000000000002" }],
+          placedAt: NOW,
+          status: "PLACED",
+        }),
+        lifetimeLead({
+          id: "30000000-0000-4000-8000-000000000106",
+          responsibleCloserId: otherCloserId,
+          status: "PLACED",
+          placedAt: NOW,
+          interviews: [{ closerId: otherCloserId, attendance: "ATTENDED" }],
+          offers: [{ id: "70000000-0000-4000-8000-000000000003" }],
+        }),
+      ],
+    });
+
+    const dashboard = await service.get(closer);
+
+    expect(dashboard.lifetimeFunnel).toEqual({
+      applicationsHandled: 5,
+      interviewsScheduled: 4,
+      callsAttended: 2,
+      offers: 2,
+      placements: 1,
+    });
+    expect(database.jobLead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        OR: [
+          { responsibleCloserId: closer.id },
+          { interviews: { some: { closerId: closer.id } } },
+        ],
+      },
+    }));
+    const lifetimeQuery = database.jobLead.findMany.mock.calls.find(([query]: [{ where: Record<string, unknown> }]) => Array.isArray(query.where.OR))?.[0];
+    expect(lifetimeQuery).toEqual(expect.not.objectContaining({ take: expect.anything() }));
   });
 
   it("groups the agenda using the closer timezone instead of UTC", async () => {
@@ -296,6 +390,13 @@ describe("CloserDashboardService", () => {
       conflicts: [],
       notifications: [],
       recentActivity: [],
+      lifetimeFunnel: {
+        applicationsHandled: 0,
+        interviewsScheduled: 0,
+        callsAttended: 0,
+        offers: 0,
+        placements: 0,
+      },
       calendarConnection: {
         connected: false,
         email: null,
