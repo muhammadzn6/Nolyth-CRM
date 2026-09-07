@@ -136,17 +136,43 @@ function OperationalPulse({ applications, todayPerformance, workQueue }: { appli
   </div></Card>;
 }
 
+function smoothCurve(points: Array<{ x: number; y: number }>): string {
+  return points.slice(1).reduce((path, point, index) => {
+    const previous = points[index];
+    const midpoint = (previous.x + point.x) / 2;
+    return `${path} C ${midpoint} ${previous.y}, ${midpoint} ${point.y}, ${point.x} ${point.y}`;
+  }, `M ${points[0].x} ${points[0].y}`);
+}
+
+function placementBandPath(heights: number[], xPositions: number[], bandIndex: number): string {
+  const center = 130;
+  const bandStart = bandIndex / 4;
+  const bandEnd = (bandIndex + 1) / 4;
+  const upper = heights.map((height, index) => ({ x: xPositions[index], y: center - height / 2 + height * bandStart }));
+  const lower = heights.map((height, index) => ({ x: xPositions[index], y: center - height / 2 + height * bandEnd })).reverse();
+  return `${smoothCurve(upper)} L ${lower[0].x} ${lower[0].y} ${smoothCurve(lower).replace(/^M [\d.]+ [\d.]+/, "")} Z`;
+}
+
+export function placementStageThickness(value: number, largestValue: number): number {
+  if (value <= 0 || largestValue <= 0) return 0;
+  return Math.max(3, 160 * Math.min(value / largestValue, 1));
+}
+
 function FunnelAndTrend({ workQueue }: { workQueue?: BdWorkQueue }) {
   const totals = workQueue?.pipelineTotals;
-  const stages = [
+  const journeyStages = [
     ["Jobs applied", totals?.jobsApplied, "/leads?pipelineStage=APPLIED"],
-    ["Active jobs", totals?.activeJobs, "/leads?pipelineStage=ACTIVE"],
     ["Interviews", totals?.interviews, "/leads?pipelineStage=INTERVIEW"],
     ["Offers", totals?.offers, "/leads?pipelineStage=OFFER"],
     ["Placements", totals?.placements, "/leads?pipelineStage=PLACEMENT"],
   ] as const;
+  const values = journeyStages.map(([, value]) => value ?? 0);
+  const largestValue = Math.max(1, ...values);
+  const heights = values.map((value) => placementStageThickness(value, largestValue));
+  const xPositions = journeyStages.map((_, index) => 50 + index * (900 / (journeyStages.length - 1)));
+  const flowLabel = `Placement flow: ${journeyStages.map(([label, value]) => `${label} ${count(value)}`).join(", ")}`;
   const conversion = (from?: number, to?: number) => from ? `${Math.round(((to ?? 0) / from) * 100)}%` : "—";
-  return <Card aria-label="BD lifetime placement funnel" className="editorial-insight-card editorial-surface-lines p-5 sm:p-6"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Lifetime view</p><h2>Placement journey</h2></div><span className="bd-scope-pill">All time</span></header><div className="bd-lifetime-funnel">{stages.map(([label, value, href]) => <a href={href} key={label}><span>{label}</span><strong>{count(value)}</strong></a>)}</div><div className="bd-funnel-conversions"><span>Applied → active <strong>{conversion(totals?.jobsApplied, totals?.activeJobs)}</strong></span><span>Interview → offer <strong>{conversion(totals?.interviews, totals?.offers)}</strong></span><span>Offer → placement <strong>{conversion(totals?.offers, totals?.placements)}</strong></span></div></Card>;
+  return <Card aria-label="BD lifetime placement funnel" className="editorial-insight-card editorial-surface-lines p-5 sm:p-6"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Lifetime view</p><h2>Placement journey</h2></div><div className="bd-lifetime-meta"><a aria-label={`${count(totals?.activeJobs)} active jobs now`} className="bd-lifetime-active" href="/leads?pipelineStage=ACTIVE"><strong>{count(totals?.activeJobs)}</strong> active now</a><span className="bd-scope-pill">All time</span></div></header><div className="bd-lifetime-flow-scroll"><div className="bd-lifetime-flow" data-testid="bd-lifetime-flow"><svg aria-label={flowLabel} preserveAspectRatio="none" role="img" viewBox="0 0 1000 260"><title>Lifetime placement journey</title><desc>Stream thickness is proportional to lifetime stage totals. Non-zero stages retain a three-pixel minimum; zero stages have no strand.</desc>{[0, 1, 2, 3].map((band) => <path className={`bd-lifetime-flow-band bd-lifetime-flow-band-${band + 1}`} d={placementBandPath(heights, xPositions, band)} key={band} />)}{xPositions.map((x) => <line className="bd-lifetime-flow-checkpoint" key={x} x1={x} x2={x} y1="28" y2="232" />)}</svg><div className="bd-lifetime-flow-labels">{journeyStages.map(([label, value, href], index) => <a className={`bd-lifetime-flow-label ${index % 2 ? "is-bottom" : "is-top"}`} href={href} key={label} style={{ left: `${xPositions[index] / 10}%` }}><span>{label}</span><strong>{count(value)}</strong></a>)}</div></div></div><div className="bd-funnel-conversions"><span>Applied → interview <strong>{conversion(totals?.jobsApplied, totals?.interviews)}</strong></span><span>Interview → offer <strong>{conversion(totals?.interviews, totals?.offers)}</strong></span><span>Offer → placement <strong>{conversion(totals?.offers, totals?.placements)}</strong></span></div></Card>;
 }
 
 function RecentApplications({ applications }: { applications: LeadSummary[] }) {

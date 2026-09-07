@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { BdPerformanceResponse, BdWorkQueue, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
 import { describe, expect, it } from "vitest";
 
-import { BdDashboard } from "./bd-dashboard";
+import { BdDashboard, placementStageThickness } from "./bd-dashboard";
 import { BdPeerRanking } from "../performance/bd-peer-ranking";
 import { BdPersonalQuality } from "../performance/bd-personal-quality";
 
@@ -144,9 +144,15 @@ describe("BD performance dashboard", () => {
     expect(html).toContain("6");
     expect(html).toContain("2");
     expect(html).toContain("pipelineStage=APPLIED");
+    expect(html).toContain("pipelineStage=ACTIVE");
     expect(html).toContain("pipelineStage=INTERVIEW");
     expect(html).toContain("pipelineStage=OFFER");
     expect(html).toContain("pipelineStage=PLACEMENT");
+    expect(html).toContain('data-testid="bd-lifetime-flow"');
+    expect(html).toContain('aria-label="Placement flow: Jobs applied 208, Interviews 19, Offers 6, Placements 2"');
+    expect(html).toContain('aria-label="41 active jobs now"');
+    expect(html.match(/class="bd-lifetime-flow-band/g)).toHaveLength(4);
+    expect(html).not.toContain("bd-lifetime-funnel");
     expect(html).toContain("Total");
     expect(html).toContain("Average");
     expect(html).toContain("Peak");
@@ -186,6 +192,40 @@ describe("BD performance dashboard", () => {
     expect(html).toContain("64");
     expect(html).toContain("linkedin.com · 4");
     expect(html).not.toContain("linkedin.com · 208");
+  });
+
+  it("collapses the placement stream completely when no placement exists", () => {
+    const html = renderToStaticMarkup(<BdDashboard
+      actor={actor}
+      applications={applications}
+      interviews={interviews}
+      performance={performance}
+      todayPerformance={performance}
+      workQueue={{ ...workQueue, pipelineTotals: { ...workQueue.pipelineTotals, placements: 0 } }}
+    />);
+
+    expect(html).toContain("Placements 0");
+    expect(html).toContain("zero stages have no strand");
+  });
+
+  it("uses proportional thickness while preserving a minimal non-zero strand", () => {
+    expect(placementStageThickness(0, 208)).toBe(0);
+    expect(placementStageThickness(104, 208)).toBe(80);
+    expect(placementStageThickness(2, 208)).toBe(3);
+  });
+
+  it("keeps the current active-job snapshot outside the cumulative journey", () => {
+    const html = renderToStaticMarkup(<BdDashboard
+      actor={actor}
+      applications={applications}
+      interviews={interviews}
+      performance={performance}
+      todayPerformance={performance}
+      workQueue={{ ...workQueue, pipelineTotals: { jobsApplied: 6, activeJobs: 2, interviews: 4, offers: 3, placements: 2 } }}
+    />);
+
+    expect(html).toContain('aria-label="Placement flow: Jobs applied 6, Interviews 4, Offers 3, Placements 2"');
+    expect(html).toContain('aria-label="2 active jobs now"');
   });
 
   it("reconciles every saved platform while grouping the long tail as Other", () => {
