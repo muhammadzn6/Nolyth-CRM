@@ -333,6 +333,29 @@ describe("CloserDashboardService", () => {
     expect(lifetimeQuery).toEqual(expect.not.objectContaining({ take: expect.anything() }));
   });
 
+  it("counts an attended timestamp-only placement as an offer", async () => {
+    const { service } = createService({
+      lifetimeLeads: [lifetimeLead({
+        interviews: [{ closerId: closer.id, attendance: "ATTENDED" }],
+        placedAt: NOW,
+      })],
+    });
+
+    const funnel = (await service.get(closer)).lifetimeFunnel;
+
+    expect(funnel).toMatchObject({
+      applicationsHandled: 1,
+      interviewsScheduled: 1,
+      callsAttended: 1,
+      offers: 1,
+      placements: 1,
+    });
+    expect(funnel.applicationsHandled).toBeGreaterThanOrEqual(funnel.interviewsScheduled);
+    expect(funnel.interviewsScheduled).toBeGreaterThanOrEqual(funnel.callsAttended);
+    expect(funnel.callsAttended).toBeGreaterThanOrEqual(funnel.offers);
+    expect(funnel.offers).toBeGreaterThanOrEqual(funnel.placements);
+  });
+
   it("groups the agenda using the closer timezone instead of UTC", async () => {
     const { service } = createService({
       timezone: "Asia/Karachi",

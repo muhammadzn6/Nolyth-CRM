@@ -183,7 +183,7 @@ function lifetimeFunnel(leads: readonly Record<string, unknown>[]): CloserDashbo
     const statuses = [lead.status, ...(Array.isArray(lead.statusTransitions) ? lead.statusTransitions.map(record).map((transition) => transition.toStatus) : [])];
     const hasOffer = (Array.isArray(lead.offers) && lead.offers.length > 0) || statuses.some((status) => offerStatuses.has(String(status)));
     const hasPlacement = Boolean(lead.placedAt || lead.startDate || lead.startedAt) || statuses.some((status) => placementStatuses.has(String(status)));
-    if (hasOffer) offers.add(id);
+    if (hasOffer || hasPlacement) offers.add(id);
     if (hasPlacement) placements.add(id);
   }
 
