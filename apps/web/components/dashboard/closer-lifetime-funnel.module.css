@@ -62,6 +62,8 @@
 }
 
 .band {
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
   transition: filter 180ms ease, opacity 180ms ease;
 }
 
@@ -71,18 +73,22 @@
 
 .bandOne {
   fill: #ffb192;
+  stroke: #ffb192;
 }
 
 .bandTwo {
   fill: #f88961;
+  stroke: #f88961;
 }
 
 .bandThree {
   fill: #ee6847;
+  stroke: #ee6847;
 }
 
 .bandFour {
   fill: #df4f31;
+  stroke: #df4f31;
 }
 
 .checkpoint {
@@ -97,17 +103,31 @@
 }
 
 .stage {
+  --stage-offset: -50%;
+
   position: absolute;
   z-index: 1;
   display: grid;
   width: 8.6rem;
-  translate: -50% 0;
+  translate: var(--stage-offset) 0;
   border-radius: 0.85rem;
   color: var(--muted-foreground);
   padding: 0.45rem 0.55rem;
   line-height: 1.15;
   pointer-events: auto;
   transition: background-color 160ms ease, color 160ms ease, translate 160ms ease;
+}
+
+.stageStart {
+  --stage-offset: 0%;
+}
+
+.stageCenter {
+  --stage-offset: -50%;
+}
+
+.stageEnd {
+  --stage-offset: -100%;
 }
 
 .stageTop {
@@ -136,7 +156,7 @@
 .stage:hover {
   background: rgb(255 255 255 / 72%);
   color: #c8462d;
-  translate: -50% -2px;
+  translate: var(--stage-offset) -2px;
 }
 
 .stage:focus-visible {

@@ -40,9 +40,9 @@ function bandPath(heights: number[], xPositions: number[], bandIndex: number): s
   return `${smoothCurve(upper)} L ${lower[0].x} ${lower[0].y} ${smoothCurve(lower).replace(/^M [\d.]+ [\d.]+/, "")} Z`;
 }
 
-function stageThickness(value: number, largestValue: number): number {
+export function closerStageThickness(value: number, largestValue: number): number {
   if (value <= 0 || largestValue <= 0) return 0;
-  return Math.max(3, 156 * Math.min(value / largestValue, 1));
+  return 156 * Math.min(value / largestValue, 1);
 }
 
 export function CloserLifetimeFunnel({ totals }: CloserLifetimeFunnelProps) {
@@ -60,8 +60,12 @@ export function CloserLifetimeFunnel({ totals }: CloserLifetimeFunnelProps) {
   const visibleStageCount = firstZeroIndex === -1 ? stages.length : firstZeroIndex;
   const visibleHeights = values
     .slice(0, visibleStageCount)
-    .map((value) => stageThickness(value, largestValue));
+    .map((value) => closerStageThickness(value, largestValue));
   const visibleXPositions = xPositions.slice(0, visibleStageCount);
+  if (firstZeroIndex > 0) {
+    visibleHeights.push(0);
+    visibleXPositions.push((xPositions[firstZeroIndex - 1] + xPositions[firstZeroIndex]) / 2);
+  }
   const flowLabel = `Placement flow: ${stages.map((stage) => `${stage.label} ${count(stage.value)}`).join(", ")}`;
 
   return (
@@ -86,17 +90,22 @@ export function CloserLifetimeFunnel({ totals }: CloserLifetimeFunnelProps) {
           </svg>
 
           <div className={styles.labels}>
-            {stages.map((stage, index) => (
-              <a
-                className={`${styles.stage} ${index % 2 === 0 ? styles.stageTop : styles.stageBottom}`}
-                href={stage.href}
-                key={stage.label}
-                style={{ left: `${xPositions[index] / 10}%` }}
-              >
-                <span>{stage.label}</span>
-                <strong>{count(stage.value)}</strong>
-              </a>
-            ))}
+            {stages.map((stage, index) => {
+              const alignment = index === 0 ? "start" : index === stages.length - 1 ? "end" : "center";
+              const alignmentClass = alignment === "start" ? styles.stageStart : alignment === "end" ? styles.stageEnd : styles.stageCenter;
+              return (
+                <a
+                  className={`${styles.stage} ${index % 2 === 0 ? styles.stageTop : styles.stageBottom} ${alignmentClass}`}
+                  data-alignment={alignment}
+                  href={stage.href}
+                  key={stage.label}
+                  style={{ left: `${xPositions[index] / 10}%` }}
+                >
+                  <span>{stage.label}</span>
+                  <strong>{count(stage.value)}</strong>
+                </a>
+              );
+            })}
           </div>
         </div>
       </div>
