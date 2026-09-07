@@ -23,30 +23,35 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
       value: performance.qualifiedApplications.toLocaleString(),
       detail: `${performance.targetApplications.toLocaleString()} target`,
       metric: "QUALIFIED_APPLICATIONS",
+      tone: "bg-primary-soft/65",
     },
     {
       label: "Target attainment",
       value: percent(performance.effectiveTargetAttainmentPercent),
       detail: `${percent(performance.rawTargetAttainmentPercent)} raw`,
       metric: "TARGET_ATTAINMENT",
+      tone: "bg-success-soft/70",
     },
     {
       label: "Recruiter responses",
       value: performance.recruiterResponses.toLocaleString(),
       detail: "Response records",
       metric: "RECRUITER_RESPONSES",
+      tone: "bg-[#f8f1ed]",
     },
     {
       label: "Interviews scheduled",
       value: performance.interviewsScheduled.toLocaleString(),
       detail: "Scheduled interviews",
       metric: "INTERVIEWS_SCHEDULED",
+      tone: "bg-[#fff0eb]",
     },
     {
       label: "Interviews needing scheduling",
       value: performance.interviewsNeedingScheduling.toLocaleString(),
       detail: "Recruiter responses awaiting a calendar entry",
       metric: "INTERVIEWS_NEEDING_SCHEDULING",
+      tone: "bg-warning-soft/75",
     },
   ] as const;
 
@@ -61,7 +66,7 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
       </nav>
     </header>
     <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      {cards.map((card) => <a className="rounded-[22px] border border-border bg-card p-4 shadow-sm transition hover:border-primary/35 hover:bg-primary-soft" href={performanceHref(period, card.metric)} key={card.label}>
+      {cards.map((card) => <a className={`rounded-[22px] border border-white/80 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/25 ${card.tone}`} href={performanceHref(period, card.metric)} key={card.label}>
         <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
         <p className="mt-2 text-3xl font-bold tracking-[-0.05em] text-foreground">{card.value}</p>
         <p className="mt-1 text-xs text-muted-foreground">{card.detail}</p>

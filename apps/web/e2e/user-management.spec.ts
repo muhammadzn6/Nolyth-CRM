@@ -22,11 +22,12 @@ test("admin can invite a teammate, the teammate accepts, and admin manages acces
   await page.goto("/admin/users");
 
   await expect(page.getByRole("heading", { name: "Users and invitations" })).toBeVisible();
+  await page.getByRole("button", { name: "Invite user" }).click();
   const createForm = page.locator('form[aria-label="Create user invitation"]');
   await createForm.getByLabel("Name").fill(teammateName);
   await createForm.getByLabel("Work email").fill(teammateEmail);
   await createForm.getByLabel("Timezone").fill("UTC");
-  await createForm.getByRole("button", { name: "Create the first teammate" }).click();
+  await createForm.getByRole("button", { name: "Create invitation" }).click();
 
   await expect(page.getByRole("status")).toContainText(`Invitation ready for ${teammateName}`);
   const invitationLink = await page

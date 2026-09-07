@@ -50,6 +50,7 @@ describe("Admin BD performance composition", () => {
     expect(adminHtml).toContain("Team performance");
     expect(adminHtml).toContain("Quality guardrails");
     expect(adminHtml).toContain("Reassignment queue");
+    expect(adminHtml).toContain("admin-surface-system");
     expect(bdHtml).not.toContain("Team performance");
   });
 });

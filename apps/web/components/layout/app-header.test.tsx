@@ -64,7 +64,7 @@ describe("AppHeader user menu", () => {
   });
 
   function trigger(): HTMLButtonElement {
-    const element = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+    const element = container.querySelector<HTMLButtonElement>('button[aria-label="Account menu"]');
     if (!element) throw new Error("User menu trigger not found");
     return element;
   }
@@ -186,5 +186,31 @@ describe("AppHeader user menu", () => {
     await act(async () => request.resolve(undefined));
 
     expect(replaceMock).toHaveBeenCalledWith("/login");
+  });
+
+  it("keeps the current page identity visible in the command header", () => {
+    expect(container.querySelector('[data-testid="command-page-identity"]')?.textContent).toContain("Dashboard");
+  });
+
+  it("uses the warm action accent for the primary creation control", () => {
+    const quickAdd = container.querySelector<HTMLButtonElement>('button[aria-label="Quick add"]');
+
+    expect(quickAdd?.className).toContain("bg-action");
+    expect(quickAdd?.className).not.toContain("bg-primary");
+  });
+
+  it.each([
+    ["ADMIN", ["Add candidate", "Add profile", "Invite user", "Add interview"]],
+    ["BD", ["Add application", "Log recruiter response", "Log communication"]],
+    ["CLOSER", ["Add interview outcome", "Add feedback", "Add task"]],
+  ] as const)("shows role-scoped quick actions for %s", (role, labels) => {
+    act(() => root.render(<AppHeader actor={{ ...actor, role }} />));
+    const quickAdd = container.querySelector<HTMLButtonElement>('button[aria-label="Quick add"]');
+    expect(quickAdd).not.toBeNull();
+
+    act(() => quickAdd?.click());
+
+    const menu = container.querySelector('[aria-label="Quick add menu"]');
+    for (const label of labels) expect(menu?.textContent).toContain(label);
   });
 });

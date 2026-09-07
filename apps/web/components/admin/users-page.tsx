@@ -15,6 +15,7 @@ import {
   type CreateUserResult,
 } from "../../lib/api-client";
 import { RoleSelect, UserForm } from "./user-form";
+import { Dialog } from "../ui/dialog";
 
 type Notice = { tone: "success" | "danger"; message: string };
 
@@ -57,13 +58,7 @@ function CreateUserForm({
   }
 
   return (
-    <Card className="p-5 sm:p-6">
-      <header>
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Invite teammate</p>
-        <h2 className="mt-2 text-lg font-bold tracking-[-0.02em] text-foreground">Create user invitation</h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">Administrators create users, then share a one-time password setup link.</p>
-      </header>
-      <form aria-label="Create user invitation" className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleSubmit}>
+      <form aria-label="Create user invitation" className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
         <Field htmlFor="new-displayName" label="Name">
           <Input autoComplete="name" disabled={pending} id="new-displayName" name="displayName" required />
         </Field>
@@ -76,13 +71,12 @@ function CreateUserForm({
         <Field htmlFor="new-timezone" label="Timezone">
           <Input defaultValue="UTC" disabled={pending} id="new-timezone" name="timezone" required />
         </Field>
-        <div className="md:col-span-2 xl:col-span-4">
+        <div className="flex justify-end md:col-span-2">
           <Button disabled={pending} type="submit">
-            {pending ? "Creating invitation…" : "Create the first teammate"}
+            {pending ? "Creating invitation…" : "Create invitation"}
           </Button>
         </div>
       </form>
-    </Card>
   );
 }
 
@@ -93,6 +87,7 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
   const [notice, setNotice] = useState<Notice>();
   const [pending, setPending] = useState<string>();
   const [createdInvitation, setCreatedInvitation] = useState<{ user: UserSummary; url: string }>();
+  const [createOpen, setCreateOpen] = useState(false);
 
   const canManageUsers = actor.role === "ADMIN" && actor.isActive;
 
@@ -111,6 +106,7 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
 
   useEffect(() => {
     void load();
+    if (new URLSearchParams(window.location.search).get("new") === "user") setCreateOpen(true);
   }, [load]);
 
   const activeCount = useMemo(() => users?.filter((user) => user.isActive).length ?? 0, [users]);
@@ -123,6 +119,7 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
       setUsers((current) => [result.user, ...(current ?? [])]);
       setCreatedInvitation({ user: result.user, url: invitationUrl(result.invitationToken) });
       setNotice({ tone: "success", message: `Invitation ready for ${result.user.displayName}` });
+      setCreateOpen(false);
       return result;
     } catch (reason) {
       const message = errorMessage(reason, "Orbit could not create this user. Try again.");
@@ -203,9 +200,7 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
           <h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Users and invitations</h1>
           <p className="mt-1.5 text-sm leading-6 text-muted-foreground">Manage roles, account status, sessions, and one-time setup links.</p>
         </div>
-        <Button aria-label="Refresh users" disabled={loading} onClick={() => void load()} variant="secondary">
-          {loading ? "Refreshing…" : "Refresh"}
-        </Button>
+        <div className="flex gap-2"><Button aria-label="Invite user" onClick={() => setCreateOpen(true)}>Invite user</Button><Button aria-label="Refresh users" disabled={loading} onClick={() => void load()} variant="secondary">{loading ? "Refreshing…" : "Refresh"}</Button></div>
       </div>
 
       <div aria-label="User summary" className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border/70 py-3 text-sm">
@@ -214,7 +209,9 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
         <span className="text-muted-foreground"><span className="font-semibold text-foreground">{users ? users.length - activeCount : "—"}</span> inactive</span>
       </div>
 
-      <CreateUserForm pending={pending === "create"} onCreate={handleCreate} />
+      <Dialog description="Create an account and generate a one-time setup link." onOpenChange={setCreateOpen} open={createOpen} title="Invite teammate">
+        <CreateUserForm pending={pending === "create"} onCreate={handleCreate} />
+      </Dialog>
 
       {createdInvitation ? (
         <Card className="border-primary/30 bg-primary-soft p-4 sm:p-5">
@@ -258,12 +255,12 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
       {!loading && !error && users?.length === 0 ? (
         <EmptyState
           title="No users yet"
-          description="Create the first teammate with the invitation form above."
+          description="Invite the first teammate to Orbit."
         />
       ) : null}
 
       {!error && users && users.length > 0 ? (
-        <section aria-label="Managed users" className="grid gap-3">
+        <Card aria-label="Managed users" className="data-scroll-region max-h-[calc(100vh-13rem)] divide-y divide-border overflow-y-auto p-0">
           {users.map((user) => (
             <UserForm
               key={user.id}
@@ -275,7 +272,7 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
               user={user}
             />
           ))}
-        </section>
+        </Card>
       ) : null}
     </div>
   );

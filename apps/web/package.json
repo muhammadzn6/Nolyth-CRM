@@ -6,9 +6,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node ../../scripts/start-web.mjs",
+    "build": "node ../../scripts/build-web.mjs",
+    "start": "node ../../scripts/start-web-production.mjs",
     "lint": "eslint --config ../../eslint.config.mjs .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",

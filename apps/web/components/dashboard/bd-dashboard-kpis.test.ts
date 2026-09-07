@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { buildBdDashboardKpis, buildBdSecondarySignals } from "./bd-dashboard-kpis";
+import { buildBdDashboardKpis, buildBdDailyActivitySummary, buildBdSecondarySignals } from "./bd-dashboard-kpis";
 
 describe("buildBdDashboardKpis", () => {
+  it("builds the approved daily target summary from qualified and recorded applications", () => {
+    const summary = buildBdDailyActivitySummary({
+      qualifiedApplications: 68,
+      recordedApplications: 73,
+      dailyTarget: 70,
+      uniqueCompanies: 28,
+      uniqueJobs: 41,
+      uniqueRecruiters: 19,
+      duplicates: 5,
+      pendingOverrides: 0,
+    });
+
+    expect(summary).toMatchObject({
+      qualifiedApplications: 68,
+      recordedApplications: 73,
+      remaining: 2,
+      uniqueCompanies: 28,
+      uniqueJobs: 41,
+      uniqueRecruiters: 19,
+      duplicates: 5,
+    });
+    expect(summary.platforms).toEqual([]);
+  });
+
   it("prioritizes daily application throughput and intake quality", () => {
     const cards = buildBdDashboardKpis({
       applications: [

@@ -8,16 +8,16 @@ test.describe("BD performance workflow", () => {
     const audit = auditBrowser(page);
     await signIn(page, "maya.bd@orbit.local", bdPassword);
 
-    await page.getByLabel("Add application").click();
+    await page.locator("main").getByLabel("Add application").click();
     await expect(page).toHaveURL(/\/leads\?new=application/);
     await expect(page.getByRole("form", { name: "Add application" })).toBeVisible();
     await page.goto("/");
 
-    await expect(page.getByLabel("BD work queue")).toBeVisible();
-    const qualifiedApplications = page.getByLabel(/Qualified applications today:/);
-    await expect(qualifiedApplications).toBeVisible();
-    await expect(page.getByLabel(/Remaining target:/)).toBeVisible();
-    await qualifiedApplications.click();
+    const dailyTracker = page.getByRole("region", { name: "BD daily activity tracker" });
+    await expect(dailyTracker).toBeVisible();
+    await expect(dailyTracker).toContainText("qualified applications");
+    await expect(dailyTracker).toContainText("remaining");
+    await dailyTracker.getByRole("link", { name: /View \d+ qualified applications/ }).click();
     await expect(page).toHaveURL(/\/leads$/);
     await page.goto("/");
     const personalPerformance = page.getByLabel("Personal BD performance");
@@ -30,24 +30,24 @@ test.describe("BD performance workflow", () => {
 
     const teamRanking = page.getByLabel("BD team ranking");
     await expect(teamRanking).toBeVisible();
-    await expect(teamRanking).toContainText("Record health");
-    await expect(teamRanking).toContainText("Duplicate rate");
+    await expect(teamRanking).toContainText("Qualified");
+    await expect(teamRanking).toContainText("Health");
+    await expect(teamRanking).not.toContainText("Duplicate rate");
+    await expect(teamRanking).not.toContainText("Audit pass");
     await expect(teamRanking).not.toContainText("Recruiter email");
     await expect(teamRanking).not.toContainText("Override reason");
 
-    const section = page.getByLabel("BD operations");
-    await expect(section.getByRole("link", { name: "Edit" }).first()).toBeVisible();
-    await expect(section.getByRole("link", { name: "Open application" }).first()).toBeVisible();
-    await expect(section.getByRole("link", { name: "Open calendar" }).last()).toBeVisible();
-    await section.getByRole("link", { name: "Edit" }).first().click();
-    await expect(page).toHaveURL(/\/leads\/[^/]+\/interviews\?edit=/);
-    await page.goto("/");
-    await section.getByRole("link", { name: "Open application" }).first().click();
+    const recentApplications = page.getByLabel("BD recent applications");
+    await recentApplications.locator('a[href^="/leads/"]').first().click();
     await expect(page).toHaveURL(/\/leads\/[^/]+$/);
     await page.goto("/");
-    await section.getByRole("link", { name: "Open calendar" }).last().click();
-    await expect(page).toHaveURL(/\/calendar\?date=/);
-    await expect(page.getByLabel("Calendar view")).toBeVisible();
+
+    const calendar = page.getByRole("region", { name: "BD calendar", exact: true });
+    await expect(calendar).toBeVisible();
+    await calendar.getByRole("button", { name: "Week calendar view" }).click();
+    await expect(calendar.getByTestId("bd-mini-week-grid")).toBeVisible();
+    await calendar.locator(".bd-mini-calendar-event").first().click();
+    await expect(page).toHaveURL(/\/leads\/[^/]+\/interviews\?edit=/);
     await saveBrowserScreenshot(page, testInfo, "bd-performance");
     audit.expectClean();
   });
@@ -96,6 +96,7 @@ test.describe("BD performance workflow", () => {
       expect(JSON.stringify(response.body)).not.toContain("defaultDailyTarget");
       expect(JSON.stringify(response.body)).not.toContain("qualifiedApplications");
     }
+    audit.allowConsole("403 (Forbidden)");
     audit.expectClean();
   });
 
@@ -106,9 +107,12 @@ test.describe("BD performance workflow", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page, "maya.bd@orbit.local", bdPassword);
 
-    await expect(page.getByLabel("BD work queue")).toBeVisible();
+    await expect(page.getByRole("region", { name: "BD daily activity tracker" })).toBeVisible();
     await expect(page.getByLabel("Personal BD performance")).toBeVisible();
     await expect(page.getByLabel("BD team ranking")).toBeVisible();
+    const pairedCardHeights = await page.locator('[aria-label="BD calendar"], [aria-label="BD recent applications"]').evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
+    expect(pairedCardHeights).toHaveLength(2);
+    expect(Math.abs(pairedCardHeights[0]! - pairedCardHeights[1]!)).toBeLessThanOrEqual(1);
     await expectNoHorizontalOverflow(page);
     audit.expectClean();
   });

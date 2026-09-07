@@ -169,6 +169,18 @@ describe("performance API client", () => {
       activeApplications: 103,
       openFollowUps: 64,
       platformTotals: [{ platform: "linkedin.com", count: 208 }],
+      businessTimeZone: "America/New_York",
+      todayPlatformTotals: [{ platform: "linkedin.com", count: 47 }],
+      sevenDayApplicationTotals: [
+        { date: "2026-09-01", total: 0, platformTotals: [] },
+        { date: "2026-09-02", total: 0, platformTotals: [] },
+        { date: "2026-09-03", total: 0, platformTotals: [] },
+        { date: "2026-09-04", total: 0, platformTotals: [] },
+        { date: "2026-09-05", total: 0, platformTotals: [] },
+        { date: "2026-09-06", total: 0, platformTotals: [] },
+        { date: "2026-09-07", total: 47, platformTotals: [{ platform: "linkedin.com", count: 47 }] },
+      ],
+      pipelineTotals: { jobsApplied: 208, activeJobs: 103, interviews: 31, offers: 9, placements: 3 },
     };
     const fetchMock = vi.fn().mockResolvedValue(success(queue));
     vi.stubGlobal("fetch", fetchMock);

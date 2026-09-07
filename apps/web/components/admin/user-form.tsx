@@ -1,9 +1,10 @@
 "use client";
 
-import { type ChangeEvent, type FormEvent } from "react";
+import { type ChangeEvent, type FormEvent, useState } from "react";
 
 import { Button, Field, Input } from "@orbit/ui";
 import type { UpdateUser, UserRole, UserSummary } from "@orbit/contracts";
+import { Dialog } from "../ui/dialog";
 
 const roles: UserRole[] = ["ADMIN", "BD", "CLOSER"];
 
@@ -62,6 +63,8 @@ export function UserForm({
   onRevokeSessions: (user: UserSummary) => Promise<void>;
   onResendInvitation: (user: UserSummary) => Promise<void>;
 }) {
+  const [editOpen, setEditOpen] = useState(false);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -70,25 +73,23 @@ export function UserForm({
       role: String(data.get("role") ?? user.role) as UserRole,
       timezone: String(data.get("timezone") ?? ""),
     });
+    setEditOpen(false);
   }
 
   return (
+    <article className="flex flex-col gap-4 px-5 py-4 transition-colors hover:bg-primary/5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-bold text-foreground">{user.displayName}</h3><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${user.isActive ? "bg-success-soft text-success" : "bg-surface-subtle text-muted-foreground"}`}>{user.isActive ? "Active" : "Inactive"}</span></div>
+        <p className="mt-1 truncate text-xs text-muted-foreground">{user.email}</p>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-xs sm:grid-cols-3"><div><dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Role</dt><dd className="mt-1 font-semibold text-foreground">{user.role === "BD" ? "Business development" : user.role === "CLOSER" ? "Closer" : "Administrator"}</dd></div><div><dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Timezone</dt><dd className="mt-1 font-semibold text-foreground">{user.timezone}</dd></div><div><dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Last login</dt><dd className="mt-1 font-semibold text-foreground">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : "Never"}</dd></div></dl>
+      <div className="flex flex-wrap gap-2 lg:justify-end"><Button aria-label={`Edit ${user.displayName}`} disabled={pending} onClick={() => setEditOpen(true)} variant="secondary">Edit</Button><Button aria-label={`${user.isActive ? "Deactivate" : "Activate"} ${user.displayName}`} disabled={pending} onClick={() => void onToggleActive(user)} variant={user.isActive ? "danger" : "primary"}>{user.isActive ? "Deactivate" : "Activate"}</Button><Button aria-label={`Revoke sessions for ${user.displayName}`} disabled={pending} onClick={() => void onRevokeSessions(user)} variant="ghost">Revoke sessions</Button>{!user.lastLoginAt ? <Button aria-label={`Resend invitation for ${user.displayName}`} disabled={pending} onClick={() => void onResendInvitation(user)} variant="ghost">Resend invitation</Button> : null}</div>
+      <Dialog description={`Update role and workspace defaults for ${user.email}.`} onOpenChange={setEditOpen} open={editOpen} title={`Edit ${user.displayName}`}>
     <form
       aria-label={`Edit ${user.displayName}`}
-      className="grid gap-4 rounded-xl border border-border/80 bg-surface p-4 shadow-[0_1px_2px_rgba(32,43,61,0.025)] lg:grid-cols-[minmax(190px,1fr)_minmax(150px,0.65fr)_minmax(150px,0.65fr)_auto] lg:items-end"
+      className="grid gap-4 sm:grid-cols-2"
       onSubmit={handleSubmit}
     >
-      <div className="lg:col-span-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-bold text-foreground">{user.displayName}</h3>
-          <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${user.isActive ? "bg-success-soft text-success" : "bg-surface-subtle text-muted-foreground"}`}>
-            {user.isActive ? "Active" : "Inactive"}
-          </span>
-          <span className="text-xs text-muted-foreground">{user.email}</span>
-          <span className="text-xs text-muted-foreground">Timezone: {user.timezone}</span>
-          <span className="text-xs text-muted-foreground">Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "Never"}</span>
-        </div>
-      </div>
       <Field htmlFor={`displayName-${user.id}`} label="Name">
         <Input
           autoComplete="name"
@@ -119,28 +120,13 @@ export function UserForm({
           required
         />
       </Field>
-      <div className="flex flex-wrap gap-2 lg:justify-end">
-        <Button disabled={pending} type="submit" variant="secondary">
+      <div className="flex justify-end sm:col-span-2">
+        <Button disabled={pending} type="submit">
           {pending ? "Saving…" : "Save"}
         </Button>
-        <Button
-          aria-label={`${user.isActive ? "Deactivate" : "Activate"} ${user.displayName}`}
-          disabled={pending}
-          onClick={() => void onToggleActive(user)}
-          variant={user.isActive ? "danger" : "primary"}
-        >
-          {user.isActive ? "Deactivate" : "Activate"}
-        </Button>
-        <Button
-          aria-label={`Revoke sessions for ${user.displayName}`}
-          disabled={pending}
-          onClick={() => void onRevokeSessions(user)}
-          variant="ghost"
-        >
-          Revoke sessions
-        </Button>
-        {!user.lastLoginAt ? <Button aria-label={`Resend invitation for ${user.displayName}`} disabled={pending} onClick={() => void onResendInvitation(user)} variant="ghost">Resend invitation</Button> : null}
       </div>
     </form>
+      </Dialog>
+    </article>
   );
 }

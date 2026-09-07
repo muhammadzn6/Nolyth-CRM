@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -37,40 +36,35 @@ function NavIcon({ name }: { name: NavigationItem["icon"] }) {
 export function AppSidebar({
   collapsed,
   items,
+  mobileOpen,
   onCollapsedChange,
+  onMobileOpenChange,
   role,
 }: {
   collapsed: boolean;
   items: NavigationItem[];
+  mobileOpen: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  onMobileOpenChange: (open: boolean) => void;
   role: UserRole;
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
   return (
     <>
-      <button
-        aria-label="Open navigation"
-        className={`fixed left-4 top-3.5 z-40 grid size-9 place-items-center rounded-xl border border-border bg-surface text-foreground shadow-sm lg:hidden ${mobileOpen ? "hidden" : "grid"}`}
-        onClick={() => setMobileOpen(true)}
-        type="button"
-      >
-        <span aria-hidden="true">☰</span>
-      </button>
-      {mobileOpen ? <button aria-label="Close navigation overlay" className="fixed inset-0 z-30 bg-sidebar/45 backdrop-blur-[1px] lg:hidden" onClick={() => setMobileOpen(false)} type="button" /> : null}
+      {mobileOpen ? <button aria-label="Close navigation overlay" className="fixed inset-0 z-30 bg-foreground/20 backdrop-blur-[2px] lg:hidden" onClick={() => onMobileOpenChange(false)} type="button" /> : null}
       <aside
-      className={`fixed inset-y-3 left-3 z-40 flex rounded-[2rem] border border-border/80 bg-surface text-foreground shadow-[0_12px_32px_rgba(35,42,58,0.06)] transition-[width,transform] duration-200 motion-reduce:transition-none lg:inset-y-24 lg:left-4 lg:translate-x-0 ${collapsed ? "w-[76px]" : "w-[224px]"} ${mobileOpen ? "translate-x-0" : "-translate-x-[120%]"}`}
+      className={`fixed inset-y-3 left-3 z-40 flex rounded-[1.75rem] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf7_100%)] text-foreground shadow-[0_20px_55px_rgba(35,42,58,0.09)] transition-[width,transform] duration-200 motion-reduce:transition-none lg:inset-y-20 lg:left-3 lg:translate-x-0 ${collapsed ? "w-[72px]" : "w-[224px]"} ${mobileOpen ? "translate-x-0" : "-translate-x-[120%]"}`}
       >
         <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-12 items-center justify-center px-3">
-          <Link aria-label="Create lead" className="grid size-9 place-items-center rounded-full bg-foreground text-xl leading-none text-white transition hover:bg-primary focus-visible:ring-2 focus-visible:ring-focus" href="/leads">
+        <div className="flex h-14 items-center justify-center px-3">
+          <Link aria-label={role === "ADMIN" ? "Add candidate" : role === "BD" ? "Add application" : "Add interview outcome"} className={`grid size-10 place-items-center rounded-full bg-action text-xl leading-none text-white shadow-[0_8px_18px_rgba(235,101,72,0.22)] transition hover:-translate-y-0.5 hover:bg-action-hover focus-visible:ring-2 focus-visible:ring-focus motion-reduce:transform-none ${collapsed ? "" : "mr-auto"}`} href={role === "ADMIN" ? "/candidates?new=candidate" : role === "BD" ? "/leads?new=application" : "/leads"}>
             <span aria-hidden="true">+</span>
           </Link>
           <Button
             aria-label="Close navigation"
               className="ml-auto text-muted-foreground hover:bg-surface-subtle hover:text-foreground lg:hidden"
-            onClick={() => setMobileOpen(false)}
+            onClick={() => onMobileOpenChange(false)}
             size="icon"
             variant="ghost"
           >
@@ -78,7 +72,7 @@ export function AppSidebar({
           </Button>
         </div>
 
-        <nav aria-label="Primary navigation" className="flex-1 space-y-1 px-3 py-4">
+        <nav aria-label="Primary navigation" className="flex-1 space-y-1 px-2.5 py-3">
           {items.map((item, index) => (
             <div key={item.href}>
             {(index === 0 || item.group !== items[index - 1]?.group) ? <p className={`${collapsed ? "sr-only" : "mb-2 mt-5 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground first:mt-0"}`}>{item.group}</p> : null}
@@ -87,9 +81,9 @@ export function AppSidebar({
               return (
             <Link
               aria-current={active ? "page" : undefined}
-              className={`flex h-10 items-center gap-3 rounded-full border px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${collapsed ? "justify-center" : ""} ${active ? "border-foreground bg-foreground font-semibold text-white" : "border-transparent text-muted-foreground hover:bg-surface-subtle hover:text-foreground"}`}
+              className={`flex h-10 items-center gap-3 rounded-2xl px-3 text-sm font-medium transition-colors motion-reduce:transition-none ${collapsed ? "justify-center" : ""} ${active ? "bg-foreground font-semibold text-white shadow-[0_8px_18px_rgba(17,24,39,0.16)]" : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground"}`}
               href={item.href}
-              onClick={() => setMobileOpen(false)}
+              onClick={() => onMobileOpenChange(false)}
               title={collapsed ? item.label : undefined}
             >
               <span className="grid size-5 shrink-0 place-items-center"><NavIcon name={item.icon} /></span>

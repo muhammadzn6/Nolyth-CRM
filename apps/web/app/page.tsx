@@ -30,6 +30,7 @@ import {
   listUsers,
 } from "../lib/api-client";
 import type { PerformancePeriod } from "../components/performance/bd-team-kpis";
+import { businessDayPerformanceRange } from "../lib/business-day";
 
 export const dynamic = "force-dynamic";
 
@@ -116,18 +117,25 @@ export default async function HomePage(props?: HomePageProps) {
   }
 
   if (actor.role === "BD") {
-    const [applicationsResult, calendarResult, performanceResult, todayPerformanceResult, workQueueResult] = await Promise.allSettled([
-      listLeads({ limit: 6 }, cookie),
+    const [applicationsResult, calendarResult, performanceResult, workQueueResult] = await Promise.allSettled([
+      listLeads({ limit: 100 }, cookie),
       getCalendar({}, cookie),
       readPerformance(`/performance/me?${new URLSearchParams(range)}`, bdPerformanceResponseSchema, cookie),
-      readPerformance(`/performance/me?${new URLSearchParams(performanceRange("day"))}`, bdPerformanceResponseSchema, cookie),
       readPerformance("/performance/me/work-queue", bdWorkQueueSchema, cookie),
     ]);
     const applications = applicationsResult.status === "fulfilled" ? applicationsResult.value.items : [];
     const calendar = calendarResult.status === "fulfilled" ? calendarResult.value : [];
     const performance = performanceResult.status === "fulfilled" ? performanceResult.value : undefined;
-    const todayPerformance = todayPerformanceResult.status === "fulfilled" ? todayPerformanceResult.value : undefined;
     const workQueue = workQueueResult.status === "fulfilled" ? workQueueResult.value : undefined;
+    const todayRange = workQueue
+      ? businessDayPerformanceRange(new Date(), workQueue.businessTimeZone)
+      : performanceRange("day");
+    let todayPerformance: typeof performance;
+    try {
+      todayPerformance = await readPerformance(`/performance/me?${new URLSearchParams(todayRange)}`, bdPerformanceResponseSchema, cookie);
+    } catch {
+      todayPerformance = undefined;
+    }
     const performanceAvailable = Boolean(performance && todayPerformance);
     let drilldown;
     if (performanceAvailable && metric) {
@@ -145,7 +153,7 @@ export default async function HomePage(props?: HomePageProps) {
       !workQueue ? "Work-queue totals are temporarily unavailable." : undefined,
       applicationsResult.status === "rejected" ? "Recent applications are temporarily unavailable." : undefined,
     ].filter((value): value is string => Boolean(value));
-    return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications} error={errors.join(" ") || undefined} interviews={calendar} performance={performance} todayPerformance={todayPerformance} workQueue={workQueue} />{drilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={drilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
+    return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications} error={errors.join(" ") || undefined} interviews={calendar} performance={performance} performancePeriod={performancePeriod} todayPerformance={todayPerformance} workQueue={workQueue} />{drilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={drilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
   }
 
   try {

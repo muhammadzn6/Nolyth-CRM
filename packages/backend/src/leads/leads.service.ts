@@ -68,6 +68,26 @@ const statusTransitions: Record<LeadStatus, readonly LeadStatus[]> = {
   CLOSED: [],
 };
 
+const pipelineStageStatuses = {
+  ACTIVE: ["RESPONSE_RECEIVED", "INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED"],
+  INTERVIEW: ["INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"],
+  OFFER: ["OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"],
+  PLACEMENT: ["PLACED", "STARTED"],
+} as const;
+
+function pipelineStageWhere(stage: NonNullable<LeadListQuery["pipelineStage"]>): Record<string, unknown> {
+  if (stage === "APPLIED") return {};
+  const statuses = [...pipelineStageStatuses[stage]];
+  if (stage === "ACTIVE") return { status: { in: statuses } };
+  return {
+    OR: [
+      { status: { in: statuses } },
+      { statusTransitions: { some: { toStatus: { in: statuses } } } },
+      ...(stage === "INTERVIEW" ? [{ interviews: { some: {} } }] : []),
+    ],
+  };
+}
+
 const linkedInTrackingParameters = new Set([
   "trk",
   "trackingid",
@@ -237,13 +257,15 @@ export class LeadsService {
       where: {
         ...(q.profileId ? { profileId: q.profileId } : {}), ...(q.companyId ? { companyId: q.companyId } : {}),
         ...(q.sourceId ? { sourceId: q.sourceId } : {}), ...(q.status ? { status: q.status } : {}),
+        ...(q.pipelineStage ? pipelineStageWhere(q.pipelineStage) : {}),
+        ...(actor.role === "BD" && q.pipelineStage ? { createdById: actor.id } : {}),
         ...(q.ownerId ? { currentOwnerId: q.ownerId } : {}), ...(q.closerId ? { responsibleCloserId: q.closerId } : {}),
         ...(q.important === undefined ? {} : { isImportant: q.important }), archivedAt: q.archived ? { not: null } : null,
         ...(q.search ? { OR: [{ jobTitle: { contains: q.search, mode: "insensitive" } }, { companyName: { contains: q.search, mode: "insensitive" } }] } : {}),
       }, orderBy: [{ appliedDate: "desc" }, { id: "asc" }], ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}), take: q.limit + 1,
     });
     const visible = actor.role === "BD"
-      ? rows.filter((row) => row.currentOwnerId === actor.id)
+      ? rows.filter((row) => q.pipelineStage ? row.createdById === actor.id : row.currentOwnerId === actor.id)
       : actor.role === "CLOSER"
         ? rows.filter((row) => row.responsibleCloserId === actor.id)
         : rows;

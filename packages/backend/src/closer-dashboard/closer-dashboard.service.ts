@@ -231,7 +231,11 @@ export class CloserDashboardService {
       select: { timezone: true },
     });
     const timezone = typeof closer?.timezone === "string" ? closer.timezone : "UTC";
-    const { start: startOfToday, end: endOfToday } = zonedDayBounds(now, timezone);
+    // The dashboard calendar is anchored to Pakistan time for every role.
+    // Keep operational day counts and external-event windows aligned with it;
+    // `timezone` remains the closer's preference for activity timestamps.
+    const calendarTimezone = "Asia/Karachi";
+    const { start: startOfToday, end: endOfToday } = zonedDayBounds(now, calendarTimezone);
     const assignedLeads = await this.database.jobLead.findMany({
       where: { responsibleCloserId: actor.id, status: { notIn: ["CLOSED", "STARTED"] } },
       select: {
@@ -251,7 +255,7 @@ export class CloserDashboardService {
       },
     });
     const profileIds = [...new Set(assignedLeads.map((row) => String(row.profileId)))];
-    console.info("[Orbit backend] closer dashboard request", { actorId: actor.id, timezone, now: now.toISOString(), startOfToday: startOfToday.toISOString(), endOfToday: endOfToday.toISOString() });
+    console.info("[Orbit backend] closer dashboard request", { actorId: actor.id, timezone, calendarTimezone, now: now.toISOString(), startOfToday: startOfToday.toISOString(), endOfToday: endOfToday.toISOString() });
     const externalEvents = this.googleCalendar
         ? Promise.all(profileIds.map((profileId) => this.googleCalendar!.listUpcomingEventsForProfile(actor, profileId, startOfToday, endOfToday)))
         .then((groups) => groups.flat())
@@ -287,7 +291,7 @@ export class CloserDashboardService {
         },
       }),
       this.database.interviewRound.findMany({
-        where: { closerId: actor.id, status: "SCHEDULED", startsAt: { gte: now, lt: endOfToday } },
+        where: { closerId: actor.id, status: "SCHEDULED", startsAt: { gte: startOfToday, lt: endOfToday } },
         orderBy: { startsAt: "asc" },
         take: MEETING_LIMIT,
       }),

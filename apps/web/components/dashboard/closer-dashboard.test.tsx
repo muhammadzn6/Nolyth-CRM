@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { CloserDashboardData, SessionUser } from "@orbit/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CloserDashboard } from "./closer-dashboard";
 
@@ -137,6 +137,8 @@ describe("CloserDashboard", () => {
   let root: Root;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T12:00:00.000Z"));
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -145,6 +147,7 @@ describe("CloserDashboard", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.useRealTimers();
   });
 
   async function renderDashboard(data?: CloserDashboardData, error?: string) {
@@ -156,7 +159,15 @@ describe("CloserDashboard", () => {
   it("prioritizes today’s agenda with a next-meeting briefing and feedback queue", async () => {
     await renderDashboard(dashboard);
 
-    expect(container.querySelector('[aria-label="Primary calendar"] [aria-label="Calendar view"]')?.textContent).toContain("Month");
+    const calendar = container.querySelector('[aria-label="Primary calendar"]');
+    const summary = container.querySelector('[aria-label="Closer summary"]');
+    expect(calendar).not.toBeNull();
+    expect(summary).not.toBeNull();
+    expect(Boolean(calendar && calendar.compareDocumentPosition(summary!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    const dayButton = Array.from(calendar?.querySelectorAll("button") ?? []).find((button) => button.textContent === "D");
+    expect(dayButton?.getAttribute("aria-pressed")).toBe("true");
+    const weekButton = Array.from(calendar?.querySelectorAll("button") ?? []).find((button) => button.textContent === "W");
+    await act(async () => weekButton?.click());
     expect(container.querySelector('[data-testid="calendar-event"]')?.textContent).toContain("TECHNICAL");
     expect(container.textContent).toContain("Next meeting briefing");
     expect(container.textContent).toContain("Jordan Patel");
@@ -171,6 +182,11 @@ describe("CloserDashboard", () => {
     expect(container.textContent).toContain("Backend Engineer at Google");
     expect(container.textContent).toContain("Feedback due");
     expect(container.textContent).toContain("Today");
+    expect(container.querySelector(".editorial-surface-feature")).not.toBeNull();
+    expect(container.querySelector(".editorial-surface-grid")).not.toBeNull();
+    expect(container.querySelector(".editorial-surface-alert")).not.toBeNull();
+    expect(container.querySelector(".editorial-surface-lines")).not.toBeNull();
+    expect(container.querySelector(".editorial-surface-soft")).not.toBeNull();
   });
 
   it("shows the disconnected Google Calendar state and useful empty states", async () => {
@@ -187,7 +203,7 @@ describe("CloserDashboard", () => {
 
     expect(container.textContent).toContain("Google Calendar");
     expect(container.textContent).toContain("Not connected");
-    expect(container.textContent).toContain("0 Orbit interviews in view");
+    expect(container.textContent).not.toContain("Orbit interviews in view");
     expect(container.textContent).toContain("No feedback is waiting");
     expect(container.textContent).toContain("No open tasks");
   });
@@ -207,7 +223,7 @@ describe("CloserDashboard", () => {
   it("links the dashboard to the full calendar workspace", async () => {
     await renderDashboard(dashboard);
 
-    expect(container.textContent).toContain("Month");
+    expect(container.textContent).toContain("Agenda");
     expect(container.textContent).not.toContain("Scheduling workspace");
   });
 });

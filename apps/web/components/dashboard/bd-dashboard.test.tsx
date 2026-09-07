@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import type { BdPerformanceResponse, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
+import type { BdPerformanceResponse, BdWorkQueue, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
 import { describe, expect, it } from "vitest";
 
 import { BdDashboard } from "./bd-dashboard";
@@ -99,24 +99,76 @@ const interviews = [{
   updatedAt: "2026-09-05T10:00:00.000Z",
 }] as InterviewSummary[];
 
+const workQueue = {
+  recruiterResponses: 3,
+  activeApplications: 12,
+  openFollowUps: 2,
+  platformTotals: [{ platform: "linkedin.com", count: 208 }],
+  businessTimeZone: "America/New_York",
+  todayPlatformTotals: [
+    { platform: "linkedin.com", count: 4 },
+    { platform: "indeed.com", count: 2 },
+  ],
+  sevenDayApplicationTotals: [
+    { date: "2026-08-31", total: 3, platformTotals: [{ platform: "linkedin.com", count: 3 }] },
+    { date: "2026-09-01", total: 5, platformTotals: [{ platform: "linkedin.com", count: 3 }, { platform: "indeed.com", count: 2 }] },
+    { date: "2026-09-02", total: 4, platformTotals: [{ platform: "linkedin.com", count: 4 }] },
+    { date: "2026-09-03", total: 6, platformTotals: [{ platform: "linkedin.com", count: 5 }, { platform: "indeed.com", count: 1 }] },
+    { date: "2026-09-04", total: 8, platformTotals: [{ platform: "linkedin.com", count: 6 }, { platform: "indeed.com", count: 2 }] },
+    { date: "2026-09-05", total: 7, platformTotals: [{ platform: "linkedin.com", count: 7 }] },
+    { date: "2026-09-06", total: 6, platformTotals: [{ platform: "linkedin.com", count: 4 }, { platform: "indeed.com", count: 2 }] },
+  ],
+  pipelineTotals: { jobsApplied: 208, activeJobs: 41, interviews: 19, offers: 6, placements: 2 },
+} as unknown as BdWorkQueue;
+
 describe("BD performance dashboard", () => {
   it("renders server-owned operational and personal performance values with interview quick actions", () => {
-    const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} interviews={interviews} performance={performance} />);
+    const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} interviews={interviews} performance={performance} performancePeriod="30d" todayPerformance={performance} workQueue={workQueue} />);
 
-    expect(html).toContain("Qualified applications today");
-    expect(html).toContain("Remaining target");
-    expect(html).toContain("Recruiter responses");
-    expect(html).toContain("Interviews to schedule");
+    expect(html).toContain("Daily activity tracker");
+    expect(html).toContain("qualified applications");
+    expect(html).toContain("Replies");
+    expect(html).toContain("Interviews");
+    expect(html).toContain("data-testid=\"bd-progress-ring\"");
+    expect(html).toContain("BD seven day cadence");
+    expect(html).toContain("Jobs applied");
+    expect(html).toContain("What needs attention");
+    expect(html).toContain("Responses to review");
+    expect(html).toContain("Calendar entries needed");
+    expect(html).toContain("6 saved today");
+    expect(html).toContain("linkedin.com · 4");
+    expect(html).not.toContain("linkedin.com · 208");
+    expect(html).toContain("208");
+    expect(html).toContain("41");
+    expect(html).toContain("19");
+    expect(html).toContain("6");
+    expect(html).toContain("2");
+    expect(html).toContain("pipelineStage=APPLIED");
+    expect(html).toContain("pipelineStage=INTERVIEW");
+    expect(html).toContain("pipelineStage=OFFER");
+    expect(html).toContain("pipelineStage=PLACEMENT");
+    expect(html).toContain("Total");
+    expect(html).toContain("Average");
+    expect(html).toContain("Peak");
     expect(html).toContain("88.4");
     expect(html).toContain("75% coverage");
     expect(html).toContain("Next target");
     expect(html).toContain("Oct 1, 2026");
-    expect(html).toContain("Upcoming interviews");
-    expect(html).toContain("Edit");
-    expect(html).toContain("Open application");
-    expect(html).toContain("Open calendar");
+    expect(html).toContain("aria-label=\"BD calendar\"");
+    expect(html).not.toContain("aria-label=\"BD upcoming interviews\"");
     expect(html).toContain("View your application details");
     expect(html).toContain("performanceMetric=QUALIFIED_APPLICATIONS");
+    expect(html).toContain("Ranked by qualified applications");
+    expect(html).not.toContain("The API currently provides");
+    expect(html).not.toContain("Trend data will populate");
+    expect(html).not.toContain("Click the tube");
+    expect(html.match(/aria-label="BD seven day activity chart\./g)).toHaveLength(1);
+    expect(html).toContain("2026-09-06: 6");
+    expect(html).toContain("editorial-surface-feature");
+    expect(html).toContain("editorial-surface-grid");
+    expect(html).toContain("editorial-surface-alert");
+    expect(html).toContain("editorial-surface-lines");
+    expect(html).toContain("editorial-surface-soft");
   });
 
   it("uses the server work-queue totals instead of the bounded recent-preview arrays", () => {
@@ -126,13 +178,54 @@ describe("BD performance dashboard", () => {
       interviews={interviews}
       performance={performance}
       todayPerformance={performance}
-      workQueue={{ recruiterResponses: 127, activeApplications: 103, openFollowUps: 64, platformTotals: [{ platform: "linkedin.com", count: 208 }] }}
+      workQueue={{ ...workQueue, recruiterResponses: 127, activeApplications: 103, openFollowUps: 64 }}
     />);
 
     expect(html).toContain("127");
-    expect(html).toContain("103");
-    expect(html).toContain("64 tasks");
-    expect(html).toContain("208 total");
+    expect(html).toContain("7");
+    expect(html).toContain("64");
+    expect(html).toContain("linkedin.com · 4");
+    expect(html).not.toContain("linkedin.com · 208");
+  });
+
+  it("reconciles every saved platform while grouping the long tail as Other", () => {
+    const html = renderToStaticMarkup(<BdDashboard
+      actor={actor}
+      applications={applications}
+      interviews={interviews}
+      performance={performance}
+      todayPerformance={performance}
+      workQueue={{
+        ...workQueue,
+        todayPlatformTotals: [
+          { platform: "linkedin.com", count: 4 },
+          { platform: "indeed.com", count: 3 },
+          { platform: "glassdoor.com", count: 2 },
+          { platform: "email", count: 2 },
+          { platform: "referral", count: 1 },
+        ],
+      }}
+    />);
+
+    expect(html).toContain("12 saved today");
+    expect(html).toContain("Other · 3");
+    expect(html).not.toContain("referral · 1");
+  });
+
+  it("caps recent application rows while retaining one route to the full list", () => {
+    const manyApplications = Array.from({ length: 8 }, (_, index) => ({
+      ...applications[0],
+      id: `00000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`,
+      jobTitle: `Recent application ${index + 1}`,
+      status: "APPLIED",
+    })) as LeadSummary[];
+
+    const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={manyApplications} interviews={interviews} performance={performance} performancePeriod="7d" todayPerformance={performance} workQueue={workQueue} />);
+
+    expect(html).toContain("Recent application 6");
+    expect(html).not.toContain("Recent application 7");
+    expect(html.match(/View all/g)).toHaveLength(1);
+    expect(html).toContain("7 days");
   });
 
   it("renders an explicit unavailable performance panel without deriving performance from previews", () => {
@@ -148,14 +241,33 @@ describe("BD performance dashboard", () => {
     expect(html).toContain("Recent applications");
   });
 
-  it("keeps peer summaries to the approved fields and has no peer detail links", () => {
-    const html = renderToStaticMarkup(<BdPeerRanking peers={performance.peerLeaderboard} selfRank={performance.rank} />);
+  it("renders peer summaries as a numbered leaderboard with only qualified volume and health", () => {
+    const peers = [{
+      bdId: actor.id,
+      bdName: actor.displayName,
+      rank: null,
+      qualifiedApplications: 83,
+      recordHealthRate: 98,
+      adminAuditPassRate: 96,
+      duplicateRate: 3,
+    }, { ...performance.peerLeaderboard[0], rank: null }];
+    const html = renderToStaticMarkup(<BdPeerRanking peers={peers} selfBdId={actor.id} />);
 
+    expect(html).toContain("Team leaderboard");
+    expect(html).toContain("Ranked by qualified applications");
+    expect(html).toContain('aria-label="Position 1"');
+    expect(html).toContain('aria-label="Position 2"');
+    expect(html).toContain('aria-current="true"');
+    expect(html).toContain("Qualified");
+    expect(html).toContain("Health");
+    expect(html).toContain("Ayesha Khan");
     expect(html).toContain("Noor Ali");
-    expect(html).toContain("95 qualified applications");
-    expect(html).toContain("Record health");
-    expect(html).toContain("Audit pass");
-    expect(html).toContain("Duplicate rate");
+    expect(html).toContain(">95<");
+    expect(html).toContain("qualified applications");
+    expect(html).not.toContain("Building baseline");
+    expect(html).not.toContain("Your rank");
+    expect(html).not.toContain("Audit pass");
+    expect(html).not.toContain("Duplicate rate");
     expect(html).not.toContain("Score details");
     expect(html).not.toContain("/leads/");
     expect(html).not.toContain("Recruiter");
@@ -163,14 +275,19 @@ describe("BD performance dashboard", () => {
   });
 
   it("renders self-only quality and the current score coverage state", () => {
-    const html = renderToStaticMarkup(<BdPersonalQuality performance={performance} />);
+    const html = renderToStaticMarkup(<BdPersonalQuality performance={performance} performancePeriod="7d" />);
 
     expect(html).toContain("Personal performance");
+    expect(html).toContain("Qualified attainment");
+    expect(html).toContain("Follow-up SLA");
+    expect(html).toContain("Matured outcomes");
     expect(html).toContain("Partial measurement");
     expect(html).toContain("Low application sample");
     expect(html).toContain("Low outcome sample");
     expect(html).toContain("Record health");
+    expect(html.match(/Duplicate rate/g)).toHaveLength(1);
     expect(html).toContain("Your details");
+    expect(html).toContain("performancePeriod=7d&amp;performanceMetric=QUALIFIED_APPLICATIONS");
   });
 
   it.each([

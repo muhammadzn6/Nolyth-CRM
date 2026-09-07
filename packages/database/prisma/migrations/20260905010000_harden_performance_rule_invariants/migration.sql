@@ -51,14 +51,3 @@ DROP TABLE "performance_working_days";
 
 ALTER TABLE "duplicate_reviews"
   DROP CONSTRAINT "duplicate_reviews_likely_only_check";
-
-ALTER TYPE "DuplicateClassification" RENAME TO "DuplicateClassification_old";
-CREATE TYPE "DuplicateClassification" AS ENUM ('LIKELY');
-
-ALTER TABLE "duplicate_reviews"
-  ALTER COLUMN "classification" DROP DEFAULT,
-  ALTER COLUMN "classification" TYPE "DuplicateClassification"
-    USING "classification"::text::"DuplicateClassification",
-  ALTER COLUMN "classification" SET DEFAULT 'LIKELY';
-
-DROP TYPE "DuplicateClassification_old";

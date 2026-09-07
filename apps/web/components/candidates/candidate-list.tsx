@@ -10,6 +10,7 @@ import { ApiClientError, createCandidate, listCandidates } from "../../lib/api-c
 import { CandidateForm } from "./candidate-form";
 import { CsvExportButton } from "../data/csv-export-button";
 import { BulkImportForm } from "../data/bulk-import-form";
+import { Dialog } from "../ui/dialog";
 
 function message(reason: unknown, fallback: string) {
   return reason instanceof ApiClientError ? reason.message : fallback;
@@ -21,6 +22,8 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [search, setSearch] = useState("");
   const canManage = actor.role === "ADMIN" && actor.isActive;
 
@@ -40,6 +43,7 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
 
   useEffect(() => {
     void load("");
+    if (new URLSearchParams(window.location.search).get("new") === "candidate") setCreateOpen(true);
   }, [load]);
 
   const activeCount = useMemo(
@@ -59,6 +63,7 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
       const created = await createCandidate(input as CreateCandidate);
       setCandidates((current) => [created, ...(current ?? [])]);
       setNotice("Candidate created");
+      setCreateOpen(false);
       return true;
     } catch (reason) {
       setError(message(reason, "Orbit could not create this candidate. Try again."));
@@ -80,7 +85,7 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
           <h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Candidates</h1>
           <p className="mt-1.5 text-sm leading-6 text-muted-foreground">Create candidate records and organize each job search into a separate profile.</p>
         </div>
-        <div className="flex gap-2"><CsvExportButton columns={[{ key: "firstName", label: "First name" }, { key: "lastName", label: "Last name" }, { key: "email", label: "Email" }, { key: "status", label: "Status" }, { key: "timezone", label: "Timezone" }]} filename="orbit-candidates.csv" rows={candidates ?? []} /><Button aria-label="Refresh candidates" disabled={loading} onClick={() => void load(search.trim())} variant="secondary">{loading ? "Refreshing…" : "Refresh"}</Button></div>
+        <div className="flex flex-wrap gap-2"><Button aria-label="Add candidate" onClick={() => setCreateOpen(true)}>Add candidate</Button><Button aria-label="Import candidates" onClick={() => setImportOpen(true)} variant="secondary">Import CSV</Button><CsvExportButton columns={[{ key: "firstName", label: "First name" }, { key: "lastName", label: "Last name" }, { key: "email", label: "Email" }, { key: "status", label: "Status" }, { key: "timezone", label: "Timezone" }]} filename="orbit-candidates.csv" rows={candidates ?? []} /><Button aria-label="Refresh candidates" disabled={loading} onClick={() => void load(search.trim())} variant="secondary">{loading ? "Refreshing…" : "Refresh"}</Button></div>
       </div>
 
       <div aria-label="Candidate summary" className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border/70 py-3 text-sm">
@@ -89,8 +94,12 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
         <span className="text-muted-foreground">Admin-managed records</span>
       </div>
 
-      <CandidateForm onSubmit={handleCreate} pending={creating} />
-      <BulkImportForm kind="candidate" onComplete={() => void load(search.trim())} />
+      <Dialog description="Create the person record first; job-search profiles stay separate." onOpenChange={setCreateOpen} open={createOpen} title="Add candidate">
+        <CandidateForm onSubmit={handleCreate} pending={creating} surface={false} />
+      </Dialog>
+      <Dialog description="Upload a validated CSV without leaving the candidate directory." onOpenChange={setImportOpen} open={importOpen} title="Import candidates">
+        <BulkImportForm kind="candidate" onComplete={() => { setImportOpen(false); void load(search.trim()); }} surface={false} />
+      </Dialog>
 
       {notice ? <p className="rounded-xl border border-success/20 bg-success-soft px-4 py-3 text-sm font-semibold text-success" role="status">{notice}</p> : null}
 
@@ -105,7 +114,7 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
 
       {loading && candidates === null ? <LoadingState label="Loading candidates" /> : null}
       {error ? <ErrorState actionLabel="Retry" description={error} onAction={() => void load(search.trim())} title="Candidates unavailable" /> : null}
-      {!loading && !error && candidates?.length === 0 ? <EmptyState description="Create a candidate above or change your search." title="No candidates found" /> : null}
+      {!loading && !error && candidates?.length === 0 ? <EmptyState description="Use Add candidate or change your search." title="No candidates found" /> : null}
 
       {!error && candidates && candidates.length > 0 ? (
         <Card className="overflow-hidden p-0">

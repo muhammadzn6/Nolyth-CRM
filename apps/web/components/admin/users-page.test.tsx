@@ -141,7 +141,7 @@ describe("UsersPage", () => {
 
     await act(async () => firstLoad.resolve([]));
     expect(container.textContent).toContain("No users yet");
-    expect(container.textContent).toContain("Create the first teammate");
+    expect(container.textContent).toContain("Invite the first teammate");
 
     listUsersMock
       .mockRejectedValueOnce(new Error("API down"))
@@ -177,13 +177,19 @@ describe("UsersPage", () => {
     });
     await renderPage();
 
-    change(container.querySelector<HTMLInputElement>("#new-displayName")!, "Nadia Reed");
-    change(container.querySelector<HTMLInputElement>("#new-email")!, "NADIA@ORBIT.EXAMPLE");
-    change(container.querySelector<HTMLSelectElement>("#new-role")!, "CLOSER");
-    change(container.querySelector<HTMLInputElement>("#new-timezone")!, "Asia/Karachi");
+    expect(container.querySelector('form[aria-label="Create user invitation"]')).toBeNull();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Invite user"]')?.click();
+    });
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Invite teammate");
+
+    change(document.querySelector<HTMLInputElement>("#new-displayName")!, "Nadia Reed");
+    change(document.querySelector<HTMLInputElement>("#new-email")!, "NADIA@ORBIT.EXAMPLE");
+    change(document.querySelector<HTMLSelectElement>("#new-role")!, "CLOSER");
+    change(document.querySelector<HTMLInputElement>("#new-timezone")!, "Asia/Karachi");
 
     await act(async () => {
-      container.querySelector<HTMLFormElement>('form[aria-label="Create user invitation"]')?.requestSubmit();
+      document.querySelector<HTMLFormElement>('form[aria-label="Create user invitation"]')?.requestSubmit();
     });
 
     expect(createUserMock).toHaveBeenCalledWith({
@@ -229,12 +235,16 @@ describe("UsersPage", () => {
     revokeUserSessionsMock.mockResolvedValue(undefined);
     await renderPage();
 
-    change(container.querySelector<HTMLInputElement>(`#displayName-${activeUser.id}`)!, "Nadia Khan");
-    change(container.querySelector<HTMLSelectElement>(`#role-${activeUser.id}`)!, "BD");
-    change(container.querySelector<HTMLInputElement>(`#timezone-${activeUser.id}`)!, "UTC");
+    expect(container.querySelector(`form[aria-label="Edit ${activeUser.displayName}"]`)).toBeNull();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[aria-label="Edit ${activeUser.displayName}"]`)?.click();
+    });
+    change(document.querySelector<HTMLInputElement>(`#displayName-${activeUser.id}`)!, "Nadia Khan");
+    change(document.querySelector<HTMLSelectElement>(`#role-${activeUser.id}`)!, "BD");
+    change(document.querySelector<HTMLInputElement>(`#timezone-${activeUser.id}`)!, "UTC");
 
     await act(async () => {
-      container.querySelector<HTMLFormElement>(`form[aria-label="Edit Nadia Reed"]`)?.requestSubmit();
+      document.querySelector<HTMLFormElement>(`form[aria-label="Edit Nadia Reed"]`)?.requestSubmit();
     });
 
     expect(updateUserMock).toHaveBeenCalledWith(activeUser.id, {

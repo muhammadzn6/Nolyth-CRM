@@ -9,6 +9,7 @@ type CandidateFormProps = {
   initial?: CandidateSummary;
   pending: boolean;
   onSubmit: (input: CreateCandidate | UpdateCandidate) => Promise<boolean>;
+  surface?: boolean;
 };
 
 function optional(data: FormData, name: string): string | undefined {
@@ -16,7 +17,7 @@ function optional(data: FormData, name: string): string | undefined {
   return value || undefined;
 }
 
-export function CandidateForm({ initial, pending, onSubmit }: CandidateFormProps) {
+export function CandidateForm({ initial, pending, onSubmit, surface = true }: CandidateFormProps) {
   const prefix = initial ? `candidate-${initial.id}` : "candidate";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -38,8 +39,8 @@ export function CandidateForm({ initial, pending, onSubmit }: CandidateFormProps
     }
   }
 
-  return (
-    <Card className="p-5 sm:p-6">
+  const content = (
+    <>
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
           {initial ? "Candidate record" : "New candidate"}
@@ -53,7 +54,7 @@ export function CandidateForm({ initial, pending, onSubmit }: CandidateFormProps
       </header>
       <form
         aria-label={initial ? `Edit ${initial.firstName} ${initial.lastName}` : "Create candidate"}
-        className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+        className="mt-5 grid gap-4 md:grid-cols-2"
         onSubmit={handleSubmit}
       >
         <Field htmlFor={`${prefix}-firstName`} label="First name">
@@ -83,6 +84,8 @@ export function CandidateForm({ initial, pending, onSubmit }: CandidateFormProps
           </Button>
         </div>
       </form>
-    </Card>
+    </>
   );
+
+  return surface ? <Card className="p-5 sm:p-6">{content}</Card> : <div>{content}</div>;
 }

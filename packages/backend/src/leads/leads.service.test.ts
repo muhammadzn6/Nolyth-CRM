@@ -20,6 +20,23 @@ const bd = {
 };
 
 describe("LeadsService authorization", () => {
+  it("lets a BD drill into historically reached stages for applications they submitted", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const service = new LeadsService({ jobLead: { findMany } } as never, { assertProfileAccess: vi.fn() } as never);
+
+    await expect(service.list(bd, { pipelineStage: "OFFER", archived: false, limit: 50 })).resolves.toEqual({ items: [], nextCursor: null });
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        createdById: bd.id,
+        OR: expect.arrayContaining([
+          { status: { in: ["OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"] } },
+          { statusTransitions: { some: { toStatus: { in: ["OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"] } } } },
+        ]),
+      }),
+    }));
+  });
+
   it("requires BDs to use strict application intake instead of generic lead creation", async () => {
     const database = {
       jobLead: { create: vi.fn() },

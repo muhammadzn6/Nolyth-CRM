@@ -27,8 +27,10 @@ test.describe("admin MVP surfaces", () => {
   test("exposes import, collaboration, and profile tab surfaces", async ({ page }) => {
     await page.goto("/candidates");
     await expect(page.getByRole("heading", { name: "Candidates", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Import candidates" }).click();
     await expect(page.getByRole("heading", { name: "Bulk import candidates" })).toBeVisible();
     await page.goto("/leads");
+    await page.getByRole("button", { name: "Import applications" }).click();
     await expect(page.getByRole("heading", { name: "Bulk import leads" })).toBeVisible();
     await page.goto("/reset-password");
     await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
@@ -39,10 +41,9 @@ test.describe("admin MVP surfaces", () => {
       ["/", /Good morning,/],
       ["/candidates", "Candidates"],
       ["/profiles", "Profiles"],
-      ["/leads", "Leads"],
+      ["/leads", "Applications"],
       ["/tasks", "Tasks"],
       ["/admin/clients", "Employers"],
-      ["/calendar", "Interview calendar"],
       ["/analytics", "Analytics"],
       ["/activity", "Activity"],
       ["/admin/users", "Users and invitations"],
@@ -54,6 +55,10 @@ test.describe("admin MVP surfaces", () => {
       await page.goto(route);
       await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     }
+
+    await page.goto("/calendar");
+    await expect(page).toHaveURL(/\/?\?calendarView=day$/);
+    await expect(page.getByRole("heading", { name: /Good morning,/ })).toBeVisible();
   });
 
   test("loads profile tabs and lead collaboration routes", async ({ page }) => {

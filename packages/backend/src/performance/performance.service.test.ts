@@ -34,10 +34,13 @@ describe("PerformanceService", () => {
     const database: any = {
       jobLead: { findMany: vi.fn().mockResolvedValue(leads) },
       task: { findMany: vi.fn().mockResolvedValue(tasks) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([]) },
+      leadStatusTransition: { findMany: vi.fn().mockResolvedValue([]) },
     };
     const service = new PerformanceService(database, { assertRole: vi.fn() } as never);
 
-    await expect(service.getBdWorkQueue(bd)).resolves.toEqual({
+    await expect(service.getBdWorkQueue(bd)).resolves.toMatchObject({
       recruiterResponses: 64,
       activeApplications: 39,
       openFollowUps: 64,
@@ -46,6 +49,115 @@ describe("PerformanceService", () => {
         { platform: "linkedin.com", count: 63 },
       ],
     });
+  });
+
+  it("returns timezone-scoped daily activity and lifetime pipeline stages from BD-owned records", async () => {
+    const leads = [
+      { id: "10000000-0000-4000-8000-000000000011", status: "APPLIED", rawUrl: "https://www.linkedin.com/jobs/view/11", appliedDate: new Date("2026-09-07T00:00:00.000Z") },
+      { id: "10000000-0000-4000-8000-000000000012", status: "RESPONSE_RECEIVED", rawUrl: "https://www.indeed.com/viewjob?jk=12", appliedDate: new Date("2026-09-07T00:00:00.000Z") },
+      { id: "10000000-0000-4000-8000-000000000013", status: "CLOSED", rawUrl: "https://www.linkedin.com/jobs/view/13", appliedDate: new Date("2026-09-05T00:00:00.000Z") },
+      { id: "10000000-0000-4000-8000-000000000014", status: "OFFER_RECEIVED", rawUrl: "https://jobs.example.com/14", appliedDate: new Date("2026-09-03T00:00:00.000Z") },
+      { id: "10000000-0000-4000-8000-000000000015", status: "CLOSED", rawUrl: "not-a-url", appliedDate: new Date("2026-09-01T00:00:00.000Z") },
+      { id: "10000000-0000-4000-8000-000000000016", status: "STARTED", rawUrl: "https://jobs.example.com/16", appliedDate: new Date("2026-08-31T00:00:00.000Z") },
+    ];
+    const database: any = {
+      jobLead: { findMany: vi.fn().mockResolvedValue(leads) },
+      task: { findMany: vi.fn().mockResolvedValue([{ id: "task-1" }]) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue({ businessCalendarTimeZone: "America/New_York" }) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([{ leadId: leads[2].id }]) },
+      leadStatusTransition: { findMany: vi.fn().mockResolvedValue([
+        { leadId: leads[2].id, toStatus: "INTERVIEWING" },
+        { leadId: leads[4].id, toStatus: "PLACED" },
+      ]) },
+    };
+    const service = new PerformanceService(
+      database,
+      { assertRole: vi.fn() } as never,
+      undefined,
+      () => new Date("2026-09-08T02:00:00.000Z"),
+    );
+
+    await expect(service.getBdWorkQueue(bd)).resolves.toEqual({
+      recruiterResponses: 1,
+      activeApplications: 1,
+      openFollowUps: 1,
+      platformTotals: [
+        { platform: "jobs.example.com", count: 2 },
+        { platform: "linkedin.com", count: 2 },
+        { platform: "indeed.com", count: 1 },
+        { platform: "Other", count: 1 },
+      ],
+      businessTimeZone: "America/New_York",
+      todayPlatformTotals: [
+        { platform: "indeed.com", count: 1 },
+        { platform: "linkedin.com", count: 1 },
+      ],
+      sevenDayApplicationTotals: [
+        { date: "2026-09-01", total: 1, platformTotals: [{ platform: "Other", count: 1 }] },
+        { date: "2026-09-02", total: 0, platformTotals: [] },
+        { date: "2026-09-03", total: 1, platformTotals: [{ platform: "jobs.example.com", count: 1 }] },
+        { date: "2026-09-04", total: 0, platformTotals: [] },
+        { date: "2026-09-05", total: 1, platformTotals: [{ platform: "linkedin.com", count: 1 }] },
+        { date: "2026-09-06", total: 0, platformTotals: [] },
+        { date: "2026-09-07", total: 2, platformTotals: [{ platform: "indeed.com", count: 1 }, { platform: "linkedin.com", count: 1 }] },
+      ],
+      pipelineTotals: {
+        jobsApplied: 6,
+        activeJobs: 2,
+        interviews: 4,
+        offers: 3,
+        placements: 2,
+      },
+    });
+
+    expect(database.jobLead.findMany).toHaveBeenCalledWith({
+      where: { currentOwnerId: bd.id, archivedAt: null },
+      select: { id: true, status: true, rawUrl: true, appliedDate: true },
+    });
+    expect(database.interviewRound.findMany).toHaveBeenCalledWith({
+      where: { leadId: { in: leads.map((lead) => lead.id) } },
+      select: { leadId: true },
+    });
+    expect(database.leadStatusTransition.findMany).toHaveBeenCalledWith({
+      where: { leadId: { in: leads.map((lead) => lead.id) } },
+      select: { leadId: true, toStatus: true },
+    });
+  });
+
+  it("credits authored activity to the submitting BD while keeping queue actions with the current owner", async () => {
+    const authored = [{
+      id: "10000000-0000-4000-8000-000000000017",
+      createdById: bd.id,
+      currentOwnerId: admin.id,
+      status: "OFFER_RECEIVED",
+      rawUrl: "https://www.linkedin.com/jobs/view/17",
+      appliedDate: new Date("2026-09-07T00:00:00.000Z"),
+    }];
+    const owned = [{
+      id: "10000000-0000-4000-8000-000000000018",
+      createdById: admin.id,
+      currentOwnerId: bd.id,
+      status: "RESPONSE_RECEIVED",
+      rawUrl: "https://www.indeed.com/viewjob?jk=18",
+      appliedDate: new Date("2026-09-07T00:00:00.000Z"),
+    }];
+    const database: any = {
+      jobLead: { findMany: vi.fn().mockResolvedValueOnce(authored).mockResolvedValueOnce(owned) },
+      task: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue({ businessCalendarTimeZone: "America/New_York" }) },
+      interviewRound: { findMany: vi.fn().mockResolvedValue([]) },
+      leadStatusTransition: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const service = new PerformanceService(database, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-08T02:00:00.000Z"));
+
+    await expect(service.getBdWorkQueue(bd)).resolves.toMatchObject({
+      recruiterResponses: 1,
+      activeApplications: 0,
+      todayPlatformTotals: [{ platform: "linkedin.com", count: 1 }],
+      pipelineTotals: { jobsApplied: 1, activeJobs: 1, interviews: 1, offers: 1, placements: 0 },
+    });
+    expect(database.jobLead.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { createdById: bd.id, archivedAt: null } }));
+    expect(database.jobLead.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: { currentOwnerId: bd.id, archivedAt: null } }));
   });
 
   it("derives Screening from a persisted recruiter or pre-screen round before a technical interview", () => {

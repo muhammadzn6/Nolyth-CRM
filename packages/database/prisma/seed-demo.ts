@@ -9,6 +9,9 @@ const ids = {
   candidate: "20000000-0000-4000-8000-000000000001",
   profile: "30000000-0000-4000-8000-000000000001",
   source: "40000000-0000-4000-8000-000000000001",
+  sourceLinkedin: "40000000-0000-4000-8000-000000000002",
+  sourceEmail: "40000000-0000-4000-8000-000000000003",
+  sourceCompany: "40000000-0000-4000-8000-000000000004",
   company: "50000000-0000-4000-8000-000000000001",
   contact: "60000000-0000-4000-8000-000000000001",
   leadApplied: "70000000-0000-4000-8000-000000000001",
@@ -56,15 +59,34 @@ async function main() {
     create: { id: ids.profile, candidateId: ids.candidate, createdById: admin.id, name: "Avery Chen — Senior Platform Engineer", description: "Demo candidate profile showing the BD-to-closer workflow.", status: "ACTIVE", defaultCurrency: "USD", targetCompensation: 165000, compensationPeriod: "YEARLY", targetRoles: ["Platform Engineer", "Backend Engineer"], preferredLocations: ["New York", "Remote"], workplacePreferences: ["REMOTE", "HYBRID"], jobTypePreferences: ["FULL_TIME"] },
     update: { name: "Avery Chen — Senior Platform Engineer", status: "ACTIVE" },
   });
-  await database.jobSource.upsert({ where: { id: ids.source }, create: { id: ids.source, name: "Demo referral", displayOrder: 1 }, update: { name: "Demo referral", isActive: true } });
+  await database.jobSource.upsert({ where: { id: ids.source }, create: { id: ids.source, name: "Referral", displayOrder: 1 }, update: { name: "Referral", isActive: true } });
+  await database.jobSource.upsert({ where: { id: ids.sourceLinkedin }, create: { id: ids.sourceLinkedin, name: "LinkedIn", displayOrder: 2 }, update: { name: "LinkedIn", isActive: true } });
+  await database.jobSource.upsert({ where: { id: ids.sourceEmail }, create: { id: ids.sourceEmail, name: "Email", displayOrder: 3 }, update: { name: "Email", isActive: true } });
+  await database.jobSource.upsert({ where: { id: ids.sourceCompany }, create: { id: ids.sourceCompany, name: "Company site", displayOrder: 4 }, update: { name: "Company site", isActive: true } });
   await database.company.upsert({ where: { id: ids.company }, create: { id: ids.company, canonicalName: "Northstar Labs", website: "https://northstar.example", domain: "northstar.example", industry: "Developer Tools", location: "New York, NY", createdById: bd.id }, update: { canonicalName: "Northstar Labs", createdById: bd.id } });
   await database.contact.upsert({ where: { id: ids.contact }, create: { id: ids.contact, companyId: ids.company, createdById: bd.id, name: "Jordan Lee", title: "Talent Partner", email: "jordan.lee@northstar.example" }, update: { name: "Jordan Lee", companyId: ids.company } });
 
   const appliedDate = new Date();
-  appliedDate.setDate(appliedDate.getDate() - 4);
-  await database.jobLead.upsert({ where: { id: ids.leadApplied }, create: { id: ids.leadApplied, profileId: ids.profile, companyId: ids.company, sourceId: ids.source, createdById: bd.id, currentOwnerId: bd.id, companyName: "Northstar Labs", jobTitle: "Senior Platform Engineer", description: "Initial application awaiting recruiter response.", rawUrl: "https://northstar.example/jobs/platform", location: "Remote — US", workplaceType: "REMOTE", employmentType: "FULL_TIME", appliedDate, source: "referral", canonicalUrl: "https://northstar.example/jobs/platform", canonicalHash: "demo-northstar-platform", status: "APPLIED" }, update: { status: "APPLIED", currentOwnerId: bd.id } });
-  await database.jobLead.upsert({ where: { id: ids.leadInterview }, create: { id: ids.leadInterview, profileId: ids.profile, companyId: ids.company, sourceId: ids.source, createdById: bd.id, currentOwnerId: bd.id, responsibleCloserId: closer.id, companyName: "Northstar Labs", jobTitle: "Backend Engineer", description: "Candidate has passed the recruiter screen and is moving through interviews.", rawUrl: "https://northstar.example/jobs/backend", location: "New York, NY", workplaceType: "HYBRID", employmentType: "FULL_TIME", appliedDate, source: "referral", canonicalUrl: "https://northstar.example/jobs/backend", canonicalHash: "demo-northstar-backend", status: "INTERVIEWING", isImportant: true }, update: { status: "INTERVIEWING", currentOwnerId: bd.id, responsibleCloserId: closer.id, isImportant: true } });
-  await database.jobLead.upsert({ where: { id: ids.leadOffer }, create: { id: ids.leadOffer, profileId: ids.profile, companyId: ids.company, sourceId: ids.source, createdById: bd.id, currentOwnerId: bd.id, responsibleCloserId: closer.id, companyName: "Northstar Labs", jobTitle: "Staff Infrastructure Engineer", description: "Offer is ready for candidate review.", rawUrl: "https://northstar.example/jobs/staff-infra", location: "Remote — US", workplaceType: "REMOTE", employmentType: "FULL_TIME", appliedDate, source: "referral", canonicalUrl: "https://northstar.example/jobs/staff-infra", canonicalHash: "demo-northstar-staff", status: "OFFER_RECEIVED" }, update: { status: "OFFER_RECEIVED", currentOwnerId: bd.id, responsibleCloserId: closer.id } });
+  appliedDate.setHours(12, 0, 0, 0);
+  await database.jobLead.upsert({ where: { id: ids.leadApplied }, create: { id: ids.leadApplied, profileId: ids.profile, companyId: ids.company, sourceId: ids.source, createdById: bd.id, currentOwnerId: bd.id, companyName: "Northstar Labs", jobTitle: "Senior Platform Engineer", description: "Initial application awaiting recruiter response.", rawUrl: "https://northstar.example/jobs/platform", location: "Remote — US", workplaceType: "REMOTE", employmentType: "FULL_TIME", appliedDate, source: "referral", canonicalUrl: "https://northstar.example/jobs/platform", canonicalHash: "demo-northstar-platform", status: "RESPONSE_RECEIVED" }, update: { status: "RESPONSE_RECEIVED", currentOwnerId: bd.id, appliedDate } });
+  await database.jobLead.upsert({ where: { id: ids.leadInterview }, create: { id: ids.leadInterview, profileId: ids.profile, companyId: ids.company, sourceId: ids.source, createdById: bd.id, currentOwnerId: bd.id, responsibleCloserId: closer.id, companyName: "Northstar Labs", jobTitle: "Backend Engineer", description: "Candidate has passed the recruiter screen and is moving through interviews.", rawUrl: "https://northstar.example/jobs/backend", location: "New York, NY", workplaceType: "HYBRID", employmentType: "FULL_TIME", appliedDate, source: "referral", canonicalUrl: "https://northstar.example/jobs/backend", canonicalHash: "demo-northstar-backend", status: "INTERVIEWING", isImportant: true }, update: { status: "INTERVIEWING", currentOwnerId: bd.id, responsibleCloserId: closer.id, isImportant: true, appliedDate } });
+  await database.jobLead.upsert({ where: { id: ids.leadOffer }, create: { id: ids.leadOffer, profileId: ids.profile, companyId: ids.company, sourceId: ids.source, createdById: bd.id, currentOwnerId: bd.id, responsibleCloserId: closer.id, companyName: "Northstar Labs", jobTitle: "Staff Infrastructure Engineer", description: "Offer is ready for candidate review.", rawUrl: "https://northstar.example/jobs/staff-infra", location: "Remote — US", workplaceType: "REMOTE", employmentType: "FULL_TIME", appliedDate, source: "referral", canonicalUrl: "https://northstar.example/jobs/staff-infra", canonicalHash: "demo-northstar-staff", status: "OFFER_RECEIVED" }, update: { status: "OFFER_RECEIVED", currentOwnerId: bd.id, responsibleCloserId: closer.id, appliedDate } });
+  const demoSources = [
+    { id: ids.sourceLinkedin, host: "www.linkedin.com", label: "LinkedIn" },
+    { id: ids.sourceLinkedin, host: "www.linkedin.com", label: "LinkedIn" },
+    { id: ids.sourceEmail, host: "mail.google.com", label: "Email" },
+    { id: ids.sourceCompany, host: "jobs.northstar.example", label: "Company site" },
+    { id: ids.source, host: "referrals.example", label: "Referral" },
+  ];
+  for (let index = 0; index < 44; index += 1) {
+    const source = demoSources[index % demoSources.length];
+    const leadId = `70000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`;
+    await database.jobLead.upsert({
+      where: { id: leadId },
+      create: { id: leadId, profileId: ids.profile, companyId: ids.company, sourceId: source.id, createdById: bd.id, currentOwnerId: bd.id, companyName: "Northstar Labs", jobTitle: `${source.label} application ${index + 1}`, description: "Demo application for the BD daily progress tracker.", rawUrl: `https://${source.host}/jobs/demo-${index + 1}`, location: "Remote — US", workplaceType: "REMOTE", employmentType: "FULL_TIME", appliedDate, source: source.label.toLowerCase(), canonicalUrl: `https://${source.host}/jobs/demo-${index + 1}`, canonicalHash: `demo-daily-progress-${index + 1}`, status: "APPLIED" },
+      update: { currentOwnerId: bd.id, appliedDate, status: "APPLIED", qualifiedCredit: true },
+    });
+  }
   for (const leadId of [ids.leadApplied, ids.leadInterview, ids.leadOffer]) {
     await database.leadContact.upsert({ where: { leadId_contactId: { leadId, contactId: ids.contact } }, create: { leadId, contactId: ids.contact, role: "RECRUITER", isPrimary: true }, update: { role: "RECRUITER", isPrimary: true } });
   }

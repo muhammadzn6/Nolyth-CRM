@@ -136,6 +136,10 @@ describe("company, contact, and lead contracts", () => {
     ).toEqual({ companyId, name: "Grace Hopper" });
     expect(schema("updateCompanySchema").safeParse({}).success).toBe(false);
     expect(schema("updateContactSchema").safeParse({}).success).toBe(false);
+    expect(schema("leadListQuerySchema").parse({ pipelineStage: "INTERVIEW" })).toMatchObject({
+      pipelineStage: "INTERVIEW",
+    });
+    expect(schema("leadListQuerySchema").safeParse({ pipelineStage: "UNKNOWN" }).success).toBe(false);
 
     for (const name of [
       "leadListQuerySchema",

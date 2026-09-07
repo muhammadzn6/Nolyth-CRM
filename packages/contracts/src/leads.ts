@@ -333,6 +333,7 @@ export const leadListQuerySchema = z
     ownerId: uuidSchema.optional(),
     closerId: uuidSchema.optional(),
     status: leadStatusSchema.optional(),
+    pipelineStage: z.enum(["APPLIED", "ACTIVE", "INTERVIEW", "OFFER", "PLACEMENT"]).optional(),
     important: queryBooleanSchema.optional(),
     archived: queryBooleanSchema.default(false),
     appliedFrom: dateSchema.optional(),

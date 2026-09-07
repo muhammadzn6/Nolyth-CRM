@@ -137,6 +137,18 @@ function jobUrlHost(value: unknown): string | null {
   return new URL(String(value)).hostname.replace(/^www\./, "").toLocaleLowerCase();
 }
 
+function sortedPlatformTotals(counts: ReadonlyMap<string, number>) {
+  return [...counts.entries()]
+    .map(([platform, count]) => ({ platform, count }))
+    .sort((left, right) => right.count - left.count || left.platform.localeCompare(right.platform));
+}
+
+function dateKeyOffset(date: Date, days: number): string {
+  const shifted = new Date(date);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+
 function hasValidRecruiterEmail(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const match = value.trim().match(/^[^\s@]+@([a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+)$/i);
@@ -295,32 +307,87 @@ export class PerformanceService {
 
   async getBdWorkQueue(actor: Actor) {
     if (!actor.isActive || actor.role !== "BD") throw new AuthorizationError();
-    const [leads, tasks] = await Promise.all([
+    const now = this.now();
+    const [authoredLeads, ownedLeads, tasks, calendarRule] = await Promise.all([
+      this.database.jobLead.findMany?.({
+        where: { createdById: actor.id, archivedAt: null },
+        select: { id: true, status: true, rawUrl: true, appliedDate: true },
+      }) ?? [],
       this.database.jobLead.findMany?.({
         where: { currentOwnerId: actor.id, archivedAt: null },
-        select: { status: true, rawUrl: true },
+        select: { id: true, status: true, rawUrl: true, appliedDate: true },
       }) ?? [],
       this.database.task.findMany?.({
         where: { assigneeId: actor.id, status: "OPEN" },
         select: { id: true },
       }) ?? [],
+      this.activeCalendarRule(now),
     ]);
+    const leadIds = authoredLeads.map((lead) => String(lead.id));
+    const [interviews, transitions] = leadIds.length
+      ? await Promise.all([
+          this.database.interviewRound.findMany?.({
+            where: { leadId: { in: leadIds } },
+            select: { leadId: true },
+          }) ?? [],
+          this.database.leadStatusTransition.findMany?.({
+            where: { leadId: { in: leadIds } },
+            select: { leadId: true, toStatus: true },
+          }) ?? [],
+        ])
+      : [[], []];
     const platformCounts = new Map<string, number>();
-    let recruiterResponses = 0;
-    let activeApplications = 0;
-    for (const lead of leads) {
-      if (lead.status === "RESPONSE_RECEIVED") recruiterResponses += 1;
-      if (["INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED"].includes(String(lead.status))) activeApplications += 1;
+    const todayPlatformCounts = new Map<string, number>();
+    const businessDate = businessCalendarDate(now, calendarRule.businessCalendarTimeZone);
+    const todayDate = businessDate.toISOString().slice(0, 10);
+    const sevenDayCounts = new Map(Array.from({ length: 7 }, (_, index) => [
+      dateKeyOffset(businessDate, index - 6),
+      new Map<string, number>(),
+    ]));
+    const recruiterResponses = ownedLeads.filter((lead) => lead.status === "RESPONSE_RECEIVED").length;
+    const activeApplications = ownedLeads.filter((lead) => ["INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED"].includes(String(lead.status))).length;
+    for (const lead of authoredLeads) {
       const platform = jobUrlHost(lead.rawUrl) ?? "Other";
       platformCounts.set(platform, (platformCounts.get(platform) ?? 0) + 1);
+      const appliedDate = isoDate(lead.appliedDate);
+      if (appliedDate === todayDate) todayPlatformCounts.set(platform, (todayPlatformCounts.get(platform) ?? 0) + 1);
+      const dayCounts = sevenDayCounts.get(appliedDate);
+      if (dayCounts) dayCounts.set(platform, (dayCounts.get(platform) ?? 0) + 1);
     }
+    const interviewLeadIds = new Set(interviews.map((interview) => String(interview.leadId)));
+    const transitionsByLead = new Map<string, Set<string>>();
+    for (const transition of transitions) {
+      const leadId = String(transition.leadId);
+      const statuses = transitionsByLead.get(leadId) ?? new Set<string>();
+      statuses.add(String(transition.toStatus));
+      transitionsByLead.set(leadId, statuses);
+    }
+    const reached = (lead: Record<string, unknown>, statuses: readonly string[]) => {
+      const observed = new Set([String(lead.status), ...(transitionsByLead.get(String(lead.id)) ?? [])]);
+      return statuses.some((status) => observed.has(status));
+    };
+    const interviewStatuses = ["INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"];
+    const offerStatuses = ["OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"];
+    const placementStatuses = ["PLACED", "STARTED"];
     return {
       recruiterResponses,
       activeApplications,
       openFollowUps: tasks.length,
-      platformTotals: [...platformCounts.entries()]
-        .map(([platform, count]) => ({ platform, count }))
-        .sort((left, right) => right.count - left.count || left.platform.localeCompare(right.platform)),
+      platformTotals: sortedPlatformTotals(platformCounts),
+      businessTimeZone: calendarRule.businessCalendarTimeZone,
+      todayPlatformTotals: sortedPlatformTotals(todayPlatformCounts),
+      sevenDayApplicationTotals: [...sevenDayCounts.entries()].map(([date, counts]) => ({
+        date,
+        total: [...counts.values()].reduce((sum, count) => sum + count, 0),
+        platformTotals: sortedPlatformTotals(counts),
+      })),
+      pipelineTotals: {
+        jobsApplied: authoredLeads.length,
+        activeJobs: authoredLeads.filter((lead) => ["RESPONSE_RECEIVED", "INTERVIEWING", "OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED"].includes(String(lead.status))).length,
+        interviews: authoredLeads.filter((lead) => interviewLeadIds.has(String(lead.id)) || reached(lead, interviewStatuses)).length,
+        offers: authoredLeads.filter((lead) => reached(lead, offerStatuses)).length,
+        placements: authoredLeads.filter((lead) => reached(lead, placementStatuses)).length,
+      },
     };
   }
 

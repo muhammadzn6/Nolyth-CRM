@@ -253,6 +253,17 @@ describe("CloserDashboardService", () => {
     expect(dashboard.todayMeetings.map((item) => item.id)).toEqual(["20000000-0000-4000-8000-000000000010"]);
   });
 
+  it("keeps started interviews in the today count for the closer's local day", async () => {
+    const { service } = createService({
+      timezone: "Asia/Karachi",
+      interviews: [interview({ startsAt: new Date("2026-09-03T06:00:00.000Z") })],
+    });
+
+    const dashboard = await service.get(closer);
+
+    expect(dashboard.todayMeetings.map((item) => item.id)).toEqual(["20000000-0000-4000-8000-000000000001"]);
+  });
+
   it("returns joined candidate, profile, and job context for the next meeting", async () => {
     const { service, database } = createService({
       interviews: [interview(nextMeetingContext())],

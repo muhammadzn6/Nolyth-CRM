@@ -250,6 +250,49 @@ describe("performance contracts", () => {
       .toMatchObject({ scoreCoverage: "PROVISIONAL", scoreCoveragePercent: 45 });
   });
 
+  it("validates authoritative BD dashboard aggregates with dated platform activity and lifetime pipeline totals", () => {
+    const aggregate = {
+      recruiterResponses: 4,
+      activeApplications: 3,
+      openFollowUps: 2,
+      platformTotals: [
+        { platform: "linkedin.com", count: 8 },
+        { platform: "indeed.com", count: 3 },
+      ],
+      businessTimeZone: "America/New_York",
+      todayPlatformTotals: [
+        { platform: "linkedin.com", count: 2 },
+        { platform: "indeed.com", count: 1 },
+      ],
+      sevenDayApplicationTotals: [
+        { date: "2026-09-01", total: 0, platformTotals: [] },
+        { date: "2026-09-02", total: 2, platformTotals: [{ platform: "linkedin.com", count: 2 }] },
+        { date: "2026-09-03", total: 0, platformTotals: [] },
+        { date: "2026-09-04", total: 0, platformTotals: [] },
+        { date: "2026-09-05", total: 0, platformTotals: [] },
+        { date: "2026-09-06", total: 0, platformTotals: [] },
+        { date: "2026-09-07", total: 0, platformTotals: [] },
+      ],
+      pipelineTotals: {
+        jobsApplied: 11,
+        activeJobs: 3,
+        interviews: 4,
+        offers: 2,
+        placements: 1,
+      },
+    };
+
+    expect(schema("bdWorkQueueSchema").parse(aggregate)).toEqual(aggregate);
+    expect(schema("bdWorkQueueSchema").safeParse({
+      ...aggregate,
+      sevenDayApplicationTotals: aggregate.sevenDayApplicationTotals.map((day, index) => index === 1 ? { ...day, total: 99 } : day),
+    }).success).toBe(false);
+    expect(schema("bdWorkQueueSchema").safeParse({
+      ...aggregate,
+      sevenDayApplicationTotals: aggregate.sevenDayApplicationTotals.map((day, index) => index === 6 ? { ...day, date: "2026-09-06" } : day),
+    }).success).toBe(false);
+  });
+
   it("rejects drill-down statuses that do not belong to the selected metric", () => {
     const drilldown = schema("performanceDrilldownQuerySchema");
     const base = {

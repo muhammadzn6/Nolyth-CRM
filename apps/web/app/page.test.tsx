@@ -29,7 +29,7 @@ vi.mock("../components/dashboard/closer-dashboard", () => ({
 }));
 
 vi.mock("../components/dashboard/bd-dashboard", () => ({
-  BdDashboard: ({ error }: { error?: string }) => <p>{`bd-dashboard:${error ?? "ready"}`}</p>,
+  BdDashboard: ({ error, performancePeriod }: { error?: string; performancePeriod?: string }) => <p>{`bd-dashboard:${error ?? "ready"}:${performancePeriod ?? "missing-period"}`}</p>,
 }));
 
 vi.mock("../lib/api-client", () => ({
@@ -43,6 +43,7 @@ vi.mock("../lib/api-client", () => ({
   listActivity: vi.fn(async () => []),
 }));
 
+import { businessDayPerformanceRange } from "../lib/business-day";
 import HomePage from "./page";
 
 const closer: SessionUser = {
@@ -91,5 +92,22 @@ describe("HomePage", () => {
 
     expect(html).toContain("bd-dashboard:Performance data is temporarily unavailable.");
     expect(html).not.toContain("standard-dashboard");
+  });
+
+  it("passes the URL-backed performance period to the BD dashboard", async () => {
+    getCurrentActorMock.mockResolvedValue(bd);
+    getCalendarMock.mockResolvedValue([]);
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("performance unavailable"); }));
+
+    const html = renderToStaticMarkup(await HomePage({ searchParams: Promise.resolve({ performancePeriod: "7d" }) }));
+
+    expect(html).toContain(":7d");
+  });
+
+  it("anchors Today to the configured business timezone instead of UTC", () => {
+    expect(businessDayPerformanceRange(new Date("2026-09-08T02:00:00.000Z"), "America/New_York")).toEqual({
+      from: "2026-09-07T04:00:00.000Z",
+      to: "2026-09-08T02:00:00.000Z",
+    });
   });
 });

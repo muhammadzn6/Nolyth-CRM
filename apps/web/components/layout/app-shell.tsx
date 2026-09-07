@@ -12,8 +12,6 @@ const navigation: Array<NavigationItem & { group: string; roles: SessionUser["ro
   { group: "Recruitment", href: "/profiles", label: "Profiles", icon: "profiles", roles: ["ADMIN", "BD"] },
   { group: "Recruitment", href: "/leads", label: "Leads", icon: "leads", roles: ["ADMIN", "BD", "CLOSER"] },
   { group: "Recruitment", href: "/tasks", label: "Tasks", icon: "tasks", roles: ["ADMIN", "BD", "CLOSER"] },
-  { group: "Employers", href: "/admin/clients", label: "Employer directory", icon: "profiles", roles: ["ADMIN"] },
-  { group: "Scheduling", href: "/calendar", label: "Interview calendar", icon: "calendar", roles: ["ADMIN", "BD", "CLOSER"] },
   { group: "Insights", href: "/analytics", label: "Analytics", icon: "analytics", roles: ["ADMIN", "BD"] },
   { group: "Insights", href: "/activity", label: "Activity", icon: "activity", roles: ["ADMIN", "BD", "CLOSER"] },
   { group: "Administration", href: "/admin/users", label: "Users", icon: "admin", roles: ["ADMIN"] },
@@ -22,6 +20,7 @@ const navigation: Array<NavigationItem & { group: string; roles: SessionUser["ro
 
 export function AppShell({ actor, children }: { actor: SessionUser; children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const items = navigation
     .filter((item) => item.roles.includes(actor.role))
     .map(({ roles: _roles, ...item }) => item);
@@ -31,12 +30,14 @@ export function AppShell({ actor, children }: { actor: SessionUser; children: Re
       <AppSidebar
         collapsed={sidebarCollapsed}
         items={items}
+        mobileOpen={mobileNavigationOpen}
         onCollapsedChange={setSidebarCollapsed}
+        onMobileOpenChange={setMobileNavigationOpen}
         role={actor.role}
       />
-      <div className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "lg:pl-[108px]" : "lg:pl-[256px]"}`}>
-        <AppHeader actor={actor} onNavigationToggle={() => setSidebarCollapsed((value) => !value)} />
-        <main className="px-4 py-6 md:px-8 lg:px-12 lg:py-10">{children}</main>
+      <div className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "lg:pl-[96px]" : "lg:pl-[248px]"}`}>
+        <AppHeader actor={actor} onNavigationToggle={() => setMobileNavigationOpen((value) => !value)} />
+        <main className="px-4 pb-8 pt-5 md:px-7 lg:px-9 lg:pb-10 lg:pt-7">{children}</main>
       </div>
     </div>
   );

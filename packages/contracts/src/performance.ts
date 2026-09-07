@@ -391,12 +391,41 @@ export const performanceQualityIndicatorsSchema = z.strictObject({
   duplicateRate: percentageSchema.nullable(),
 });
 
+const platformTotalSchema = z.strictObject({
+  platform: textSchema,
+  count: nonnegativeIntegerSchema,
+});
+
+const sevenDayApplicationTotalsSchema = z.array(z.strictObject({
+  date: z.iso.date(),
+  total: nonnegativeIntegerSchema,
+  platformTotals: z.array(platformTotalSchema),
+})).length(7).superRefine((days, context) => {
+  days.forEach((day, index) => {
+    const platformTotal = day.platformTotals.reduce((total, platform) => total + platform.count, 0);
+    if (platformTotal !== day.total) context.addIssue({ code: "custom", message: "Daily platform totals must equal the daily total", path: [index, "total"] });
+    if (index > 0 && Date.parse(`${day.date}T00:00:00.000Z`) - Date.parse(`${days[index - 1]!.date}T00:00:00.000Z`) !== 86_400_000) {
+      context.addIssue({ code: "custom", message: "Seven-day activity dates must be consecutive", path: [index, "date"] });
+    }
+  });
+});
+
 /** Server-owned BD queue totals. Preview arrays must never be used as these totals. */
 export const bdWorkQueueSchema = z.strictObject({
   recruiterResponses: nonnegativeIntegerSchema,
   activeApplications: nonnegativeIntegerSchema,
   openFollowUps: nonnegativeIntegerSchema,
-  platformTotals: z.array(z.strictObject({ platform: textSchema, count: nonnegativeIntegerSchema })),
+  platformTotals: z.array(platformTotalSchema),
+  businessTimeZone: timeZoneSchema,
+  todayPlatformTotals: z.array(platformTotalSchema),
+  sevenDayApplicationTotals: sevenDayApplicationTotalsSchema,
+  pipelineTotals: z.strictObject({
+    jobsApplied: nonnegativeIntegerSchema,
+    activeJobs: nonnegativeIntegerSchema,
+    interviews: nonnegativeIntegerSchema,
+    offers: nonnegativeIntegerSchema,
+    placements: nonnegativeIntegerSchema,
+  }),
 });
 
 export const performanceLeaderboardRowSchema = z.strictObject({

@@ -182,7 +182,16 @@ const auditRecord = {
 
 describe("PerformanceController", () => {
   it("returns the authenticated BD's uncapped work-queue aggregate", async () => {
-    const aggregate = { recruiterResponses: 127, activeApplications: 103, openFollowUps: 64, platformTotals: [{ platform: "linkedin.com", count: 208 }] };
+    const aggregate = {
+      recruiterResponses: 127,
+      activeApplications: 103,
+      openFollowUps: 64,
+      platformTotals: [{ platform: "linkedin.com", count: 208 }],
+      businessTimeZone: "America/New_York",
+      todayPlatformTotals: [{ platform: "linkedin.com", count: 47 }],
+      sevenDayApplicationTotals: Array.from({ length: 7 }, (_, index) => ({ date: `2026-09-0${index + 1}`, total: index === 6 ? 47 : 0, platformTotals: index === 6 ? [{ platform: "linkedin.com", count: 47 }] : [] })),
+      pipelineTotals: { jobsApplied: 208, activeJobs: 103, interviews: 31, offers: 9, placements: 3 },
+    };
     const service = { getBdWorkQueue: vi.fn().mockResolvedValue(aggregate) };
     const controller = new PerformanceController(service as unknown as PerformanceService);
 

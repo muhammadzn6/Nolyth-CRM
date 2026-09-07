@@ -13,7 +13,7 @@ export default async function InviteRoute({
 
   return (
     <main className="grid min-h-screen bg-background lg:grid-cols-[minmax(0,0.92fr)_minmax(520px,1.08fr)]">
-      <section className="relative hidden overflow-hidden bg-sidebar p-12 text-white lg:flex lg:flex-col lg:justify-between">
+      <section className="relative hidden overflow-hidden bg-[#171717] p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div aria-hidden="true" className="absolute -right-32 -top-28 size-[430px] rounded-full border border-white/10" />
         <div aria-hidden="true" className="absolute -right-12 -top-8 size-[260px] rounded-full border border-white/10" />
         <div className="relative flex items-center gap-3">
@@ -24,7 +24,7 @@ export default async function InviteRoute({
           </div>
         </div>
         <div className="relative max-w-xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#91aaf8]">Secure setup</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ff9a7f]">Secure setup</p>
           <h1 className="mt-5 text-5xl font-semibold leading-[1.08] tracking-[-0.045em]">Create your Orbit password.</h1>
           <p className="mt-5 max-w-lg text-base leading-7 text-sidebar-muted">Use this one-time invitation link to finish account setup. Your administrator never sees your password.</p>
         </div>

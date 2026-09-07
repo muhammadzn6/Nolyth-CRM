@@ -25,10 +25,10 @@ test.describe("Closer workspace", () => {
     await expect(page.getByRole("heading", { name: "Google Calendar" })).toBeVisible();
 
     const navigation = page.getByRole("navigation", { name: "Primary navigation" });
-    for (const label of ["Dashboard", "Leads", "Tasks", "Interview calendar", "Activity", "Account settings"]) {
+    for (const label of ["Dashboard", "Leads", "Tasks", "Activity", "Account settings"]) {
       await expect(navigation.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
-    for (const label of ["Candidates", "Profiles", "Employer directory", "Analytics", "Users"]) {
+    for (const label of ["Candidates", "Profiles", "Interview calendar", "Employer directory", "Analytics", "Users"]) {
       await expect(navigation.getByRole("link", { name: label, exact: true })).toHaveCount(0);
     }
   });
@@ -44,15 +44,20 @@ test.describe("Closer workspace", () => {
 
     await page.goto(`/leads/${assignedLeadId}/interviews`);
     await expect(page.getByRole("heading", { name: "Interviews" })).toBeVisible();
-    await expect(page.getByText("Mark attended")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Mark attended" }).first()).toBeVisible();
     await expect(page.getByText("Edit interview")).toHaveCount(0);
+    await expect(page.getByPlaceholder("Cancellation reason")).toHaveCount(0);
   });
 
   test("shows assigned interviews and closer actions on the calendar", async ({ page }) => {
     await page.goto("/calendar");
-    await expect(page.getByRole("heading", { name: "Interview calendar" })).toBeVisible();
-    await expect(page.getByText("SCHEDULED", { exact: true }).first()).toBeVisible();
-    await page.getByTestId("calendar-event").first().click();
+    await expect(page).toHaveURL(/\?calendarView=day$/);
+    const calendar = page.getByLabel("Calendar view");
+    await expect(calendar).toBeVisible();
+    await page.getByRole("button", { name: "Week view", exact: true }).click();
+    const scheduledEvent = calendar.getByTestId("calendar-event").filter({ hasText: "SCHEDULED" }).first();
+    await expect(scheduledEvent).toBeVisible();
+    await scheduledEvent.click();
     await expect(page.getByRole("button", { name: "Mark attended" }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Mark missed" }).first()).toBeVisible();
     await expect(page.getByPlaceholder("Cancellation reason")).toHaveCount(0);

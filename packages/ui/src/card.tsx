@@ -6,7 +6,7 @@ export function Card({ className, ...props }: ComponentProps<"section">) {
   return (
     <section
       className={joinClasses(
-        "rounded-[1.5rem] border border-border bg-surface shadow-[0_1px_2px_rgba(16,35,56,0.02),0_12px_32px_rgba(35,42,58,0.04)]",
+        "rounded-[1.65rem] border border-border/90 bg-surface shadow-[0_1px_2px_rgba(16,35,56,0.02),0_16px_42px_rgba(35,42,58,0.045)]",
         className,
       )}
       {...props}

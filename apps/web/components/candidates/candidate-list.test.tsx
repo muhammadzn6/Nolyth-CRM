@@ -98,13 +98,18 @@ describe("CandidateList", () => {
     expect(container.querySelector(`a[href="/candidates/${candidate.id}"]`)?.textContent).toContain(
       "Ada Lovelace",
     );
-    change(container.querySelector<HTMLInputElement>("#candidate-firstName")!, "Ada");
-    change(container.querySelector<HTMLInputElement>("#candidate-lastName")!, "Lovelace");
-    change(container.querySelector<HTMLInputElement>("#candidate-email")!, "ADA@ORBIT.TEST");
-    change(container.querySelector<HTMLInputElement>("#candidate-timezone")!, "Europe/London");
+    expect(container.querySelector('form[aria-label="Create candidate"]')).toBeNull();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Add candidate"]')?.click();
+    });
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Add candidate");
+    change(document.querySelector<HTMLInputElement>("#candidate-firstName")!, "Ada");
+    change(document.querySelector<HTMLInputElement>("#candidate-lastName")!, "Lovelace");
+    change(document.querySelector<HTMLInputElement>("#candidate-email")!, "ADA@ORBIT.TEST");
+    change(document.querySelector<HTMLInputElement>("#candidate-timezone")!, "Europe/London");
 
     await act(async () => {
-      container.querySelector<HTMLFormElement>('form[aria-label="Create candidate"]')?.requestSubmit();
+      document.querySelector<HTMLFormElement>('form[aria-label="Create candidate"]')?.requestSubmit();
     });
 
     expect(createCandidateMock).toHaveBeenCalledWith({

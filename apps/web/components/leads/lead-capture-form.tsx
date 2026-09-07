@@ -19,7 +19,6 @@ export function LeadCaptureForm({ actorId, profiles, embedded = false }: { actor
     try {
       const result = await createApplicationIntake({ profileId, companyName: values.companyName, jobTitle: values.jobTitle, rawUrl: values.rawUrl, recruiterName: values.recruiterName, recruiterEmail: values.recruiterEmail, ...(values.duplicateOverrideReason.trim() ? { duplicateOverrideReason: values.duplicateOverrideReason } : {}) });
       setNotice(result.duplicate.classification === "CONFIRMED" ? "Application saved for traceability; it does not count toward your target." : result.duplicate.classification === "LIKELY" ? "Application added with a pending duplicate review." : "Application added to the pipeline"); setValues({ companyName: "", jobTitle: "", rawUrl: "", recruiterName: "", recruiterEmail: "", duplicateOverrideReason: "" }); setNeedsDuplicateOverride(false);
-      window.location.reload();
     } catch (cause) { const warning = cause instanceof ApiClientError && cause.code === "CONFLICT" && typeof cause.details === "object" && cause.details !== null && "duplicate" in cause.details; setNeedsDuplicateOverride(warning); setError(cause instanceof ApiClientError ? cause.message : "Application could not be added."); }
     finally { setPending(false); }
   }

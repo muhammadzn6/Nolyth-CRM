@@ -1,5 +1,46 @@
 type ApplicationSignal = { appliedDate: string; status: string; rawUrl: string; companyName?: string };
 
+export type BdDailyPlatformSignal = { platform: string; count: number; tone?: "coral" | "peach" | "amber" | "terracotta" };
+
+export type BdDailyActivitySummary = {
+  qualifiedApplications: number;
+  recordedApplications: number | null;
+  dailyTarget: number | null;
+  remaining: number | null;
+  uniqueCompanies: number | null;
+  uniqueJobs: number | null;
+  uniqueRecruiters: number | null;
+  duplicates: number | null;
+  pendingOverrides: number | null;
+  platforms: BdDailyPlatformSignal[];
+};
+
+export function buildBdDailyActivitySummary(input: {
+  qualifiedApplications: number;
+  recordedApplications?: number | null;
+  dailyTarget?: number | null;
+  uniqueCompanies?: number | null;
+  uniqueJobs?: number | null;
+  uniqueRecruiters?: number | null;
+  duplicates?: number | null;
+  pendingOverrides?: number | null;
+  platforms?: BdDailyPlatformSignal[];
+}): BdDailyActivitySummary {
+  const target = input.dailyTarget ?? null;
+  return {
+    qualifiedApplications: input.qualifiedApplications,
+    recordedApplications: input.recordedApplications ?? null,
+    dailyTarget: target,
+    remaining: target == null ? null : Math.max(0, target - input.qualifiedApplications),
+    uniqueCompanies: input.uniqueCompanies ?? null,
+    uniqueJobs: input.uniqueJobs ?? null,
+    uniqueRecruiters: input.uniqueRecruiters ?? null,
+    duplicates: input.duplicates ?? null,
+    pendingOverrides: input.pendingOverrides ?? null,
+    platforms: input.platforms ?? [],
+  };
+}
+
 export type BdDashboardKpi = {
   key: string;
   label: string;

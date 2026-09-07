@@ -3,48 +3,167 @@ import { Card } from "@orbit/ui";
 
 import { BdPeerRanking } from "../performance/bd-peer-ranking";
 import { BdPersonalQuality } from "../performance/bd-personal-quality";
+import { BdCalendarPreview } from "./bd-calendar-preview";
+import { buildBdDailyActivitySummary } from "./bd-dashboard-kpis";
+
+type PerformancePeriod = "day" | "7d" | "30d";
 
 type BdDashboardProps = {
   actor: SessionUser;
   applications: LeadSummary[];
   interviews: InterviewSummary[];
   performance?: BdPerformanceResponse;
+  performancePeriod?: PerformancePeriod;
   todayPerformance?: BdPerformanceResponse;
   workQueue?: BdWorkQueue;
   error?: string;
 };
 
-function interviewTime(interview: InterviewSummary): string {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: interview.timezone }).format(new Date(interview.startsAt));
-}
+const stageColors = ["#e85f43", "#f08a64", "#d9953f", "#bd6d57"];
+const periodLabels: Record<PerformancePeriod, string> = { day: "Today", "7d": "7 days", "30d": "30 days" };
 
-function displayCount(value: number | null | undefined): string {
+function count(value: number | null | undefined): string {
   return value == null ? "—" : value.toLocaleString();
 }
 
-function UnavailablePerformancePanel() {
-  return <Card aria-label="Personal performance unavailable" className="editorial-insight-card p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Your details</p><h2 className="mt-1 text-base font-bold text-foreground">Personal performance unavailable</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">Orbit could not load your score, target attainment, or peer summary. Your application queue is still available.</p></Card>;
+function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name;
 }
 
-export function BdDashboard({ actor, applications, interviews, performance, todayPerformance, workQueue, error }: BdDashboardProps) {
-  const now = new Date();
-  const upcoming = interviews.filter((interview) => new Date(interview.startsAt) >= now).sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()).slice(0, 5);
-  const dailyTarget = todayPerformance?.currentDailyTarget ?? performance?.currentDailyTarget;
-  const qualifiedToday = todayPerformance?.performance.qualifiedApplications;
-  const interviewsToSchedule = todayPerformance?.performance.interviewsNeedingScheduling;
-  const kpis = [
-    ["Qualified applications today", qualifiedToday, "bg-primary-soft", "text-primary", "/leads"],
-    ["Remaining target", dailyTarget != null && qualifiedToday != null ? Math.max(0, dailyTarget - qualifiedToday) : null, "bg-warning-soft", "text-warning-foreground", "/leads"],
-    ["Recruiter responses", todayPerformance?.performance.recruiterResponses, "bg-info-soft", "text-info", "/leads?status=RESPONSE_RECEIVED"],
-    ["Interviews to schedule", interviewsToSchedule, "bg-danger-soft", "text-danger", "/leads?status=RESPONSE_RECEIVED"],
+function platformName(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "Other";
+  }
+}
+
+function shortTimeZone(timeZone?: string): string {
+  const labels: Record<string, string> = {
+    "America/New_York": "US Eastern",
+    "America/Chicago": "US Central",
+    "America/Denver": "US Mountain",
+    "America/Los_Angeles": "US Pacific",
+  };
+  return timeZone ? labels[timeZone] ?? timeZone.replaceAll("_", " ") : "US Eastern";
+}
+
+function PerformancePeriodControl({ period }: { period: PerformancePeriod }) {
+  return <nav aria-label="Performance period" className="bd-performance-period">
+    {(["day", "7d", "30d"] as const).map((value) => <a aria-current={period === value ? "page" : undefined} href={`/?performancePeriod=${value}`} key={value}>{periodLabels[value]}</a>)}
+  </nav>;
+}
+
+function DailyActivityChart({ dailyTarget, workQueue }: { dailyTarget?: number | null; workQueue?: BdWorkQueue }) {
+  const days = workQueue?.sevenDayApplicationTotals ?? [];
+  const platforms = [...new Set(days.flatMap((day) => day.platformTotals.map((entry) => entry.platform)))];
+  const colorByPlatform = new Map(platforms.map((platform, index) => [platform, stageColors[index % stageColors.length]]));
+  const peak = Math.max(1, dailyTarget ?? 0, ...days.map((day) => day.total));
+  const total = days.reduce((sum, day) => sum + day.total, 0);
+  const average = days.length ? Math.round((total / days.length) * 10) / 10 : 0;
+  const peakDay = days.reduce((highest, day) => day.total > highest ? day.total : highest, 0);
+  const targetPosition = dailyTarget ? Math.min(100, (dailyTarget / peak) * 100) : null;
+  const chartDescription = days.map((day) => `${day.date}: ${day.total}`).join(", ");
+
+  return <>
+    <dl className="bd-cadence-summary">
+      <div><dt>Total</dt><dd>{count(total)}</dd></div>
+      <div><dt>Average</dt><dd>{average}/day</dd></div>
+      <div><dt>Peak</dt><dd>{count(peakDay)}</dd></div>
+    </dl>
+    <div aria-label={`BD seven day activity chart. ${chartDescription}`} className="bd-activity-chart" role="img">
+      <div className="bd-chart-grid-lines" aria-hidden="true"><i /><i /><i /></div>
+      {targetPosition !== null ? <span className="bd-chart-target" style={{ bottom: `${18 + targetPosition * 0.54}%` }}>Target {dailyTarget}</span> : null}
+      <div className="bd-chart-bars">
+        {days.map((day) => <div className="bd-chart-day" key={day.date}>
+          <div className="bd-chart-bar" style={{ height: `${Math.max(day.total ? 10 : 2, (day.total / peak) * 72)}%` }} title={`${day.date}: ${day.total} applications`}>
+            {day.platformTotals.map((entry) => <i key={entry.platform} style={{ height: `${day.total ? (entry.count / day.total) * 100 : 0}%`, backgroundColor: colorByPlatform.get(entry.platform) }} />)}
+          </div>
+          <span>{new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(new Date(`${day.date}T12:00:00Z`))}</span>
+          <b>{day.total || "·"}</b>
+        </div>)}
+      </div>
+    </div>
+  </>;
+}
+
+function DailyTracker({ dailyTarget, qualifiedToday, recruiterResponses, interviewsScheduled, workQueue }: { dailyTarget?: number | null; qualifiedToday?: number | null; recruiterResponses?: number | null; interviewsScheduled?: number | null; workQueue?: BdWorkQueue }) {
+  const allPlatforms = workQueue?.todayPlatformTotals ?? [];
+  const leadingPlatforms = allPlatforms.slice(0, 3);
+  const otherCount = allPlatforms.slice(3).reduce((total, entry) => total + entry.count, 0);
+  const visiblePlatforms = otherCount ? [...leadingPlatforms, { platform: "Other", count: otherCount }] : leadingPlatforms;
+  const summary = buildBdDailyActivitySummary({
+    qualifiedApplications: qualifiedToday ?? 0,
+    dailyTarget,
+    platforms: visiblePlatforms.map((entry, index) => ({ ...entry, tone: (["coral", "peach", "amber", "terracotta"] as const)[index] })),
+  });
+  const target = summary.dailyTarget ?? 0;
+  const progress = target ? (summary.qualifiedApplications / target) * 100 : 0;
+  const visibleProgress = Math.min(100, progress);
+  const remaining = summary.remaining == null ? null : Math.max(0, summary.remaining);
+  const savedToday = allPlatforms.reduce((total, platform) => total + platform.count, 0);
+
+  return <Card aria-label="BD daily activity tracker" className="editorial-insight-card editorial-surface-feature bd-primary-surface p-5 sm:p-6">
+    <header className="bd-card-header"><div><p className="bd-card-eyebrow">Today</p><h2>Daily activity tracker</h2></div><span className="bd-scope-pill">{shortTimeZone(workQueue?.businessTimeZone)}</span></header>
+    <a aria-label={`View ${count(summary.qualifiedApplications)} qualified applications`} className="bd-progress-tube-link block" href="/leads">
+      <div className="bd-progress-ring-wrap">
+        <svg aria-hidden="true" className="bd-progress-ring" data-testid="bd-progress-ring" viewBox="0 0 220 220"><circle className="bd-progress-ring-track" cx="110" cy="110" r="88" /><circle className="bd-progress-ring-fill" cx="110" cy="110" r="88" pathLength="100" style={{ strokeDashoffset: `${100 - visibleProgress}` }} /></svg>
+        <div className="bd-progress-ring-content"><strong>{count(summary.qualifiedApplications)}<span>/{count(summary.dailyTarget)}</span></strong><small>qualified applications</small><em>{progress > 100 ? `+${count(summary.qualifiedApplications - target)} above target` : remaining == null ? "Target unavailable" : `${count(remaining)} remaining`}</em></div>
+      </div>
+    </a>
+    <dl className="bd-daily-milestones"><div><dt>Replies</dt><dd>{count(recruiterResponses)}</dd></div><div><dt>Interviews</dt><dd>{count(interviewsScheduled)}</dd></div></dl>
+    <div className="bd-platform-breakdown"><div className="flex items-center justify-between gap-3"><strong>{count(savedToday)} saved today</strong><span>Platform mix</span></div><div className="bd-platform-stack" aria-label={`${savedToday} saved applications by platform`}>{summary.platforms.map((platform, index) => <i key={platform.platform} style={{ width: `${savedToday ? (platform.count / savedToday) * 100 : 0}%`, backgroundColor: stageColors[index] }} />)}</div><div className="bd-platform-legends">{summary.platforms.map((platform, index) => <span className="bd-platform-legend" key={platform.platform}><i style={{ backgroundColor: stageColors[index] }} />{platform.platform} · {platform.count}</span>)}</div></div>
+  </Card>;
+}
+
+function CadencePanel({ dailyTarget, workQueue }: { dailyTarget?: number | null; workQueue?: BdWorkQueue }) {
+  return <Card aria-label="BD seven day cadence" className="editorial-insight-card editorial-surface-grid bd-secondary-surface bd-cadence-panel p-4 sm:p-5"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Cadence</p><h2>Last 7 days</h2></div></header><DailyActivityChart dailyTarget={dailyTarget} workQueue={workQueue} /></Card>;
+}
+
+function OperationalPulse({ applications, todayPerformance, workQueue }: { applications: LeadSummary[]; todayPerformance?: BdPerformanceResponse; workQueue?: BdWorkQueue }) {
+  const responseCount = workQueue?.recruiterResponses ?? 0;
+  const responseItems = applications.filter((application) => application.status === "RESPONSE_RECEIVED").slice(0, 3);
+  const queueItems = [
+    { label: "Calendar entries needed", value: todayPerformance?.performance.interviewsNeedingScheduling ?? 0, href: "/tasks", color: stageColors[2] },
+    { label: "Follow-ups due", value: workQueue?.openFollowUps ?? 0, href: "/tasks", color: stageColors[3] },
+  ].filter((item) => item.value > 0);
+  const hasWork = responseCount > 0 || queueItems.length > 0;
+
+  return <Card aria-label="BD operational pulse" className="editorial-insight-card editorial-surface-alert bd-primary-surface bd-pulse-panel p-4 sm:p-5"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Operational pulse</p><h2>What needs attention</h2></div><a href="/tasks">Open queue →</a></header><div className="bd-pulse-scroll">
+    {!hasWork ? <p className="bd-queue-clear"><span>✓</span>Queue clear</p> : null}
+    {responseCount > 0 ? <div className="bd-attention-group"><div className="bd-attention-heading"><span>Responses to review</span><strong>{count(responseCount)}</strong></div>{responseItems.map((application) => <a className="bd-attention-row" href={`/leads/${application.id}`} key={application.id}><span className="bd-pulse-checkbox" aria-hidden="true" style={{ borderColor: stageColors[0] }} /><span><strong>{application.jobTitle}</strong><small>{application.companyName ?? "Company not recorded"}</small></span><b>Open →</b></a>)}{responseCount > responseItems.length ? <a className="bd-attention-more" href="/leads?status=RESPONSE_RECEIVED">+{responseCount - responseItems.length} more responses</a> : null}</div> : null}
+    {queueItems.map((item) => <a className="bd-attention-row" href={item.href} key={item.label}><span className="bd-pulse-checkbox" aria-hidden="true" style={{ borderColor: item.color }} /><span><strong>{item.label}</strong></span><b>{count(item.value)}</b></a>)}
+  </div></Card>;
+}
+
+function FunnelAndTrend({ workQueue }: { workQueue?: BdWorkQueue }) {
+  const totals = workQueue?.pipelineTotals;
+  const stages = [
+    ["Jobs applied", totals?.jobsApplied, "/leads?pipelineStage=APPLIED"],
+    ["Active jobs", totals?.activeJobs, "/leads?pipelineStage=ACTIVE"],
+    ["Interviews", totals?.interviews, "/leads?pipelineStage=INTERVIEW"],
+    ["Offers", totals?.offers, "/leads?pipelineStage=OFFER"],
+    ["Placements", totals?.placements, "/leads?pipelineStage=PLACEMENT"],
   ] as const;
-  const platformTotals = workQueue?.platformTotals ?? [];
-  return <div aria-label="BD application workspace" className="editorial-dashboard mx-auto max-w-[1500px]">
-    <div className="editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(now)}</span><span><strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "long" }).format(now)}</strong><small>Daily target · {displayCount(dailyTarget)}</small></span><a aria-label="Add application" className="editorial-add-button" href="/leads?new=application">+ Add application <span aria-hidden="true">›</span></a><a aria-label="Open full calendar" className="editorial-round-button" href="/calendar">□</a></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">BD application desk</p><h1>Good morning, {actor.displayName.split(" ")[0]}</h1><p>Keep applications moving from entry to recruiter response.</p></div></div>
+  const conversion = (from?: number, to?: number) => from ? `${Math.round(((to ?? 0) / from) * 100)}%` : "—";
+  return <Card aria-label="BD lifetime placement funnel" className="editorial-insight-card editorial-surface-lines p-5 sm:p-6"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Lifetime view</p><h2>Placement journey</h2></div><span className="bd-scope-pill">All time</span></header><div className="bd-lifetime-funnel">{stages.map(([label, value, href]) => <a href={href} key={label}><span>{label}</span><strong>{count(value)}</strong></a>)}</div><div className="bd-funnel-conversions"><span>Applied → active <strong>{conversion(totals?.jobsApplied, totals?.activeJobs)}</strong></span><span>Interview → offer <strong>{conversion(totals?.interviews, totals?.offers)}</strong></span><span>Offer → placement <strong>{conversion(totals?.offers, totals?.placements)}</strong></span></div></Card>;
+}
+
+function RecentApplications({ applications }: { applications: LeadSummary[] }) {
+  const visibleApplications = applications.slice(0, 6);
+  return <Card aria-label="BD recent applications" className="editorial-insight-card editorial-surface-soft bd-fixed-dashboard-card bd-secondary-surface p-5 sm:p-6"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Intake history</p><h2>Recent applications</h2></div><a href="/leads">View all →</a></header><div className="bd-card-scroll">{visibleApplications.map((application) => <a className="bd-recent-row" href={`/leads/${application.id}`} key={application.id}><span><strong>{application.jobTitle}</strong><small>{application.companyName ?? "Company not recorded"} · {platformName(application.rawUrl)} · {application.appliedDate}</small></span><b>{application.status.replaceAll("_", " ")}</b></a>)}{visibleApplications.length === 0 ? <p className="bd-empty-state">Your application entries will appear here.</p> : null}</div></Card>;
+}
+
+export function BdDashboard({ actor, applications, interviews, performance, performancePeriod = "30d", todayPerformance, workQueue, error }: BdDashboardProps) {
+  const now = new Date();
+  const dailyTarget = todayPerformance?.currentDailyTarget ?? performance?.currentDailyTarget;
+  const periodLabel = periodLabels[performancePeriod];
+  return <div aria-label="BD application workspace" className="bd-dashboard-shell editorial-dashboard mx-auto max-w-[1500px]">
+    <div className="bd-dashboard-hero-band editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(now)}</span><span><strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(now)}</strong><small>Daily target · {count(dailyTarget)}</small></span><a aria-label="Add application" className="editorial-add-button" href="/leads?new=application">+ Add application <span aria-hidden="true">›</span></a></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">BD application desk</p><h1>Good morning, {firstName(actor.displayName)}</h1><p>Capture applications. Act on recruiter responses.</p></div></div>
     {error ? <p className="mt-4 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground" role="status">{error}</p> : null}
-    <section aria-label="BD application pulse" className="mt-7"><div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-bold text-foreground">Application pulse</h2><a className="text-xs font-semibold text-primary" href="/leads">Open all applications →</a></div><div className="editorial-pulse-grid">{kpis.map(([label, value, iconTone, valueTone, href]) => <a aria-label={`${label}: ${displayCount(value)}`} className="editorial-pulse-card" href={href} key={label}><span className={`editorial-pulse-icon ${iconTone} ${valueTone}`}>{label === "Recruiter responses" ? "↗" : label === "Interviews to schedule" ? "!" : "✓"}</span><span className="editorial-pulse-copy"><small>{label}</small><strong className={valueTone}>{displayCount(value)}</strong></span><span className="editorial-pulse-badge">{label === "Remaining target" ? `Target ${displayCount(dailyTarget)}` : "View"}</span></a>)}</div></section>
-    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]"><Card aria-label="BD work queue" className="editorial-attention-card p-5 sm:p-6"><header className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Work queue</h2><p className="mt-1 text-xs text-muted-foreground">The next operational handoffs.</p></div><a className="editorial-today-pill" href="/tasks">{displayCount(workQueue?.openFollowUps)} tasks</a></header><div className="mt-5 space-y-2.5"><a className="editorial-attention-item editorial-attention-danger" href="/leads?status=RESPONSE_RECEIVED"><span className="editorial-status-dot bg-danger" /><span><strong>Recruiter responses</strong><small>Review and schedule interviews.</small></span><b>{displayCount(workQueue?.recruiterResponses)}</b></a><a className="editorial-attention-item" href="/leads?status=INTERVIEWING"><span className="editorial-status-dot bg-primary" /><span><strong>Active applications</strong><small>Already moving through the funnel.</small></span><b>{displayCount(workQueue?.activeApplications)}</b></a><a className="editorial-attention-item" href="/tasks"><span className="editorial-status-dot bg-warning" /><span><strong>Follow-ups due</strong><small>Keep recruiter conversations warm.</small></span><b>{displayCount(workQueue?.openFollowUps)}</b></a></div></Card>{performance ? <BdPersonalQuality performance={performance} /> : <UnavailablePerformancePanel />}</div>
-    <section aria-label="BD operations" className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]"><Card className="editorial-insight-card p-5 sm:p-6"><header className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Recent applications</h2><p className="mt-1 text-xs text-muted-foreground">Latest entries needing a quick check.</p></div><a className="text-xs font-semibold text-primary" href="/leads">View all</a></header><div className="mt-4 divide-y divide-border">{applications.slice(0, 6).map((application) => <a className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:bg-surface-subtle" href={`/leads/${application.id}`} key={application.id}><span className="min-w-0"><strong className="block truncate text-sm text-foreground">{application.jobTitle}</strong><small className="block truncate text-xs text-muted-foreground">{application.companyName ?? "Company not recorded"} · {application.appliedDate}</small></span><span className="shrink-0 rounded-full bg-info-soft px-2.5 py-1 text-[10px] font-bold uppercase text-info">{application.status.replaceAll("_", " ")}</span></a>)}{applications.length === 0 ? <p className="py-5 text-sm text-muted-foreground">Your application entries will appear here.</p> : null}</div></Card><Card className="editorial-insight-card p-5 sm:p-6"><header className="flex items-center justify-between"><div><h2 className="text-base font-bold text-foreground">Upcoming interviews</h2><p className="mt-1 text-xs text-muted-foreground">Compact handoff view.</p></div><a className="text-xs font-semibold text-primary" href="/calendar">Open calendar</a></header>{upcoming.length ? <ol className="mt-4 divide-y divide-border">{upcoming.map((interview) => <li className="py-3 first:pt-0 last:pb-0" key={interview.id}><strong className="block truncate text-sm text-foreground">{interview.roundType.replaceAll("_", " ")}</strong><small className="block text-xs text-muted-foreground">{interviewTime(interview)} · {interview.timezone}</small><div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold text-primary"><a href={`/leads/${interview.leadId}/interviews?edit=${interview.id}`}>Edit</a><a href={`/leads/${interview.leadId}`}>Open application</a><a href={`/calendar?date=${encodeURIComponent(interview.startsAt)}`}>Open calendar</a></div></li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">No upcoming interviews.</p>}</Card></section>
-    <section aria-label="BD insights" className="mt-5 grid gap-5 md:grid-cols-2"><Card className="editorial-insight-card p-5 sm:p-6"><header className="flex items-center justify-between"><h2 className="text-base font-bold text-foreground">Applications by platform</h2><span className="editorial-today-pill">{displayCount(platformTotals.reduce((total, entry) => total + entry.count, 0))} total</span></header><ul className="mt-4 space-y-3">{platformTotals.slice(0, 5).map(({ platform, count }) => <li className="flex items-center justify-between text-sm" key={platform}><span className="text-muted-foreground">{platform}</span><strong>{count}</strong></li>)}{workQueue && platformTotals.length === 0 ? <li className="text-sm text-muted-foreground">No saved applications yet.</li> : null}{!workQueue ? <li className="text-sm text-muted-foreground">Platform totals are temporarily unavailable.</li> : null}</ul></Card>{performance ? <BdPeerRanking peers={performance.peerLeaderboard} selfRank={performance.rank} /> : <Card className="editorial-insight-card p-5 sm:p-6"><h2 className="text-base font-bold text-foreground">What needs attention</h2><p className="mt-4 text-sm leading-6 text-muted-foreground">Recruiter replies become active applications. Review the response, add interview details, then hand the scheduled call to the assigned Closer.</p></Card>}</section>
+    <section className="bd-flow-section bd-flow-section-primary mt-5"><div className="bd-activity-layout"><DailyTracker dailyTarget={dailyTarget} interviewsScheduled={todayPerformance?.performance.interviewsScheduled} qualifiedToday={todayPerformance?.performance.qualifiedApplications} recruiterResponses={todayPerformance?.performance.recruiterResponses} workQueue={workQueue} /><div className="bd-activity-rail"><CadencePanel dailyTarget={dailyTarget} workQueue={workQueue} /><OperationalPulse applications={applications} todayPerformance={todayPerformance} workQueue={workQueue} /></div></div></section>
+    <section className="mt-5 grid gap-5 xl:grid-cols-2"><BdCalendarPreview interviews={interviews} /><RecentApplications applications={applications} /></section>
+    <section className="mt-5"><FunnelAndTrend workQueue={workQueue} /></section>
+    <section className="bd-performance-zone mt-5"><div className="bd-performance-zone-header"><div><p className="bd-card-eyebrow">Performance</p><h2>How you are tracking</h2></div><PerformancePeriodControl period={performancePeriod} /></div><div className="mt-3 grid gap-5 xl:grid-cols-2">{performance ? <BdPersonalQuality performance={performance} performancePeriod={performancePeriod} periodLabel={periodLabel} /> : <Card aria-label="Personal performance unavailable" className="editorial-insight-card bd-secondary-surface p-5 sm:p-6"><h2 className="text-xl font-bold text-foreground">Personal performance unavailable</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">Performance details are temporarily unavailable. Your daily queue is still available.</p></Card>}{performance ? <BdPeerRanking peers={performance.peerLeaderboard} periodLabel={periodLabel} selfBdId={actor.id} /> : null}</div></section>
   </div>;
 }

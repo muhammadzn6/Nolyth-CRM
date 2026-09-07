@@ -53,12 +53,38 @@ describe("AppShell interactions", () => {
       'button[aria-label="Expand navigation"]',
     );
 
-    expect(sidebar?.className).toContain("w-[76px]");
-    expect(content?.className).toContain("lg:pl-[108px]");
+    expect(sidebar?.className).toContain("w-[72px]");
+    expect(content?.className).toContain("lg:pl-[96px]");
 
     act(() => expand?.click());
 
     expect(sidebar?.className).toContain("w-[224px]");
-    expect(content?.className).toContain("lg:pl-[256px]");
+    expect(content?.className).toContain("lg:pl-[248px]");
+  });
+
+  it("uses the command-header control to open and close mobile navigation", () => {
+    act(() => {
+      root.render(
+        <AppShell actor={actor}>
+          <p>Dashboard content</p>
+        </AppShell>,
+      );
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Toggle navigation"]',
+    );
+    const sidebar = container.querySelector("aside");
+
+    expect(sidebar?.className).toContain("-translate-x-[120%]");
+    act(() => toggle?.click());
+    expect(sidebar?.className).toContain("translate-x-0");
+    expect(container.querySelector('button[aria-label="Close navigation overlay"]')).not.toBeNull();
+
+    const close = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Close navigation"]',
+    );
+    act(() => close?.click());
+    expect(sidebar?.className).toContain("-translate-x-[120%]");
   });
 });

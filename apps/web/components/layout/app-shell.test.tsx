@@ -55,9 +55,8 @@ describe("AppShell", () => {
     expect(admin).toContain('href="/candidates"');
     expect(admin).toContain(">Candidates<");
     expect(admin).toContain("Recruitment");
-    expect(admin).toContain("Employers");
     expect(admin).toContain("Administration");
-    expect(admin).toContain('href="/admin/clients"');
+    expect(admin).not.toContain('href="/admin/clients"');
     expect(admin).not.toContain("Client calendars");
     expect(admin).toContain('href="/settings"');
     expect(bd).not.toContain('href="/admin"');
@@ -144,12 +143,12 @@ describe("foundation screens", () => {
   it("renders the dashboard calendar and a recent activity feed", () => {
     const html = renderToStaticMarkup(<DashboardOverview actor={actors.ADMIN} />);
 
-    expect(html).toContain("Month");
-    expect(html).toContain("Open calendar filters");
+    expect(html).toContain("Agenda");
+    expect(html).toContain("Open calendar display settings");
     expect(html).toContain("Recent activity");
     expect(html).toContain("Lead moved to interviewing");
     expect(html).toContain("Workspace pulse");
     expect(html).not.toContain("Scheduling &amp; workload");
-    expect(html).toContain("Employer operations");
+    expect(html).not.toContain("Employer operations");
   });
 });

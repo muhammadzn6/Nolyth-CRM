@@ -17,6 +17,7 @@ export function BdLeaderboard({ rows, period = "30d" }: { rows: PerformanceLeade
       <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold text-primary">{rows.length} ranked</span>
     </header>
     <ol className="mt-5 space-y-3">
+      {rows.length === 0 ? <li className="rounded-2xl border border-dashed border-border bg-surface-subtle p-5"><p className="text-sm font-semibold text-foreground">No official ranks yet</p><p className="mt-1 text-xs leading-5 text-muted-foreground">BDs appear here after they meet the rolling eligibility window. Check Building baseline below for early performance.</p></li> : null}
       {rows.map((row) => <li className="rounded-2xl border border-border bg-background/70 p-4" key={row.bdId}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3"><span aria-label={`Rank ${row.rank ?? "unranked"}`} className="grid size-9 shrink-0 place-items-center rounded-full bg-primary-soft text-sm font-bold text-primary">#{row.rank ?? "—"}</span><div className="min-w-0"><h3 className="truncate text-sm font-bold text-foreground">{row.bdName}</h3><p className="text-xs text-muted-foreground">{row.qualifiedApplications.toLocaleString()} qualified applications</p></div></div>
