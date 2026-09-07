@@ -123,6 +123,13 @@ const dashboard: CloserDashboardData = {
       occurredAt: "2026-09-03T08:30:00.000Z",
     },
   ],
+  lifetimeFunnel: {
+    applicationsHandled: 48,
+    interviewsScheduled: 22,
+    callsAttended: 14,
+    offers: 6,
+    placements: 2,
+  },
   calendarConnection: {
     connected: false,
     email: null,
@@ -225,5 +232,15 @@ describe("CloserDashboard", () => {
 
     expect(container.textContent).toContain("Agenda");
     expect(container.textContent).not.toContain("Scheduling workspace");
+  });
+
+  it("places the all-time placement funnel after the operational updates", async () => {
+    await renderDashboard(dashboard);
+
+    const notificationsLink = container.querySelector('a[href="/notifications"]');
+    const funnel = container.querySelector('[aria-label="Closer lifetime placement funnel"]');
+
+    expect(funnel).not.toBeNull();
+    expect(Boolean(notificationsLink && notificationsLink.compareDocumentPosition(funnel!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ import type {
 import { Button, Card, CardDescription, CardTitle } from "@orbit/ui";
 import { GoogleCalendarConnection } from "../calendar/google-calendar-connection";
 import { CalendarWorkspace } from "../calendar/calendar-workspace";
+import { CloserLifetimeFunnel } from "./closer-lifetime-funnel";
 
 type CloserDashboardProps = {
   actor: SessionUser;
@@ -244,6 +245,13 @@ export function CloserDashboard({ actor, data, calendarInterviews, error }: Clos
     conflicts: [],
     notifications: [],
     recentActivity: [],
+    lifetimeFunnel: {
+      applicationsHandled: 0,
+      interviewsScheduled: 0,
+      callsAttended: 0,
+      offers: 0,
+      placements: 0,
+    },
     calendarConnection: { connected: false, email: null, calendarName: null, lastSyncedAt: null, status: "DISCONNECTED" as const },
   };
 
@@ -257,6 +265,7 @@ export function CloserDashboard({ actor, data, calendarInterviews, error }: Clos
       <section className="mt-5"><AssignedApplications applications={dashboard.assignedApplications} /></section>
       <section className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]" id="feedback"><FeedbackQueue meetings={dashboard.needsFeedback} /><CalendarConnectionCard connection={dashboard.calendarConnection} timezone={dashboard.timezone} /></section>
       <section className="mt-5"><Updates data={dashboard} /></section>
+      <section className="mt-5"><CloserLifetimeFunnel totals={dashboard.lifetimeFunnel} /></section>
     </div>
   );
 }

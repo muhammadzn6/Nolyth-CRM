@@ -122,6 +122,13 @@ const closerDashboard = {
   conflicts: [],
   notifications: [],
   recentActivity: [],
+  lifetimeFunnel: {
+    applicationsHandled: 48,
+    interviewsScheduled: 22,
+    callsAttended: 14,
+    offers: 6,
+    placements: 2,
+  },
   calendarConnection: {
     connected: false,
     email: null,
