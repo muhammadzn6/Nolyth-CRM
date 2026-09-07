@@ -7,7 +7,7 @@ type CloserLifetimeFunnelProps = {
   totals: CloserDashboardData["lifetimeFunnel"];
 };
 
-const bands = [styles.bandOne, styles.bandTwo, styles.bandThree, styles.bandFour];
+const bandColors = ["#ffb192", "#f88961", "#ee6847", "#df4f31"];
 
 function count(value: number): string {
   return value.toLocaleString();
@@ -83,8 +83,8 @@ export function CloserLifetimeFunnel({ totals }: CloserLifetimeFunnelProps) {
           <svg aria-label={flowLabel} preserveAspectRatio="none" role="img" viewBox="0 0 1000 260">
             <title>Closer lifetime placement journey</title>
             <desc>Stream thickness is proportional to unique applications at each stage. The stream ends before the first zero-valued stage.</desc>
-            {visibleHeights.length > 0 ? bands.map((className, bandIndex) => (
-              <path className={`${styles.band} ${className}`} d={bandPath(visibleHeights, visibleXPositions, bandIndex)} key={className} />
+            {visibleHeights.length > 0 ? bandColors.map((fill, bandIndex) => (
+              <path d={bandPath(visibleHeights, visibleXPositions, bandIndex)} fill={fill} key={fill} />
             )) : null}
             {visibleXPositions.map((x) => <line className={styles.checkpoint} key={x} x1={x} x2={x} y1="28" y2="232" />)}
           </svg>

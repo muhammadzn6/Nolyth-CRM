@@ -61,36 +61,6 @@
   overflow: visible;
 }
 
-.band {
-  stroke-width: 0.75;
-  vector-effect: non-scaling-stroke;
-  transition: filter 180ms ease, opacity 180ms ease;
-}
-
-.flow:hover .band {
-  filter: saturate(1.06);
-}
-
-.bandOne {
-  fill: #ffb192;
-  stroke: #ffb192;
-}
-
-.bandTwo {
-  fill: #f88961;
-  stroke: #f88961;
-}
-
-.bandThree {
-  fill: #ee6847;
-  stroke: #ee6847;
-}
-
-.bandFour {
-  fill: #df4f31;
-  stroke: #df4f31;
-}
-
 .checkpoint {
   stroke: rgb(69 56 51 / 13%);
   stroke-width: 1;
@@ -212,7 +182,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .band,
   .stage {
     transition: none;
   }

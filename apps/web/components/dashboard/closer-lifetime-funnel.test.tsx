@@ -146,4 +146,23 @@ describe("Closer lifetime placement funnel", () => {
     expect(closerStageThickness(1, 10_000)).toBeCloseTo(0.0156, 8);
     expect(closerStageThickness(1, 10_000) / closerStageThickness(10_000, 10_000)).toBeCloseTo(0.0001, 8);
   });
+
+  it("paints stream bands without any visual-expansion hook", async () => {
+    await renderFunnel({
+      applicationsHandled: 10_000,
+      interviewsScheduled: 1,
+      callsAttended: 1,
+      offers: 1,
+      placements: 1,
+    });
+
+    const paths = Array.from(container.querySelectorAll('[data-testid="closer-lifetime-flow"] path'));
+    expect(paths).toHaveLength(4);
+    expect(paths.map((path) => path.getAttributeNames().sort())).toEqual([
+      ["d", "fill"],
+      ["d", "fill"],
+      ["d", "fill"],
+      ["d", "fill"],
+    ]);
+  });
 });
