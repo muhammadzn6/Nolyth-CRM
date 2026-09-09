@@ -1,5 +1,7 @@
 const LOCAL_DATE_TIME_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+const CANONICAL_UTC_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})Z$/;
 
 type DateTimeParts = {
   year: number;
@@ -84,6 +86,20 @@ function parseLocalDateTime(value: string): DateTimeParts {
   return parts;
 }
 
+function parseCanonicalUtcDateTime(value: string) {
+  const match = CANONICAL_UTC_PATTERN.exec(value);
+  if (!match) {
+    throw new ZonedDateTimeError("Enter a valid UTC date and time.");
+  }
+
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime()) || instant.toISOString() !== value) {
+    throw new ZonedDateTimeError("Enter a valid UTC date and time.");
+  }
+
+  return instant;
+}
+
 function sameMinute(left: DateTimeParts, right: DateTimeParts) {
   return (
     left.year === right.year &&
@@ -144,11 +160,7 @@ export function zonedLocalDateTimeToIso(value: string, timeZone: string) {
 }
 
 export function isoToZonedLocalDateTime(value: string, timeZone: string) {
-  const instant = new Date(value);
-  if (Number.isNaN(instant.getTime())) {
-    throw new ZonedDateTimeError("Enter a valid UTC date and time.");
-  }
-
+  const instant = parseCanonicalUtcDateTime(value);
   const parts = zonedParts(instant, timeZone);
   const pad = (part: number) => String(part).padStart(2, "0");
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;

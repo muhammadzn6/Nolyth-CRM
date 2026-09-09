@@ -47,4 +47,16 @@ describe("zoned local datetime conversion", () => {
       "valid local date and time",
     );
   });
+
+  it("rejects impossible canonical-looking UTC dates", () => {
+    expect(() =>
+      isoToZonedLocalDateTime("2026-02-30T14:00:00.000Z", "UTC"),
+    ).toThrow("valid UTC date and time");
+  });
+
+  it("rejects timezone-less datetime values", () => {
+    expect(() => isoToZonedLocalDateTime("2026-09-08T14:00", "UTC")).toThrow(
+      "valid UTC date and time",
+    );
+  });
 });
