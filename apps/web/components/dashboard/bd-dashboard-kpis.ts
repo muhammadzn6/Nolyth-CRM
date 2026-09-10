@@ -82,6 +82,6 @@ export function buildBdDashboardKpis(input: { applications: ApplicationSignal[];
     { key: "responses", label: "Recruiter responses", value: responses, href: "/leads?status=RESPONSE_RECEIVED", definition: "Applications that have moved beyond the initial applied state.", tone: "info" },
     { key: "active", label: "Active applications", value: active, href: "/leads?status=INTERVIEWING", definition: "Applications currently progressing through interviews, offers, or placement.", tone: "success" },
     { key: "followUps", label: "Follow-ups due", value: input.openFollowUps, href: "/tasks", definition: "Open follow-up actions assigned to you.", tone: input.openFollowUps ? "warning" : "default" },
-    { key: "interviews", label: "Interviews to schedule", value: input.interviewsToSchedule, href: "/calendar", definition: "Recruiter responses that still need an interview scheduled.", tone: input.interviewsToSchedule ? "warning" : "default" },
+    { key: "interviews", label: "Interviews to schedule", value: input.interviewsToSchedule, href: "/?calendarView=day", definition: "Recruiter responses that still need an interview scheduled.", tone: input.interviewsToSchedule ? "warning" : "default" },
   ];
 }

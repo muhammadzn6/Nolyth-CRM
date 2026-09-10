@@ -502,7 +502,7 @@ model PerformanceRuleSet {
   effectiveFrom                     DateTime                @map("effective_from") @db.Timestamptz(6)
   effectiveTo                       DateTime?               @map("effective_to") @db.Timestamptz(6)
   defaultDailyTarget                Int                     @default(70) @map("default_daily_target")
-  businessCalendarTimeZone          String                  @default("UTC") @map("business_calendar_time_zone") @db.VarChar(64)
+  businessCalendarTimeZone          String                  @default("America/New_York") @map("business_calendar_time_zone") @db.VarChar(64)
   workdayStartHour                  Int                     @default(9) @map("workday_start_hour")
   workdayEndHour                    Int                     @default(17) @map("workday_end_hour")
   followUpSlaBusinessHours          Int                     @default(48) @map("follow_up_sla_business_hours")

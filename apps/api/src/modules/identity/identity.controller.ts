@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Inject, Optional, Post, Req, Res, UseFilters, UseGuards } from "@nestjs/common";
 import {
   AuthorizationError,
+  ACCESS_TOKEN_COOKIE_NAME,
+  ACCESS_TOKEN_DURATION_MS,
   IdentityService,
   PasswordResetService,
   ValidationError,
@@ -48,12 +50,15 @@ export function assertTrustedOrigin(origin: string | string[] | undefined, appBa
   }
 }
 
-export const sessionCookieOptions = {
-  httpOnly: true,
-  secure: true,
+export function sessionCookieOptions(appBaseUrl: string) {
+  return {
+    httpOnly: true,
+  // Local Orbit runs over HTTP; production must use HTTPS for Secure cookies.
+  secure: new URL(appBaseUrl).protocol === "https:",
   sameSite: "lax" as const,
-  path: "/",
-};
+    path: "/",
+  };
+}
 
 @Controller("api/v1/auth")
 @UseFilters(AppErrorFilter)
@@ -80,9 +85,15 @@ export class IdentityController {
     const session = await this.identity.login(parsed.data, request);
 
     response.cookie("orbit_session", session.sessionToken, {
-      ...sessionCookieOptions,
+      ...sessionCookieOptions(this.appBaseUrl),
       expires: session.expiresAt,
     });
+    if (session.accessToken) {
+      response.cookie(ACCESS_TOKEN_COOKIE_NAME, session.accessToken, {
+        ...sessionCookieOptions(this.appBaseUrl),
+        expires: new Date(Date.now() + ACCESS_TOKEN_DURATION_MS),
+      });
+    }
 
     return session.user;
   }
@@ -94,7 +105,22 @@ export class IdentityController {
   ) {
     assertTrustedOrigin(request.headers.origin, this.appBaseUrl);
     await this.identity.logout(request);
-    response.clearCookie("orbit_session", sessionCookieOptions);
+    response.clearCookie("orbit_session", sessionCookieOptions(this.appBaseUrl));
+    response.clearCookie(ACCESS_TOKEN_COOKIE_NAME, sessionCookieOptions(this.appBaseUrl));
+  }
+
+  @Post("refresh")
+  async refresh(
+    @Req() request: OriginRequest,
+    @Res({ passthrough: true }) response: CookieResponse,
+  ) {
+    assertTrustedOrigin(request.headers.origin, this.appBaseUrl);
+    const accessToken = await this.identity.refreshAccessToken(request);
+    response.cookie(ACCESS_TOKEN_COOKIE_NAME, accessToken.accessToken, {
+      ...sessionCookieOptions(this.appBaseUrl),
+      expires: accessToken.expiresAt,
+    });
+    return { accepted: true };
   }
 
   @Get("me")
@@ -116,7 +142,8 @@ export class IdentityController {
 
     if (!request.actor) throw new AuthorizationError();
     await this.identity.changePassword(request.actor, parsed.data);
-    response.clearCookie("orbit_session", sessionCookieOptions);
+    response.clearCookie("orbit_session", sessionCookieOptions(this.appBaseUrl));
+    response.clearCookie(ACCESS_TOKEN_COOKIE_NAME, sessionCookieOptions(this.appBaseUrl));
   }
 
   @Post("password-reset/request")

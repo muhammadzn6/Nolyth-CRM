@@ -203,6 +203,34 @@ describe("PerformanceService", () => {
     })).rejects.toEqual(new AuthorizationError());
   });
 
+  it("returns the active business timezone with the Admin performance read", async () => {
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue({ businessCalendarTimeZone: "America/New_York" }) },
+    };
+    const service = new PerformanceService(database, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-09T02:30:00.000Z"));
+    vi.spyOn(service, "evaluateOverdueSlas").mockResolvedValue({ reassignmentOverdue: 0, reviewOverdue: 0 });
+
+    await expect(service.getAdminBdPerformance(admin, {
+      from: "2026-09-01T00:00:00.000Z",
+      to: "2026-09-30T00:00:00.000Z",
+    })).resolves.toMatchObject({ businessTimeZone: "America/New_York" });
+  });
+
+  it("uses US Eastern as the platform business timezone when no rule has been persisted", async () => {
+    const database: any = {
+      user: { findMany: vi.fn().mockResolvedValue([]) },
+      performanceRuleSet: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+    const service = new PerformanceService(database, { assertRole: vi.fn() } as never, undefined, () => new Date("2026-09-09T02:30:00.000Z"));
+    vi.spyOn(service, "evaluateOverdueSlas").mockResolvedValue({ reassignmentOverdue: 0, reviewOverdue: 0 });
+
+    await expect(service.getAdminBdPerformance(admin, {
+      from: "2026-09-01T00:00:00.000Z",
+      to: "2026-09-30T00:00:00.000Z",
+    })).resolves.toMatchObject({ businessTimeZone: "America/New_York" });
+  });
+
   it("returns every immutable performance rule version in effective-date order for an Admin", async () => {
     const first = {
       id: "10000000-0000-4000-8000-000000000091",

@@ -24,9 +24,9 @@ export const rescheduleInterviewSchema = z.strictObject({ startsAt: z.iso.dateti
 export const reportInterviewConflictSchema = z.strictObject({ reason: text, alternatives: text.optional(), expectedVersion: z.number().int().positive() });
 export const calendarQuerySchema = z.strictObject({ companyId: uuidSchema.optional(), from: z.iso.datetime().optional(), to: z.iso.datetime().optional() }).refine(({ from, to }) => !from || !to || from < to, { message: "Calendar range must end after it starts", path: ["to"] });
 export const interviewStatusActionSchema = z.strictObject({ reason: text.optional(), expectedVersion: z.number().int().positive() });
-export const interviewAttendanceSchema = z.strictObject({ attendance: z.enum(["ATTENDED", "MISSED", "UNKNOWN"]), expectedVersion: z.number().int().positive() });
+export const interviewAttendanceSchema = z.strictObject({ attendance: z.enum(["ATTENDED", "MISSED"]), expectedVersion: z.number().int().positive() });
 export const interviewNotesSchema = z.strictObject({ notes: text, expectedVersion: z.number().int().positive() });
-export const officialResultSchema = z.strictObject({ result: text, expectedVersion: z.number().int().positive() });
+export const officialResultSchema = z.strictObject({ outcome: z.enum(["PASSED", "FAILED"]), notes: text.optional(), expectedVersion: z.number().int().positive() });
 export type InterviewSummary = z.infer<typeof interviewSummarySchema>;
 export type CreateInterview = z.infer<typeof createInterviewSchema>;
 export type UpdateInterview = z.infer<typeof updateInterviewSchema>;

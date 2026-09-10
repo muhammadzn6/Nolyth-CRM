@@ -15,6 +15,11 @@ describe("closer dashboard lifetime funnel contract", () => {
       applicationsHandled: 14,
       interviewsScheduled: 9,
       callsAttended: 7,
+      interviewRounds: 16,
+      attendedRounds: 11,
+      cancelledRounds: 2,
+      averageRoundsPerInterviewLead: 16 / 9,
+      roundAttendanceRate: 11 / 16,
       offers: 3,
       placements: 2,
     };

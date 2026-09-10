@@ -3,6 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SessionUser, UserRole } from "@orbit/contracts";
 
 import { AuthenticationError } from "../errors/app-error";
+import { ACCESS_TOKEN_COOKIE_NAME, ACCESS_TOKEN_DURATION_MS, JwtAccessTokenService } from "./jwt.service";
 
 export const SESSION_COOKIE_NAME = "orbit_session";
 export const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30;
@@ -39,6 +40,8 @@ export type SessionRequest = {
 export type CreatedSession = {
   sessionToken: string;
   expiresAt: Date;
+  sessionId?: string;
+  accessToken?: string;
 };
 
 export type UserSessionPersistence = {
@@ -76,11 +79,15 @@ function readCookie(request: SessionRequest, name: string) {
 }
 
 export class SessionService {
+  private readonly accessTokens: JwtAccessTokenService;
+
   constructor(
     private readonly database: IdentityDatabase,
     private readonly sessionSecret: string,
     private readonly durationMs = SESSION_DURATION_MS,
-  ) {}
+  ) {
+    this.accessTokens = new JwtAccessTokenService(sessionSecret);
+  }
 
   private hashToken(token: string) {
     return createHmac("sha256", this.sessionSecret).update(token).digest("hex");
@@ -167,11 +174,43 @@ export class SessionService {
     const expiresAt = new Date(Date.now() + this.durationMs);
 
     await this.revokeUserSessions(userId);
-    await this.database.userSession.create({
+    const created = await this.database.userSession.create({
       data: { userId, sessionTokenHash: this.hashToken(sessionToken), expiresAt },
     });
 
-    return { sessionToken, expiresAt };
+    const sessionId = typeof created === "object" && created !== null && "id" in created && typeof created.id === "string"
+      ? created.id
+      : undefined;
+
+    return {
+      sessionToken,
+      expiresAt,
+      sessionId,
+      accessToken: sessionId ? this.accessTokens.create({ userId, sessionId }) : undefined,
+    };
+  }
+
+  accessTokenCookieName() {
+    return ACCESS_TOKEN_COOKIE_NAME;
+  }
+
+  async refreshAccessToken(request: SessionRequest): Promise<{ accessToken: string; expiresAt: Date }> {
+    const token = readCookie(request, SESSION_COOKIE_NAME);
+    if (!token) throw new AuthenticationError();
+
+    const session = await this.database.userSession.findUnique({
+      where: { sessionTokenHash: this.hashToken(token) },
+      include: { user: true },
+    });
+
+    if (!session || session.revokedAt || session.expiresAt <= new Date() || !session.user?.isActive) {
+      throw new AuthenticationError();
+    }
+
+    return {
+      accessToken: this.accessTokens.create({ userId: session.userId, sessionId: session.id }),
+      expiresAt: new Date(Date.now() + ACCESS_TOKEN_DURATION_MS),
+    };
   }
 
   async revoke(request: SessionRequest): Promise<void> {
@@ -195,6 +234,20 @@ export class SessionService {
   }
 
   async requireActiveUser(request: SessionRequest): Promise<Actor> {
+    const accessToken = readCookie(request, ACCESS_TOKEN_COOKIE_NAME);
+
+    if (accessToken) {
+      try {
+        return await this.requireActiveUserFromAccessToken(accessToken);
+      } catch (error) {
+        // The opaque session is the revocable refresh/session record. Falling back
+        // to it prevents a stale access JWT from logging a browser out mid-session.
+        if (!(error instanceof AuthenticationError) || !readCookie(request, SESSION_COOKIE_NAME)) {
+          throw error;
+        }
+      }
+    }
+
     const token = readCookie(request, SESSION_COOKIE_NAME);
 
     if (!token) {
@@ -212,6 +265,32 @@ export class SessionService {
 
     return toSessionUser(session.user);
   }
+
+  private async requireActiveUserFromAccessToken(accessToken: string): Promise<Actor> {
+    const claims = this.accessTokens.verify(accessToken);
+    const persistence = this.database.userSession as UserSessionPersistence & {
+      findUnique(args: { where: { id: string }; include: { user: true }}): Promise<{
+        id: string;
+        userId: string;
+        expiresAt: Date;
+        revokedAt: Date | null;
+        user: IdentityUserRecord | null;
+      } | null>;
+    };
+    const session = await persistence.findUnique({ where: { id: claims.sid }, include: { user: true } });
+
+    if (
+      !session ||
+      session.userId !== claims.sub ||
+      session.revokedAt ||
+      session.expiresAt <= new Date() ||
+      !session.user?.isActive
+    ) {
+      throw new AuthenticationError();
+    }
+
+    return toSessionUser(session.user);
+  }
 }
 
 export function toSessionUser(user: IdentityUserRecord): SessionUser {
@@ -221,5 +300,6 @@ export function toSessionUser(user: IdentityUserRecord): SessionUser {
     email: user.email,
     role: user.role as UserRole,
     isActive: user.isActive,
+    timezone: user.timezone ?? "UTC",
   };
 }

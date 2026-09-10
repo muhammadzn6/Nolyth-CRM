@@ -9,8 +9,16 @@ test.describe("BD performance workflow", () => {
     await signIn(page, "maya.bd@orbit.local", bdPassword);
 
     await page.locator("main").getByLabel("Add application").click();
-    await expect(page).toHaveURL(/\/leads\?new=application/);
+    await expect(page).toHaveURL(/\/$/);
+    const quickActions = page.getByRole("menu", { name: "BD quick actions" });
+    await expect(quickActions).toBeVisible();
+    await expect(quickActions).toContainText("Log communication");
+    await expect(quickActions).toContainText("Log recruiter response");
+    await expect(quickActions).toContainText("Add comment");
+    await expect(quickActions).toContainText("Schedule interview");
+    await quickActions.getByRole("menuitem", { name: "Add application" }).click();
     await expect(page.getByRole("form", { name: "Add application" })).toBeVisible();
+    await page.getByRole("dialog", { name: "Add application" }).getByRole("button", { name: "Close Add application" }).click();
     await page.goto("/");
 
     const dailyTracker = page.getByRole("region", { name: "BD daily activity tracker" });

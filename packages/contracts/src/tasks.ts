@@ -13,7 +13,7 @@ export const taskSummarySchema = z.strictObject({
 });
 export const createTaskSchema = z.strictObject({ profileId: uuidSchema, leadId: uuidSchema.optional(), assigneeId: uuidSchema, type: taskTypeSchema, title: text, description: text.optional(), priority: taskPrioritySchema.default("MEDIUM"), dueAt: z.iso.datetime() });
 export const updateTaskSchema = z.strictObject({ assigneeId: uuidSchema.optional(), title: text.optional(), description: text.nullable().optional(), priority: taskPrioritySchema.optional(), dueAt: z.iso.datetime().optional(), expectedVersion: z.number().int().positive() }).refine(({ expectedVersion: _expectedVersion, ...value }) => Object.values(value).some((entry) => entry !== undefined), "At least one field must be provided");
-export const taskListQuerySchema = z.strictObject({ profileId: uuidSchema.optional(), leadId: uuidSchema.optional(), assigneeId: uuidSchema.optional(), status: taskStatusSchema.optional(), overdue: z.coerce.boolean().optional(), limit: z.coerce.number().int().min(1).max(100).default(50) });
+export const taskListQuerySchema = z.strictObject({ profileId: uuidSchema.optional(), leadId: uuidSchema.optional(), assigneeId: uuidSchema.optional(), status: taskStatusSchema.optional(), overdue: z.coerce.boolean().optional(), search: text.max(120).optional(), limit: z.coerce.number().int().min(1).max(100).default(50) });
 export const completeTaskSchema = z.strictObject({ notes: text.optional(), expectedVersion: z.number().int().positive() });
 export const cancelTaskSchema = z.strictObject({ reason: text, expectedVersion: z.number().int().positive() });
 export type TaskSummary = z.infer<typeof taskSummarySchema>;

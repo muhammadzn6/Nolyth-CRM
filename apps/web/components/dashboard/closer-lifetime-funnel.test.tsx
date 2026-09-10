@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CloserDashboard } from "./closer-dashboard";
 import { closerStageThickness } from "./closer-lifetime-funnel";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
 const actor: SessionUser = {
   id: "00000000-0000-4000-8000-000000000003",
   displayName: "Nadia Reed",
@@ -68,6 +70,11 @@ describe("Closer lifetime placement funnel", () => {
       applicationsHandled: 48,
       interviewsScheduled: 22,
       callsAttended: 14,
+      interviewRounds: 37,
+      attendedRounds: 29,
+      cancelledRounds: 3,
+      averageRoundsPerInterviewLead: 37 / 22,
+      roundAttendanceRate: 29 / 37,
       offers: 6,
       placements: 2,
     });
@@ -75,16 +82,26 @@ describe("Closer lifetime placement funnel", () => {
     const funnel = container.querySelector('[aria-label="Closer lifetime placement funnel"]');
     expect(funnel).not.toBeNull();
     expect(funnel?.textContent).toContain("All time");
-    expect(funnel?.textContent).toContain("Applications handled");
+    expect(funnel?.textContent).toContain("Leads handled");
     expect(funnel?.textContent).toContain("48");
-    expect(funnel?.textContent).toContain("Interviews scheduled");
+    expect(funnel?.textContent).toContain("Interview leads");
     expect(funnel?.textContent).toContain("22");
-    expect(funnel?.textContent).toContain("Calls attended");
+    expect(funnel?.textContent).toContain("Leads attended");
     expect(funnel?.textContent).toContain("14");
-    expect(funnel?.textContent).toContain("Offers");
+    expect(funnel?.textContent).toContain("Offer-stage leads");
     expect(funnel?.textContent).toContain("6");
     expect(funnel?.textContent).toContain("Placements");
     expect(funnel?.textContent).toContain("2");
+    expect(funnel?.textContent).toContain("Total rounds");
+    expect(funnel?.textContent).toContain("37");
+    expect(funnel?.textContent).toContain("Attended rounds");
+    expect(funnel?.textContent).toContain("29");
+    expect(funnel?.textContent).toContain("Avg rounds / lead");
+    expect(funnel?.textContent).toContain("1.7");
+    expect(funnel?.textContent).toContain("Attendance rate");
+    expect(funnel?.textContent).toContain("78%");
+    expect(funnel?.textContent).toContain("Cancelled");
+    expect(funnel?.textContent).toContain("3");
     expect(funnel?.textContent).toContain("46%");
     expect(funnel?.textContent).toContain("64%");
     expect(funnel?.textContent).toContain("43%");
@@ -93,17 +110,17 @@ describe("Closer lifetime placement funnel", () => {
     expect(funnel?.querySelectorAll('a[href="/leads?pipelineStage=INTERVIEW"]')).toHaveLength(2);
     expect(funnel?.querySelector('a[href="/leads?pipelineStage=OFFER"]')).not.toBeNull();
     expect(funnel?.querySelector('a[href="/leads?pipelineStage=PLACEMENT"]')).not.toBeNull();
-    expect(funnel?.querySelector('svg[aria-label="Placement flow: Applications handled 48, Interviews scheduled 22, Calls attended 14, Offers 6, Placements 2"]')).not.toBeNull();
+    expect(funnel?.querySelector('svg[aria-label="Placement flow: Leads handled 48, Interview leads 22, Leads attended 14, Offer-stage leads 6, Placements 2"]')).not.toBeNull();
 
     const conversions = Array.from(funnel?.querySelectorAll('[aria-label="Adjacent stage conversions"] > div') ?? []);
     expect(conversions).toHaveLength(4);
-    expect(conversions[0]?.querySelector("dt")?.textContent).toBe("Applications handled → Interviews scheduled");
+    expect(conversions[0]?.querySelector("dt")?.textContent).toBe("Leads handled → Interview leads");
     expect(conversions[0]?.querySelector("dd")?.textContent).toBe("46%");
-    expect(conversions[1]?.querySelector("dt")?.textContent).toBe("Interviews scheduled → Calls attended");
+    expect(conversions[1]?.querySelector("dt")?.textContent).toBe("Interview leads → Leads attended");
     expect(conversions[1]?.querySelector("dd")?.textContent).toBe("64%");
-    expect(conversions[2]?.querySelector("dt")?.textContent).toBe("Calls attended → Offers");
+    expect(conversions[2]?.querySelector("dt")?.textContent).toBe("Leads attended → Offer-stage leads");
     expect(conversions[2]?.querySelector("dd")?.textContent).toBe("43%");
-    expect(conversions[3]?.querySelector("dt")?.textContent).toBe("Offers → Placements");
+    expect(conversions[3]?.querySelector("dt")?.textContent).toBe("Offer-stage leads → Placements");
     expect(conversions[3]?.querySelector("dd")?.textContent).toBe("33%");
 
     const stageLinks = Array.from(funnel?.querySelectorAll("a") ?? []);
@@ -116,6 +133,11 @@ describe("Closer lifetime placement funnel", () => {
       applicationsHandled: 48,
       interviewsScheduled: 22,
       callsAttended: 14,
+      interviewRounds: 37,
+      attendedRounds: 29,
+      cancelledRounds: 3,
+      averageRoundsPerInterviewLead: 37 / 22,
+      roundAttendanceRate: 29 / 37,
       offers: 6,
       placements: 0,
     });
@@ -132,6 +154,11 @@ describe("Closer lifetime placement funnel", () => {
       applicationsHandled: 48,
       interviewsScheduled: 0,
       callsAttended: 0,
+      interviewRounds: 0,
+      attendedRounds: 0,
+      cancelledRounds: 3,
+      averageRoundsPerInterviewLead: null,
+      roundAttendanceRate: null,
       offers: 0,
       placements: 0,
     });
@@ -152,6 +179,11 @@ describe("Closer lifetime placement funnel", () => {
       applicationsHandled: 10_000,
       interviewsScheduled: 1,
       callsAttended: 1,
+      interviewRounds: 1,
+      attendedRounds: 1,
+      cancelledRounds: 0,
+      averageRoundsPerInterviewLead: 1,
+      roundAttendanceRate: 1,
       offers: 1,
       placements: 1,
     });

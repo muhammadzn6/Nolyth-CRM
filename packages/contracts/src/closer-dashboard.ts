@@ -11,6 +11,11 @@ export const closerDashboardLifetimeFunnelSchema = z.strictObject({
   applicationsHandled: z.number().int().nonnegative(),
   interviewsScheduled: z.number().int().nonnegative(),
   callsAttended: z.number().int().nonnegative(),
+  interviewRounds: z.number().int().nonnegative(),
+  attendedRounds: z.number().int().nonnegative(),
+  cancelledRounds: z.number().int().nonnegative(),
+  averageRoundsPerInterviewLead: z.number().nonnegative().nullable(),
+  roundAttendanceRate: z.number().min(0).max(1).nullable(),
   offers: z.number().int().nonnegative(),
   placements: z.number().int().nonnegative(),
 });

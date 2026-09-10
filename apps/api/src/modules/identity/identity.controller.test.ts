@@ -21,6 +21,7 @@ function createHarness() {
       },
       sessionToken: "session-token",
       expiresAt: new Date("2026-09-03T00:00:00.000Z"),
+      accessToken: "access-token",
     }),
     logout: vi.fn().mockResolvedValue(undefined),
   };
@@ -72,7 +73,9 @@ describe("IdentityController request security", () => {
     await controller.logout(requestWithOrigin("https://orbit.example.com"), response);
 
     expect(identity.login).toHaveBeenCalledOnce();
+    expect(response.cookie).toHaveBeenCalledWith("orbit_access", "access-token", expect.any(Object));
     expect(identity.logout).toHaveBeenCalledOnce();
+    expect(response.clearCookie).toHaveBeenCalledWith("orbit_access", expect.any(Object));
   });
 
   it("maps invalid login input to a validation error with status 422", async () => {

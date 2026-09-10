@@ -2,6 +2,26 @@ import { expect, test } from "@playwright/test";
 import { assertPerformancePorts, auditBrowser, expectNoHorizontalOverflow, requiredE2eCredential, saveBrowserScreenshot, signIn } from "./performance-helpers";
 
 test.describe("Admin BD performance workflow", () => {
+  test("keeps the Admin operational pulse on one desktop row", async ({ page }, testInfo) => {
+    assertPerformancePorts(testInfo.project.use.baseURL);
+    const adminPassword = requiredE2eCredential("ORBIT_E2E_ADMIN_PASSWORD");
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await signIn(page, "admin@orbit.local", adminPassword);
+
+    const cards = page.getByLabel("Workspace pulse").locator(".editorial-pulse-card");
+    await expect(cards).toHaveCount(8);
+    const topEdges = await cards.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().top));
+    expect(Math.max(...topEdges) - Math.min(...topEdges)).toBeLessThanOrEqual(1);
+
+    const childOverflow = await cards.evaluateAll((elements) =>
+      elements.map((element) => {
+        const cardRight = element.getBoundingClientRect().right;
+        return Math.max(...Array.from(element.children, (child) => child.getBoundingClientRect().right - cardRight));
+      }),
+    );
+    expect(Math.max(...childOverflow)).toBeLessThanOrEqual(1);
+  });
+
   test("reviews leaderboard state, drill-downs, baseline, reassignment queue, and future rule history", async ({ page }, testInfo) => {
     assertPerformancePorts(testInfo.project.use.baseURL);
     const adminPassword = requiredE2eCredential("ORBIT_E2E_ADMIN_PASSWORD");

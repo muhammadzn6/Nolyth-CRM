@@ -56,6 +56,24 @@ describe("AppShell interactions", () => {
     expect(sidebar?.className).toContain("w-[72px]");
     expect(content?.className).toContain("lg:pl-[96px]");
 
+    const headerExpand = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Expand primary navigation"]',
+    );
+    expect(headerExpand).not.toBeNull();
+
+    act(() => headerExpand?.click());
+
+    expect(sidebar?.className).toContain("w-[224px]");
+    expect(content?.className).toContain("lg:pl-[248px]");
+
+    const headerCollapse = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Collapse primary navigation"]',
+    );
+    act(() => headerCollapse?.click());
+
+    expect(sidebar?.className).toContain("w-[72px]");
+    expect(content?.className).toContain("lg:pl-[96px]");
+
     act(() => expand?.click());
 
     expect(sidebar?.className).toContain("w-[224px]");

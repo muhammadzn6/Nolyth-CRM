@@ -39,24 +39,12 @@ export function CandidateForm({ initial, pending, onSubmit, surface = true }: Ca
     }
   }
 
-  const content = (
-    <>
-      <header>
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
-          {initial ? "Candidate record" : "New candidate"}
-        </p>
-        <h2 className="mt-2 text-lg font-bold tracking-[-0.02em] text-foreground">
-          {initial ? "Edit candidate" : "Create candidate"}
-        </h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Candidate records are CRM contacts, not login accounts.
-        </p>
-      </header>
-      <form
-        aria-label={initial ? `Edit ${initial.firstName} ${initial.lastName}` : "Create candidate"}
-        className="mt-5 grid gap-4 md:grid-cols-2"
-        onSubmit={handleSubmit}
-      >
+  const form = (
+    <form
+      aria-label={initial ? `Edit ${initial.firstName} ${initial.lastName}` : "Create candidate"}
+      className={`${surface ? "mt-5 " : ""}grid gap-4 md:grid-cols-2`}
+      onSubmit={handleSubmit}
+    >
         <Field htmlFor={`${prefix}-firstName`} label="First name">
           <Input defaultValue={initial?.firstName} disabled={pending} id={`${prefix}-firstName`} name="firstName" required />
         </Field>
@@ -79,13 +67,29 @@ export function CandidateForm({ initial, pending, onSubmit, surface = true }: Ca
           <Input defaultValue={initial?.location ?? ""} disabled={pending} id={`${prefix}-location`} name="location" />
         </Field>
         <div className="self-end">
-          <Button className="w-full" disabled={pending} type="submit">
+          <Button className="w-full" disabled={pending} loading={pending} type="submit">
             {pending ? "Saving…" : initial ? "Save candidate" : "Create candidate"}
           </Button>
         </div>
-      </form>
-    </>
+    </form>
   );
 
-  return surface ? <Card className="p-5 sm:p-6">{content}</Card> : <div>{content}</div>;
+  if (!surface) return form;
+
+  return (
+    <Card className="p-5 sm:p-6">
+      <header>
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+          {initial ? "Candidate record" : "New candidate"}
+        </p>
+        <h2 className="mt-2 text-lg font-bold tracking-[-0.02em] text-foreground">
+          {initial ? "Edit candidate" : "Create candidate"}
+        </h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          Candidate records are CRM contacts, not login accounts.
+        </p>
+      </header>
+      {form}
+    </Card>
+  );
 }

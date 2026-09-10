@@ -36,6 +36,7 @@ import HomePage from "../../app/page";
 const actor: SessionUser = { id: "00000000-0000-4000-8000-000000000001", displayName: "Zohaib Nasir", email: "zohaib@orbit.example", role: "ADMIN", isActive: true };
 const performance: AdminBdPerformanceResponse = {
   period: { from: "2026-08-30T00:00:00.000Z", to: "2026-09-06T00:00:00.000Z" },
+  businessTimeZone: "America/New_York",
   team: { qualifiedApplications: 8, targetApplications: 10, rawTargetAttainmentPercent: 80, effectiveTargetAttainmentPercent: 80, recruiterResponses: 3, interviewsScheduled: 2, interviewsNeedingScheduling: 1, followUpSlaCompliancePercent: 100, maturedOutcomeScorePercent: 20, balancedScore: 66, scoreCoverage: "COMPLETE", scoreCoveragePercent: 100 },
   leaderboard: [], buildingBaseline: [], excluded: [],
   quality: { recordHealthRate: 100, adminAuditPassRate: 100, correctionRate: 0, confirmedDuplicateRate: 0, pendingOverrideRate: 0, rejectedOverrideRate: 0, duplicateRate: 0 },

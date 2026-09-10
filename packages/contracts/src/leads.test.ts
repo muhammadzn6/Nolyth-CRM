@@ -38,6 +38,81 @@ function validApplicationIntake() {
 }
 
 describe("company, contact, and lead contracts", () => {
+  it("requires lead workspace identity relations in a lead detail response", () => {
+    const detail = {
+      id: "00000000-0000-4000-8000-000000000010",
+      profileId,
+      companyId,
+      sourceId,
+      createdById: ownerId,
+      currentOwnerId: ownerId,
+      responsibleCloserId: null,
+      archivedById: null,
+      closedById: null,
+      jobTitle: "Staff Platform Engineer",
+      companyName: "Northstar Labs",
+      description: null,
+      rawUrl: "https://jobs.example.com/openings/42",
+      canonicalUrl: "https://jobs.example.com/openings/42",
+      canonicalHash: "jobs.example.com/42",
+      location: "New York, NY",
+      workplaceType: "Remote",
+      employmentType: "Full-time",
+      contractType: null,
+      compensationMin: null,
+      compensationMax: null,
+      compensationCurrency: null,
+      compensationPeriod: null,
+      appliedDate: "2026-09-02",
+      status: "INTERVIEWING",
+      isImportant: false,
+      closureReason: null,
+      closureNotes: null,
+      closedAt: null,
+      placedAt: null,
+      startDate: null,
+      startedAt: null,
+      archivedAt: null,
+      archiveReason: null,
+      createdAt: "2026-09-02T12:00:00.000Z",
+      updatedAt: "2026-09-08T12:00:00.000Z",
+      version: 3,
+      company: {
+        id: companyId,
+        canonicalName: "Northstar Labs",
+        website: "https://northstar.example",
+        domain: "northstar.example",
+        industry: null,
+        location: null,
+        createdAt: "2026-09-01T12:00:00.000Z",
+        updatedAt: "2026-09-01T12:00:00.000Z",
+        version: 1,
+      },
+      profile: {
+        id: profileId,
+        name: "Avery Chen — Platform Engineer",
+        candidate: {
+          id: "00000000-0000-4000-8000-000000000020",
+          firstName: "Avery",
+          lastName: "Chen",
+          preferredName: null,
+        },
+      },
+      sourceRef: { id: sourceId, name: "LinkedIn" },
+      currentOwner: {
+        id: ownerId,
+        displayName: "Maya Brooks",
+        email: "maya@orbit.local",
+      },
+      responsibleCloser: null,
+      contacts: [],
+    };
+
+    expect(schema("leadDetailSchema").parse(detail)).toEqual(detail);
+    const { profile: _profile, ...withoutProfile } = detail;
+    expect(schema("leadDetailSchema").safeParse(withoutProfile).success).toBe(false);
+  });
+
   it("accepts a trimmed raw job URL while keeping canonical URL and hash server-owned", () => {
     expect(schema("createLeadSchema").parse(validLead())).toEqual({
       ...validLead(),
@@ -69,6 +144,21 @@ describe("company, contact, and lead contracts", () => {
     });
     expect(intake.safeParse({ ...validApplicationIntake(), appliedDate: "2026-09-05" }).success).toBe(false);
     expect(intake.safeParse({ ...validApplicationIntake(), recruiterEmail: "" }).success).toBe(false);
+  });
+
+  it("accepts optional per-application salary details", () => {
+    expect(schema("createApplicationIntakeSchema").parse({
+      ...validApplicationIntake(),
+      compensationMin: "120000",
+      compensationMax: "150000",
+      compensationCurrency: "usd",
+      compensationPeriod: "YEARLY",
+    })).toMatchObject({
+      compensationMin: "120000",
+      compensationMax: "150000",
+      compensationCurrency: "USD",
+      compensationPeriod: "YEARLY",
+    });
   });
 
   it.each(["profileId", "companyId", "currentOwnerId", "sourceId"])(

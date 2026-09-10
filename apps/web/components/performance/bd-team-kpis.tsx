@@ -20,6 +20,7 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
   const cards = [
     {
       label: "Qualified applications",
+      icon: "✓",
       value: performance.qualifiedApplications.toLocaleString(),
       detail: `${performance.targetApplications.toLocaleString()} target`,
       metric: "QUALIFIED_APPLICATIONS",
@@ -27,6 +28,7 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
     },
     {
       label: "Target attainment",
+      icon: "%",
       value: percent(performance.effectiveTargetAttainmentPercent),
       detail: `${percent(performance.rawTargetAttainmentPercent)} raw`,
       metric: "TARGET_ATTAINMENT",
@@ -34,6 +36,7 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
     },
     {
       label: "Recruiter responses",
+      icon: "↗",
       value: performance.recruiterResponses.toLocaleString(),
       detail: "Response records",
       metric: "RECRUITER_RESPONSES",
@@ -41,6 +44,7 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
     },
     {
       label: "Interviews scheduled",
+      icon: "◷",
       value: performance.interviewsScheduled.toLocaleString(),
       detail: "Scheduled interviews",
       metric: "INTERVIEWS_SCHEDULED",
@@ -48,6 +52,7 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
     },
     {
       label: "Interviews needing scheduling",
+      icon: "!",
       value: performance.interviewsNeedingScheduling.toLocaleString(),
       detail: "Recruiter responses awaiting a calendar entry",
       metric: "INTERVIEWS_NEEDING_SCHEDULING",
@@ -66,11 +71,11 @@ export function BdTeamKpis({ performance, period }: { performance: PerformanceKp
       </nav>
     </header>
     <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      {cards.map((card) => <a className={`rounded-[22px] border border-white/80 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/25 ${card.tone}`} href={performanceHref(period, card.metric)} key={card.label}>
-        <p className="text-xs font-semibold text-muted-foreground">{card.label}</p>
+      {cards.map((card) => <a aria-label={`${card.label}: ${card.value}`} className={`group rounded-[22px] border border-white/80 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/25 ${card.tone}`} href={performanceHref(period, card.metric)} key={card.label} title={card.label}>
+        <div className="flex items-start justify-between gap-3"><span aria-hidden="true" className="grid size-7 place-items-center rounded-full bg-white/75 text-xs font-black text-primary shadow-sm">{card.icon}</span><span className="text-xs font-semibold text-muted-foreground">{card.label}</span></div>
         <p className="mt-2 text-3xl font-bold tracking-[-0.05em] text-foreground">{card.value}</p>
         <p className="mt-1 text-xs text-muted-foreground">{card.detail}</p>
-        <span className="mt-3 block text-xs font-semibold text-primary">View records →</span>
+        <span aria-hidden="true" className="mt-3 block text-lg font-bold leading-none text-primary transition-transform group-hover:translate-x-1">→</span>
       </a>)}
     </div>
   </section>;

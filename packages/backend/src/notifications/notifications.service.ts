@@ -24,9 +24,11 @@ export class NotificationsService {
       ...(parsed.data.leadId ? { leadId: parsed.data.leadId } : {}),
       ...(parsed.data.profileId ? { profileId: parsed.data.profileId } : {}),
     };
+    const search = parsed.data.search?.trim();
+    const searchFilter = search ? { OR: [{ action: { contains: search, mode: "insensitive" as const } }, { entityType: { contains: search, mode: "insensitive" as const } }, { entityId: { contains: search, mode: "insensitive" as const } }, { actorNameSnapshot: { contains: search, mode: "insensitive" as const } }] } : undefined;
     if (actor.role === "ADMIN") {
       const companyScope = parsed.data.companyId ? await this.database.jobLead.findMany({ where: { companyId: parsed.data.companyId }, select: { id: true, profileId: true } }) : [];
-      const scopedFilters = parsed.data.companyId ? { ...filters, OR: [{ leadId: { in: companyScope.map((lead) => String(lead.id)) } }, { profileId: { in: companyScope.map((lead) => String(lead.profileId)) } }] } : filters;
+      const scopedFilters = { ...filters, ...(parsed.data.companyId || searchFilter ? { AND: [...(parsed.data.companyId ? [{ OR: [{ leadId: { in: companyScope.map((lead) => String(lead.id)) } }, { profileId: { in: companyScope.map((lead) => String(lead.profileId)) } }] }] : []), ...(searchFilter ? [searchFilter] : [])] } : {}) };
       const rows = await this.database.activityEvent.findMany({ where: scopedFilters, orderBy: { occurredAt: "desc" }, take: parsed.data.limit });
       return rows.map(activity);
     }
@@ -46,6 +48,7 @@ export class NotificationsService {
           ...(leadIds.length ? [{ leadId: { in: leadIds } }] : []),
           ...(profileIds.length ? [{ profileId: { in: profileIds } }] : []),
         ],
+        ...(searchFilter ? { AND: [searchFilter] } : {}),
       },
       orderBy: { occurredAt: "desc" },
       take: parsed.data.limit,

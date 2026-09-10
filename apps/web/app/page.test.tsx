@@ -39,6 +39,7 @@ vi.mock("../lib/api-client", () => ({
   getCloserDashboard: getCloserDashboardMock,
   getCalendar: getCalendarMock,
   listLeads: listLeadsMock,
+  listProfiles: vi.fn(async () => ({ items: [] })),
   listUsers: vi.fn(async () => []),
   listActivity: vi.fn(async () => []),
 }));

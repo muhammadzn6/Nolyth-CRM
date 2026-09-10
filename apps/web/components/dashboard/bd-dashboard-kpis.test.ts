@@ -43,6 +43,7 @@ describe("buildBdDashboardKpis", () => {
       ["today", 2], ["remaining", 68], ["quality", 0], ["duplicates", 1], ["responses", 1], ["active", 1], ["followUps", 4], ["interviews", 2],
     ]);
     expect(cards.find((card) => card.key === "today")?.definition).toContain("70");
+    expect(cards.find((card) => card.key === "interviews")?.href).toBe("/?calendarView=day");
   });
 
   it("summarizes the secondary pipeline signals without hiding zeroes", () => {

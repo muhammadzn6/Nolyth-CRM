@@ -142,6 +142,47 @@
   border-top: 1px solid rgb(69 56 51 / 10%);
 }
 
+.roundMetrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+  margin-top: 0.85rem;
+  border: 1px solid rgb(223 79 49 / 12%);
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 66%);
+}
+
+.roundMetrics div {
+  min-width: 0;
+  padding: 0.8rem;
+}
+
+.roundMetrics div + div {
+  border-left: 1px solid rgb(69 56 51 / 9%);
+}
+
+.roundMetrics dt {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roundMetrics dd {
+  margin-top: 0.3rem;
+  color: var(--foreground);
+  font-size: 1.05rem;
+  font-weight: 760;
+  letter-spacing: -0.025em;
+}
+
+.roundMetrics .diagnostic dd {
+  color: var(--muted-foreground);
+}
+
 .conversions div {
   min-width: 0;
   padding: 0.9rem 0.8rem 0;
@@ -174,6 +215,18 @@
 
   .conversions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .roundMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .roundMetrics div:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .roundMetrics div:nth-child(n + 3) {
+    border-top: 1px solid rgb(69 56 51 / 9%);
   }
 
   .conversions div:nth-child(3) {

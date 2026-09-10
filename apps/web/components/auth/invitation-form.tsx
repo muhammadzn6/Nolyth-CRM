@@ -86,7 +86,7 @@ export function InvitationForm({ token }: { token: string }) {
       {errors.token ? <p className="rounded-xl border border-danger/20 bg-danger-soft px-3.5 py-3 text-sm font-medium text-danger" role="alert">{errors.token}</p> : null}
       {formError ? <p className="rounded-xl border border-warning/30 bg-warning-soft px-3.5 py-3 text-sm font-medium text-warning-foreground" role="alert">{formError}</p> : null}
       {success ? <p className="rounded-xl border border-success/20 bg-success-soft px-3.5 py-3 text-sm font-medium text-success" role="status">Password created. Redirecting to sign in…</p> : null}
-      <Button disabled={pending} type="submit">
+      <Button disabled={pending} loading={pending} type="submit">
         {pending ? "Creating password…" : "Create password"}
       </Button>
     </form>

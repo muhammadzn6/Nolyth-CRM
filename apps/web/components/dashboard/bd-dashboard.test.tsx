@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BdPerformanceResponse, BdWorkQueue, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { BdDashboard, placementStageThickness } from "./bd-dashboard";
 import { BdPeerRanking } from "../performance/bd-peer-ranking";
@@ -122,10 +122,24 @@ const workQueue = {
 } as unknown as BdWorkQueue;
 
 describe("BD performance dashboard", () => {
+  it("uses the work queue business timezone for the dashboard date", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-09T02:30:00.000Z"));
+
+    try {
+      const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} interviews={interviews} performance={performance} todayPerformance={performance} workQueue={workQueue} />);
+      expect(html).toContain("Tue, Sep 8, 2026");
+      expect(html).not.toContain("Wed, Sep 9, 2026");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders server-owned operational and personal performance values with interview quick actions", () => {
     const html = renderToStaticMarkup(<BdDashboard actor={actor} applications={applications} interviews={interviews} performance={performance} performancePeriod="30d" todayPerformance={performance} workQueue={workQueue} />);
 
     expect(html).toContain("Daily activity tracker");
+    expect(html).toContain('aria-label="BD dashboard context"');
     expect(html).toContain("qualified applications");
     expect(html).toContain("Replies");
     expect(html).toContain("Interviews");
@@ -175,6 +189,7 @@ describe("BD performance dashboard", () => {
     expect(html).toContain("editorial-surface-alert");
     expect(html).toContain("editorial-surface-lines");
     expect(html).toContain("editorial-surface-soft");
+    expect(html).toContain("bd-pulse-panel-orange");
   });
 
   it("uses the server work-queue totals instead of the bounded recent-preview arrays", () => {
@@ -206,6 +221,9 @@ describe("BD performance dashboard", () => {
 
     expect(html).toContain("Placements 0");
     expect(html).toContain("zero stages have no strand");
+    const streamPaths = [...html.matchAll(/class="bd-lifetime-flow-band[^"]*" d="([^"]+)"/g)].map((match) => match[1]);
+    expect(streamPaths).toHaveLength(4);
+    expect(streamPaths.every((path) => !path.includes("950"))).toBe(true);
   });
 
   it("uses proportional thickness while preserving a minimal non-zero strand", () => {

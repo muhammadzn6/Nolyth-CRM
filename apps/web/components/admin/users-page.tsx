@@ -72,7 +72,7 @@ function CreateUserForm({
           <Input defaultValue="UTC" disabled={pending} id="new-timezone" name="timezone" required />
         </Field>
         <div className="flex justify-end md:col-span-2">
-          <Button disabled={pending} type="submit">
+          <Button disabled={pending} loading={pending} type="submit">
             {pending ? "Creating invitation…" : "Create invitation"}
           </Button>
         </div>
@@ -88,6 +88,7 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
   const [pending, setPending] = useState<string>();
   const [createdInvitation, setCreatedInvitation] = useState<{ user: UserSummary; url: string }>();
   const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const canManageUsers = actor.role === "ADMIN" && actor.isActive;
 
@@ -110,6 +111,11 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
   }, [load]);
 
   const activeCount = useMemo(() => users?.filter((user) => user.isActive).length ?? 0, [users]);
+  const visibleUsers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return users ?? [];
+    return (users ?? []).filter((user) => `${user.displayName} ${user.email} ${user.role}`.toLowerCase().includes(query));
+  }, [search, users]);
 
   async function handleCreate(input: CreateUser) {
     setPending("create");
@@ -200,7 +206,7 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
           <h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Users and invitations</h1>
           <p className="mt-1.5 text-sm leading-6 text-muted-foreground">Manage roles, account status, sessions, and one-time setup links.</p>
         </div>
-        <div className="flex gap-2"><Button aria-label="Invite user" onClick={() => setCreateOpen(true)}>Invite user</Button><Button aria-label="Refresh users" disabled={loading} onClick={() => void load()} variant="secondary">{loading ? "Refreshing…" : "Refresh"}</Button></div>
+        <div className="flex gap-2"><Button aria-label="Invite user" onClick={() => setCreateOpen(true)}>Invite user</Button><Button aria-label="Refresh users" disabled={loading} loading={loading} onClick={() => void load()} variant="secondary">{loading ? "Refreshing…" : "Refresh"}</Button></div>
       </div>
 
       <div aria-label="User summary" className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border/70 py-3 text-sm">
@@ -239,6 +245,14 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
 
       {loading && users === null ? <LoadingState label="Loading admin users" /> : null}
 
+      {!error && users && users.length > 0 ? (
+        <Card className="p-4 sm:p-5">
+          <Field htmlFor="user-search" label="Find teammate">
+            <Input id="user-search" onChange={(event) => setSearch(event.target.value)} placeholder="Search name, email, or role" type="search" value={search} />
+          </Field>
+        </Card>
+      ) : null}
+
       {error ? (
         <Card className="grid min-h-56 place-items-center border-danger/20 p-6 text-center" role="alert">
           <div>
@@ -259,9 +273,9 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
         />
       ) : null}
 
-      {!error && users && users.length > 0 ? (
+      {!error && users && users.length > 0 && visibleUsers.length > 0 ? (
         <Card aria-label="Managed users" className="data-scroll-region max-h-[calc(100vh-13rem)] divide-y divide-border overflow-y-auto p-0">
-          {users.map((user) => (
+          {visibleUsers.map((user) => (
             <UserForm
               key={user.id}
               onRevokeSessions={handleRevokeSessions}
@@ -274,6 +288,7 @@ export function UsersPage({ actor }: { actor: SessionUser }) {
           ))}
         </Card>
       ) : null}
+      {!error && users && users.length > 0 && visibleUsers.length === 0 ? <EmptyState description="Try another name, email, or role." title="No teammates match this search" /> : null}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { Body, Controller, Inject, Post, Req, Res } from "@nestjs/common";
 import {
   InvitationService,
+  ACCESS_TOKEN_COOKIE_NAME,
+  ACCESS_TOKEN_DURATION_MS,
   SESSION_COOKIE_NAME,
   SessionService,
   ValidationError,
@@ -52,9 +54,15 @@ export class InvitationsController {
     const session = await this.sessions.create(user.id);
 
     response.cookie(SESSION_COOKIE_NAME, session.sessionToken, {
-      ...sessionCookieOptions,
+      ...sessionCookieOptions(this.appBaseUrl),
       expires: session.expiresAt,
     });
+    if (session.accessToken) {
+      response.cookie(ACCESS_TOKEN_COOKIE_NAME, session.accessToken, {
+        ...sessionCookieOptions(this.appBaseUrl),
+        expires: new Date(Date.now() + ACCESS_TOKEN_DURATION_MS),
+      });
+    }
 
     return user;
   }

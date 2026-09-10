@@ -211,7 +211,14 @@ export const createApplicationIntakeSchema = z.strictObject({
   rawUrl: urlSchema,
   recruiterName: textSchema,
   recruiterEmail: emailSchema,
+  compensationMin: moneySchema.optional(),
+  compensationMax: moneySchema.optional(),
+  compensationCurrency: currencySchema.optional(),
+  compensationPeriod: compensationPeriodSchema.optional(),
   duplicateOverrideReason: textSchema.optional(),
+}).refine(hasValidCompensationRange, {
+  message: "Compensation minimum cannot exceed compensation maximum",
+  path: ["compensationMax"],
 });
 
 const leadUpdateShape = {
@@ -319,9 +326,37 @@ export const leadContactSummarySchema = z.strictObject({
   contact: contactSummarySchema,
 });
 
+const leadCandidateIdentitySchema = z.strictObject({
+  id: uuidSchema,
+  firstName: textSchema,
+  lastName: textSchema,
+  preferredName: textSchema.nullable(),
+});
+
+const leadProfileIdentitySchema = z.strictObject({
+  id: uuidSchema,
+  name: textSchema,
+  candidate: leadCandidateIdentitySchema,
+});
+
+const leadSourceIdentitySchema = z.strictObject({
+  id: uuidSchema,
+  name: textSchema,
+});
+
+const leadOwnerIdentitySchema = z.strictObject({
+  id: uuidSchema,
+  displayName: textSchema,
+  email: emailSchema,
+});
+
 export const leadDetailSchema = z.strictObject({
   ...leadRecordShape,
   company: companySummarySchema,
+  profile: leadProfileIdentitySchema,
+  sourceRef: leadSourceIdentitySchema,
+  currentOwner: leadOwnerIdentitySchema,
+  responsibleCloser: leadOwnerIdentitySchema.nullable(),
   contacts: z.array(leadContactSummarySchema),
 });
 

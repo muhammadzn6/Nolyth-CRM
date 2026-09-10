@@ -10,11 +10,11 @@ const duration = 60 * 60 * 1000;
 
 export class PasswordResetService {
   constructor(private readonly database: Database, private readonly sessions: SessionService, private readonly now = () => new Date()) {}
-  async request(email: string): Promise<{ accepted: true; token?: string }> {
+  async request(email: string): Promise<{ accepted: true }> {
     const parsed = passwordResetRequestSchema.safeParse({ email }); if (!parsed.success) throw new ValidationError("The request payload is invalid", parsed.error.issues);
     const user = await this.database.user.findUnique({ where: { email: parsed.data.email } }); if (!user?.isActive) return { accepted: true };
     const token = randomBytes(32).toString("base64url"); const createdAt = this.now();
-    await this.database.authToken.create({ data: { userId: user.id, tokenHash: digest(token), purpose: "PASSWORD_RESET", expiresAt: new Date(createdAt.getTime() + duration) } }); return { accepted: true, token };
+    await this.database.authToken.create({ data: { userId: user.id, tokenHash: digest(token), purpose: "PASSWORD_RESET", expiresAt: new Date(createdAt.getTime() + duration) } }); return { accepted: true };
   }
   async complete(input: { token: string; newPassword: string }): Promise<void> {
     const parsed = passwordResetCompleteSchema.safeParse(input); if (!parsed.success) throw new ValidationError("The reset token or password is invalid", parsed.error.issues);

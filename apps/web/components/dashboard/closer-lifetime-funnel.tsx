@@ -17,6 +17,14 @@ function conversion(from: number, to: number): string {
   return from > 0 ? `${Math.round((to / from) * 100)}%` : "—";
 }
 
+function decimal(value: number | null): string {
+  return value === null ? "—" : value.toFixed(1);
+}
+
+function percentage(value: number | null): string {
+  return value === null ? "—" : `${Math.round(value * 100)}%`;
+}
+
 function smoothCurve(points: Array<{ x: number; y: number }>): string {
   return points.slice(1).reduce((path, point, index) => {
     const previous = points[index];
@@ -47,10 +55,10 @@ export function closerStageThickness(value: number, largestValue: number): numbe
 
 export function CloserLifetimeFunnel({ totals }: CloserLifetimeFunnelProps) {
   const stages = [
-    { label: "Applications handled", value: totals.applicationsHandled, href: "/leads" },
-    { label: "Interviews scheduled", value: totals.interviewsScheduled, href: "/leads?pipelineStage=INTERVIEW" },
-    { label: "Calls attended", value: totals.callsAttended, href: "/leads?pipelineStage=INTERVIEW" },
-    { label: "Offers", value: totals.offers, href: "/leads?pipelineStage=OFFER" },
+    { label: "Leads handled", value: totals.applicationsHandled, href: "/leads" },
+    { label: "Interview leads", value: totals.interviewsScheduled, href: "/leads?pipelineStage=INTERVIEW" },
+    { label: "Leads attended", value: totals.callsAttended, href: "/leads?pipelineStage=INTERVIEW" },
+    { label: "Offer-stage leads", value: totals.offers, href: "/leads?pipelineStage=OFFER" },
     { label: "Placements", value: totals.placements, href: "/leads?pipelineStage=PLACEMENT" },
   ];
   const values = stages.map((stage) => stage.value);
@@ -73,7 +81,7 @@ export function CloserLifetimeFunnel({ totals }: CloserLifetimeFunnelProps) {
       <header className={styles.header}>
         <div>
           <p className={styles.eyebrow}>Lifetime view</p>
-          <h2 className={styles.title}>Placement journey</h2>
+          <h2 className={styles.title}>Lead journey</h2>
         </div>
         <span className={styles.scope}>All time</span>
       </header>
@@ -109,6 +117,14 @@ export function CloserLifetimeFunnel({ totals }: CloserLifetimeFunnelProps) {
           </div>
         </div>
       </div>
+
+      <dl aria-label="Interview round performance" className={styles.roundMetrics}>
+        <div><dt>Total rounds</dt><dd>{count(totals.interviewRounds)}</dd></div>
+        <div><dt>Attended rounds</dt><dd>{count(totals.attendedRounds)}</dd></div>
+        <div><dt>Avg rounds / lead</dt><dd>{decimal(totals.averageRoundsPerInterviewLead)}</dd></div>
+        <div><dt>Attendance rate</dt><dd>{percentage(totals.roundAttendanceRate)}</dd></div>
+        <div className={styles.diagnostic}><dt>Cancelled</dt><dd>{count(totals.cancelledRounds)}</dd></div>
+      </dl>
 
       <dl aria-label="Adjacent stage conversions" className={styles.conversions}>
         {stages.slice(1).map((stage, index) => (

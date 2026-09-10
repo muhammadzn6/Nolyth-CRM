@@ -160,7 +160,7 @@ export type CandidateProfileDatabase = {
 
 export type Page<T> = { items: T[]; nextCursor: string | null };
 export type CandidateDetail = CandidateSummary & { profiles: ProfileSummary[] };
-export type CandidateContext = Pick<CandidateSummary, "id" | "firstName" | "lastName" | "preferredName">;
+export type CandidateContext = Pick<CandidateSummary, "id" | "firstName" | "lastName" | "preferredName" | "timezone">;
 export type ProfileDetail = ProfileSummary & { candidate: CandidateContext };
 
 function validationError(issues: unknown): ValidationError {
@@ -260,7 +260,7 @@ export class CandidatesService {
         ...(parsed.status ? { status: parsed.status } : {}),
         ...(parsed.search
           ? {
-            OR: ["firstName", "lastName", "preferredName", "email"].map((field) => ({
+              OR: ["firstName", "lastName", "preferredName", "email", "phone", "location", "timezone"].map((field) => ({
               [field]: { contains: parsed.search, mode: "insensitive" },
             })),
           }
@@ -384,7 +384,17 @@ export class CandidatesService {
       where: {
         ...(parsed.candidateId ? { candidateId: parsed.candidateId } : {}),
         ...(parsed.status ? { status: parsed.status } : {}),
-        ...(parsed.search ? { name: { contains: parsed.search, mode: "insensitive" } } : {}),
+        ...(parsed.search ? {
+          OR: [
+            { name: { contains: parsed.search, mode: "insensitive" } },
+            { description: { contains: parsed.search, mode: "insensitive" } },
+            { candidate: { firstName: { contains: parsed.search, mode: "insensitive" } } },
+            { candidate: { lastName: { contains: parsed.search, mode: "insensitive" } } },
+            { candidate: { preferredName: { contains: parsed.search, mode: "insensitive" } } },
+            { targetRoles: { has: parsed.search } },
+            { preferredLocations: { has: parsed.search } },
+          ],
+        } : {}),
         ...(actor.role === "BD"
           ? { bdAssignments: { some: { userId: actor.id, endedAt: null } } }
           : {}),
@@ -440,6 +450,7 @@ export class CandidatesService {
         firstName: candidate.firstName,
         lastName: candidate.lastName,
         preferredName: candidate.preferredName,
+        timezone: candidate.timezone,
       },
     };
   }

@@ -23,6 +23,7 @@ import {
   type CreateApplicationIntake,
   type ApplicationIntakeResult,
   type LeadListQuery,
+  type LeadDetail,
   type LeadStatus,
   type LeadSummary,
   type UpdateLead,
@@ -41,6 +42,7 @@ import {
 import { AuthorizationService } from "../identity/authorization.service";
 import type { Actor } from "../identity/session.service";
 import { addBusinessHours } from "../performance/business-hours";
+import { assertCloserLeadAccess, closerLeadWhere } from "./lead-access";
 
 type Store = {
   findMany(args?: unknown): Promise<ReadonlyArray<Record<string, unknown>>>;
@@ -181,6 +183,29 @@ function companySummary(record: Record<string, unknown>) {
 function contactSummary(record: Record<string, unknown>) {
   return { id: String(record.id), companyId: String(record.companyId), name: String(record.name), title: (record.title as string | null) ?? null, email: (record.email as string | null) ?? null, phone: (record.phone as string | null) ?? null, linkedinUrl: (record.linkedinUrl as string | null) ?? null, notes: (record.notes as string | null) ?? null, createdAt: dateValue(record.createdAt) ?? new Date(0).toISOString(), updatedAt: dateValue(record.updatedAt) ?? new Date(0).toISOString(), version: Number(record.version) };
 }
+function ownerIdentity(record: Record<string, unknown>) {
+  return {
+    id: String(record.id),
+    displayName: String(record.displayName),
+    email: String(record.email),
+  };
+}
+function profileIdentity(record: Record<string, unknown>) {
+  const candidate = record.candidate as Record<string, unknown>;
+  return {
+    id: String(record.id),
+    name: String(record.name),
+    candidate: {
+      id: String(candidate.id),
+      firstName: String(candidate.firstName),
+      lastName: String(candidate.lastName),
+      preferredName: (candidate.preferredName as string | null) ?? null,
+    },
+  };
+}
+function sourceIdentity(record: Record<string, unknown>) {
+  return { id: String(record.id), name: String(record.name) };
+}
 function closerAssignment(record: Record<string, unknown>): CompanyCloserAssignment {
   const closer = record.closer as Record<string, unknown>;
   return {
@@ -195,7 +220,7 @@ export class LeadsService {
 
   async listCompanies(actor: Actor, query: CompanyListQuery) {
     if (!actor.isActive) throw new AuthorizationError(); const parsed = companyListQuerySchema.safeParse(query); if (!parsed.success) throw invalid(parsed.error.issues);
-    const rows = await this.database.company.findMany({ where: parsed.data.search ? { canonicalName: { contains: parsed.data.search, mode: "insensitive" } } : {}, orderBy: { canonicalName: "asc" }, take: parsed.data.limit + 1 });
+      const rows = await this.database.company.findMany({ where: parsed.data.search ? { OR: [{ canonicalName: { contains: parsed.data.search, mode: "insensitive" } }, { website: { contains: parsed.data.search, mode: "insensitive" } }, { domain: { contains: parsed.data.search, mode: "insensitive" } }, { industry: { contains: parsed.data.search, mode: "insensitive" } }, { location: { contains: parsed.data.search, mode: "insensitive" } }] } : {}, orderBy: { canonicalName: "asc" }, take: parsed.data.limit + 1 });
     return page(rows.map(companySummary), parsed.data.limit);
   }
 
@@ -260,23 +285,45 @@ export class LeadsService {
         ...(q.pipelineStage ? pipelineStageWhere(q.pipelineStage) : {}),
         ...(actor.role === "BD" && q.pipelineStage ? { createdById: actor.id } : {}),
         ...(q.ownerId ? { currentOwnerId: q.ownerId } : {}), ...(q.closerId ? { responsibleCloserId: q.closerId } : {}),
+        ...(actor.role === "CLOSER" ? { AND: [closerLeadWhere(actor.id)] } : {}),
         ...(q.important === undefined ? {} : { isImportant: q.important }), archivedAt: q.archived ? { not: null } : null,
-        ...(q.search ? { OR: [{ jobTitle: { contains: q.search, mode: "insensitive" } }, { companyName: { contains: q.search, mode: "insensitive" } }] } : {}),
+        ...(q.search ? {
+          OR: [
+            { jobTitle: { contains: q.search, mode: "insensitive" } },
+            { companyName: { contains: q.search, mode: "insensitive" } },
+            { description: { contains: q.search, mode: "insensitive" } },
+            { location: { contains: q.search, mode: "insensitive" } },
+            { rawUrl: { contains: q.search, mode: "insensitive" } },
+            { profile: { name: { contains: q.search, mode: "insensitive" } } },
+            { profile: { candidate: { OR: [{ firstName: { contains: q.search, mode: "insensitive" } }, { lastName: { contains: q.search, mode: "insensitive" } }, { preferredName: { contains: q.search, mode: "insensitive" } }, { email: { contains: q.search, mode: "insensitive" } }] } } },
+            { contacts: { some: { contact: { OR: [{ name: { contains: q.search, mode: "insensitive" } }, { email: { contains: q.search, mode: "insensitive" } }, { title: { contains: q.search, mode: "insensitive" } }, { linkedinUrl: { contains: q.search, mode: "insensitive" } }] } } } },
+          ],
+        } : {}),
       }, orderBy: [{ appliedDate: "desc" }, { id: "asc" }], ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}), take: q.limit + 1,
     });
     const visible = actor.role === "BD"
       ? rows.filter((row) => q.pipelineStage ? row.createdById === actor.id : row.currentOwnerId === actor.id)
       : actor.role === "CLOSER"
-        ? rows.filter((row) => row.responsibleCloserId === actor.id)
+        ? rows
         : rows;
     return page(visible.map((row) => summary(row)), q.limit);
   }
 
-  async get(actor: Actor, id: string): Promise<LeadSummary & { company: Record<string, unknown>; contacts: ReadonlyArray<Record<string, unknown>> }> {
+  async get(actor: Actor, id: string): Promise<LeadDetail> {
     const lead = await this.requireLead(id); await this.authorization.assertProfileAccess(actor, String(lead.profileId));
-    if (actor.role === "CLOSER" && lead.responsibleCloserId !== actor.id) throw new AuthorizationError();
+    await assertCloserLeadAccess(this.database, actor, lead);
     if (actor.role === "BD" && lead.currentOwnerId !== actor.id) throw new AuthorizationError();
-    const result = await this.database.jobLead.findUnique({ where: { id }, include: { company: true, contacts: { include: { contact: true } } } });
+    const result = await this.database.jobLead.findUnique({
+      where: { id },
+      include: {
+        company: true,
+        contacts: { include: { contact: true } },
+        currentOwner: true,
+        profile: { include: { candidate: true } },
+        responsibleCloser: true,
+        sourceRef: true,
+      },
+    });
     if (!result) throw new NotFoundError("The requested lead was not found");
     const contacts = Array.isArray(result.contacts)
       ? result.contacts.map((leadContact) => ({
@@ -289,7 +336,17 @@ export class LeadsService {
           contact: contactSummary(leadContact.contact as Record<string, unknown>),
         }))
       : [];
-    return { ...summary(result), company: companySummary((result.company as Record<string, unknown>) ?? {}), contacts };
+    return {
+      ...summary(result),
+      company: companySummary(result.company as Record<string, unknown>),
+      profile: profileIdentity(result.profile as Record<string, unknown>),
+      sourceRef: sourceIdentity(result.sourceRef as Record<string, unknown>),
+      currentOwner: ownerIdentity(result.currentOwner as Record<string, unknown>),
+      responsibleCloser: result.responsibleCloser
+        ? ownerIdentity(result.responsibleCloser as Record<string, unknown>)
+        : null,
+      contacts,
+    };
   }
 
   async create(actor: Actor, input: CreateLead): Promise<LeadSummary> {
@@ -364,7 +421,7 @@ export class LeadsService {
       const sourceName = new URL(canonicalUrl).hostname.replace(/^www\./, "");
       const source = await transaction.jobSource.findUnique({ where: { name: sourceName } }) ?? await transaction.jobSource.create({ data: { name: sourceName } });
       const qualifiedCredit = duplicate !== "CONFIRMED";
-      const created = await transaction.jobLead.create({ data: { profileId: parsed.data.profileId, companyId: String(company.id), sourceId: String(source.id), createdById: actor.id, currentOwnerId: actor.id, companyName: String(company.canonicalName), jobTitle: parsed.data.jobTitle, rawUrl: parsed.data.rawUrl, appliedDate: new Date(`${appliedDate.toISOString().slice(0, 10)}T00:00:00.000Z`), canonicalUrl, canonicalHash: canonicalUrl.toLowerCase(), duplicateClassification: duplicate, qualifiedCredit } });
+      const created = await transaction.jobLead.create({ data: { profileId: parsed.data.profileId, companyId: String(company.id), sourceId: String(source.id), createdById: actor.id, currentOwnerId: actor.id, companyName: String(company.canonicalName), jobTitle: parsed.data.jobTitle, rawUrl: parsed.data.rawUrl, appliedDate: new Date(`${appliedDate.toISOString().slice(0, 10)}T00:00:00.000Z`), canonicalUrl, canonicalHash: canonicalUrl.toLowerCase(), duplicateClassification: duplicate, qualifiedCredit, compensationMin: parsed.data.compensationMin ?? null, compensationMax: parsed.data.compensationMax ?? null, compensationCurrency: parsed.data.compensationCurrency ?? null, compensationPeriod: parsed.data.compensationPeriod ?? null } });
       const contact = await transaction.contact.findFirst({ where: { companyId: String(company.id), email: parsed.data.recruiterEmail } }) ?? await transaction.contact.create({ data: { companyId: String(company.id), createdById: actor.id, name: parsed.data.recruiterName, email: parsed.data.recruiterEmail } });
       await transaction.leadContact.create({ data: { leadId: String(created.id), contactId: String(contact.id), role: "RECRUITER", isPrimary: true } });
       const review = duplicate === "LIKELY"

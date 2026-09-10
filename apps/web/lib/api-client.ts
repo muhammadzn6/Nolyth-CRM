@@ -11,6 +11,7 @@ import {
   candidateListQuerySchema,
   candidateSummarySchema,
   companySummarySchema,
+  companyListQuerySchema,
   calendarQuerySchema,
   closerDashboardDataSchema,
   interviewSummarySchema,
@@ -58,6 +59,7 @@ import {
   createLeadSchema,
   createApplicationIntakeSchema,
   applicationIntakeResultSchema,
+  updateLeadRequestSchema,
   leadDetailSchema,
   leadListQuerySchema,
   leadSummarySchema,
@@ -78,6 +80,7 @@ import {
   type CandidateListQuery,
   type CandidateSummary,
   type CompanySummary,
+  type CompanyListQuery,
   type CreateCompany,
   type UpdateCompanyRequest,
   type CloserDashboardData,
@@ -93,8 +96,10 @@ import {
   type CreateLead,
   type CreateApplicationIntake,
   type ApplicationIntakeResult,
+  type UpdateLeadRequest,
   type LeadListQuery,
   type LeadSummary,
+  type LeadDetail as LeadDetailContract,
   type CreateUser,
   type LoginRequest,
   type ProfileListQuery,
@@ -160,13 +165,14 @@ export type CreateUserResult = {
 };
 
 export type CandidateDetail = CandidateSummary & { profiles: ProfileSummary[] };
-export type CandidateContext = Pick<CandidateSummary, "id" | "firstName" | "lastName" | "preferredName">;
+export type CandidateContext = Pick<CandidateSummary, "id" | "firstName" | "lastName" | "preferredName" | "timezone">;
 export type ProfileDetail = ProfileSummary & { candidate: CandidateContext };
 export type Page<T> = { items: T[]; nextCursor: string | null };
-export type LeadDetail = LeadSummary & { company: Record<string, unknown>; contacts: ReadonlyArray<Record<string, unknown>> };
+export type LeadDetail = LeadDetailContract;
 export type CandidateListInput = Omit<CandidateListQuery, "limit"> & { limit?: number };
 export type ProfileListInput = Omit<ProfileListQuery, "limit"> & { limit?: number };
 export type LeadListInput = Partial<Omit<LeadListQuery, "limit">> & { limit?: number };
+export type CompanyListInput = Partial<Omit<CompanyListQuery, "limit">> & { limit?: number };
 export type CalendarInput = { companyId?: string; from?: string; to?: string };
 export type TaskListInput = Partial<Omit<TaskListQuery, "limit">> & { limit?: number };
 export type DashboardData = { kpis: AnalyticsKpis; breakdowns: { statuses: Array<{ key: string; count: number }>; sources: Array<{ key: string; count: number }> }; upcomingInterviews: number };
@@ -291,8 +297,13 @@ async function read(path: string, cookie?: string): Promise<unknown> {
     headers: cookie ? { cookie } : undefined,
   });
   console.info("[Orbit frontend] API read", { path, status: response.status, ok: response.ok });
-  if (!response.ok) console.error("[Orbit frontend] API read failed", { path, status: response.status });
+  if (!response.ok) logApiFailure("[Orbit frontend] API read failed", { path, status: response.status }, response.status);
   return readEnvelope(response);
+}
+
+function logApiFailure(message: string, context: Record<string, unknown>, status: number) {
+  if (status >= 500) console.error(message, context);
+  else console.warn(message, context);
 }
 
 async function mutate(
@@ -309,7 +320,7 @@ async function mutate(
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   console.info("[Orbit frontend] API mutate", { method, path, status: response.status, ok: response.ok });
-  if (!response.ok) console.error("[Orbit frontend] API mutate failed", { method, path, status: response.status });
+  if (!response.ok) logApiFailure("[Orbit frontend] API mutate failed", { method, path, status: response.status }, response.status);
   return readEnvelope(response);
 }
 
@@ -338,12 +349,13 @@ function parseCandidateContext(data: unknown): CandidateContext {
     throw new ApiClientError("The API returned an invalid profile candidate.", "INVALID_RESPONSE");
   }
   const candidate = data as Record<string, unknown>;
-  const expectedKeys = ["firstName", "id", "lastName", "preferredName"];
+  const expectedKeys = ["firstName", "id", "lastName", "preferredName", "timezone"];
   if (
     Object.keys(candidate).sort().join(",") !== expectedKeys.join(",") ||
     !uuidSchema.safeParse(candidate.id).success ||
     typeof candidate.firstName !== "string" || !candidate.firstName.trim() ||
     typeof candidate.lastName !== "string" || !candidate.lastName.trim() ||
+    typeof candidate.timezone !== "string" || !candidate.timezone.trim() ||
     !(candidate.preferredName === null ||
       (typeof candidate.preferredName === "string" && candidate.preferredName.trim()))
   ) {
@@ -390,7 +402,7 @@ export async function login(input: LoginRequest): Promise<SessionUser> {
     body: JSON.stringify(parsed.data),
   });
   console.info("[Orbit frontend] API login", { status: response.status, ok: response.ok });
-  if (!response.ok) console.error("[Orbit frontend] API login failed", { status: response.status });
+  if (!response.ok) logApiFailure("[Orbit frontend] API login failed", { status: response.status }, response.status);
   const data = await readEnvelope(response);
   const actor = sessionUserSchema.safeParse(data);
   if (!actor.success) throw new ApiClientError("The API returned an invalid user session.", "INVALID_RESPONSE");
@@ -405,6 +417,15 @@ export async function logout(): Promise<void> {
   });
 
   if (!response.ok) await readEnvelope(response);
+}
+
+export async function refreshSession(): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
+    method: "POST",
+    credentials: "include",
+    headers: { origin: getTrustedOrigin() },
+  });
+  await readEnvelope(response);
 }
 
 export async function changePassword(input: ChangePasswordRequest): Promise<void> {
@@ -589,7 +610,7 @@ export async function listNotifications(input: { unreadOnly?: boolean; limit?: n
   return parsed.data;
 }
 
-export async function listActivity(input: { companyId?: string; leadId?: string; profileId?: string; limit?: number } = {}, cookie?: string): Promise<ActivityEventSummary[]> {
+export async function listActivity(input: { companyId?: string; leadId?: string; profileId?: string; search?: string; limit?: number } = {}, cookie?: string): Promise<ActivityEventSummary[]> {
   const query = parseInput(activityListQuerySchema, input, "Enter valid activity filters.");
   const data = await read(`/activity?${queryString(query)}`, cookie);
   const parsed = activityEventSummarySchema.array().safeParse(data);
@@ -653,7 +674,7 @@ export async function cancelInterview(id: string, expectedVersion: number, reaso
   return parseResource(interviewSummarySchema, await mutate(`/interview-rounds/${roundId}/cancel`, "POST", command), "interview");
 }
 
-export async function recordInterviewAttendance(id: string, attendance: "ATTENDED" | "MISSED" | "UNKNOWN", expectedVersion: number): Promise<InterviewSummary> {
+export async function recordInterviewAttendance(id: string, attendance: "ATTENDED" | "MISSED", expectedVersion: number): Promise<InterviewSummary> {
   const roundId = parseId(id, "interview round");
   const command = parseInput(interviewAttendanceSchema, { attendance, expectedVersion }, "Enter valid attendance.");
   return parseResource(interviewSummarySchema, await mutate(`/interview-rounds/${roundId}/attendance`, "POST", command), "interview");
@@ -665,9 +686,9 @@ export async function saveInterviewNotes(id: string, notes: string, expectedVers
   return parseResource(interviewSummarySchema, await mutate(`/interview-rounds/${roundId}/closer-notes`, "POST", command), "interview");
 }
 
-export async function saveOfficialInterviewResult(id: string, result: string, expectedVersion: number): Promise<InterviewSummary> {
+export async function saveOfficialInterviewResult(id: string, outcome: "PASSED" | "FAILED", notes: string | undefined, expectedVersion: number): Promise<InterviewSummary> {
   const roundId = parseId(id, "interview round");
-  const command = parseInput(officialResultSchema, { result, expectedVersion }, "Enter an official result.");
+  const command = parseInput(officialResultSchema, { outcome, ...(notes?.trim() ? { notes: notes.trim() } : {}), expectedVersion }, "Enter an official result.");
   return parseResource(interviewSummarySchema, await mutate(`/interview-rounds/${roundId}/official-result`, "POST", command), "interview");
 }
 
@@ -744,8 +765,11 @@ export async function getCloserDashboard(cookie?: string): Promise<CloserDashboa
   );
 }
 
-export async function listCompanies(cookie?: string): Promise<CompanySummary[]> {
-  const data = await read("/leads/companies?limit=100", cookie);
+export async function listCompanies(inputOrCookie: CompanyListInput | string = {}, cookie?: string): Promise<CompanySummary[]> {
+  const input = typeof inputOrCookie === "string" ? {} : inputOrCookie;
+  const requestCookie = typeof inputOrCookie === "string" ? inputOrCookie : cookie;
+  const query = parseInput(companyListQuerySchema, { ...input, limit: input.limit ?? 100 }, "Enter valid company filters.") as Record<string, unknown>;
+  const data = await read(`/leads/companies?${queryString(query)}`, requestCookie);
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new ApiClientError("The API returned an invalid company list.", "INVALID_RESPONSE");
   const parsed = companySummarySchema.array().safeParse((data as Record<string, unknown>).items);
   if (!parsed.success) throw new ApiClientError("The API returned an invalid company list.", "INVALID_RESPONSE");
@@ -874,6 +898,12 @@ export async function getLead(id: string, cookie?: string): Promise<LeadDetail> 
 export async function createLead(input: CreateLead): Promise<LeadSummary> {
   const command = parseInput(createLeadSchema, input, "Enter valid lead details.");
   return parseResource(leadSummarySchema, await mutate("/leads", "POST", command), "lead");
+}
+
+export async function updateLead(id: string, input: UpdateLeadRequest): Promise<LeadSummary> {
+  const leadId = parseId(id, "lead");
+  const command = parseInput(updateLeadRequestSchema, input, "Enter valid application details.");
+  return parseResource(leadSummarySchema, await mutate(`/leads/${leadId}`, "PATCH", command), "lead");
 }
 
 export async function createApplicationIntake(input: CreateApplicationIntake): Promise<ApplicationIntakeResult> {

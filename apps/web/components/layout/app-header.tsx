@@ -4,30 +4,31 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import type { SessionUser } from "@orbit/contracts";
-import { Button } from "@orbit/ui";
 import { logout } from "../../lib/api-client";
 
 const roleLabels = { ADMIN: "Administrator", BD: "Business development", CLOSER: "Closer" } as const;
 const quickActions = {
   ADMIN: [
     ["Add candidate", "/candidates?new=candidate"],
-    ["Add profile", "/candidates"],
     ["Invite user", "/admin/users?new=user"],
-    ["Add interview", "/leads"],
   ],
-  BD: [
-    ["Add application", "/leads?new=application"],
-    ["Log recruiter response", "/leads"],
-    ["Log communication", "/leads"],
-  ],
-  CLOSER: [
-    ["Add interview outcome", "/leads"],
-    ["Add feedback", "/leads"],
-    ["Add task", "/tasks"],
-  ],
+  BD: [],
+  CLOSER: [],
 } as const;
 
-export function AppHeader({ actor, onNavigationToggle = () => undefined }: { actor: SessionUser; onNavigationToggle?: () => void }) {
+type AppHeaderProps = {
+  actor: SessionUser;
+  onNavigationToggle?: () => void;
+  onSidebarToggle?: () => void;
+  sidebarCollapsed?: boolean;
+};
+
+export function AppHeader({
+  actor,
+  onNavigationToggle = () => undefined,
+  onSidebarToggle = () => undefined,
+  sidebarCollapsed = true,
+}: AppHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -38,6 +39,7 @@ export function AppHeader({ actor, onNavigationToggle = () => undefined }: { act
   const menuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const signOutRef = useRef<HTMLButtonElement>(null);
+  const actorQuickActions = quickActions[actor.role];
   const initials = actor.displayName
     .split(" ")
     .map((part) => part[0])
@@ -67,6 +69,17 @@ export function AppHeader({ actor, onNavigationToggle = () => undefined }: { act
   function closeMenu(returnFocus: boolean) {
     setMenuOpen(false);
     if (returnFocus) menuTriggerRef.current?.focus();
+  }
+
+  function toggleQuickMenu() {
+    setMenuOpen(false);
+    setQuickOpen((value) => !value);
+  }
+
+  function toggleAccountMenu() {
+    setQuickOpen(false);
+    if (menuOpen) closeMenu(false);
+    else openMenu("first");
   }
 
   function handleMenuTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
@@ -114,41 +127,61 @@ export function AppHeader({ actor, onNavigationToggle = () => undefined }: { act
   }
 
   return (
-    <header className="sticky top-0 z-30 mx-3 mt-3 flex min-h-16 items-center gap-2 rounded-[1.5rem] border border-white/80 bg-[linear-gradient(110deg,rgba(255,255,255,0.97),rgba(255,250,247,0.95))] px-2.5 shadow-[0_14px_40px_rgba(35,42,58,0.07)] backdrop-blur-xl md:mx-5 md:gap-3 md:px-4 lg:mx-7" data-testid="command-header">
-      <button aria-label="Toggle navigation" className="grid size-10 shrink-0 place-items-center rounded-full text-foreground transition hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-focus lg:hidden" onClick={onNavigationToggle} type="button"><span aria-hidden="true" className="text-lg leading-none">☰</span></button>
-      <span aria-hidden="true" className="hidden size-10 place-items-center rounded-full bg-foreground text-xs font-black text-white shadow-[0_6px_16px_rgba(17,24,39,0.16)] sm:grid">O</span>
-      <div className="hidden min-w-0 sm:block"><p className="text-sm font-bold leading-tight text-foreground">Orbit</p><p className="truncate text-[10px] text-muted-foreground">{actor.role === "ADMIN" ? "Admin command center" : actor.role === "BD" ? "Placement operations" : "Interview workspace"}</p></div>
-      <div className="min-w-0 border-l border-border pl-2 sm:pl-3" data-testid="command-page-identity">
-        <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{roleLabels[actor.role]}</span>
-        <span className="block truncate text-sm font-bold capitalize text-foreground">{pageLabel}</span>
-      </div>
-      <div className="relative ml-1 hidden sm:block">
-        <button aria-expanded={quickOpen} aria-haspopup="menu" aria-label="Quick add" className="grid size-10 place-items-center rounded-full bg-action text-xl font-medium leading-none text-white shadow-[0_9px_20px_rgba(235,101,72,0.24)] transition hover:-translate-y-0.5 hover:bg-action-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus motion-reduce:transform-none" onClick={() => setQuickOpen((value) => !value)} title="Quick add" type="button"><span aria-hidden="true">＋</span></button>
-        {quickOpen ? <div aria-label="Quick add menu" className="absolute left-0 top-11 w-56 rounded-2xl border border-border bg-surface p-2 shadow-[0_18px_48px_rgba(17,24,39,0.16)]" role="menu">{quickActions[actor.role].map(([label, href]) => <a className="flex min-h-10 items-center rounded-xl px-3 text-sm font-semibold text-foreground hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" href={href} key={label} onClick={() => setQuickOpen(false)} role="menuitem">{label}</a>)}</div> : null}
-      </div>
-      <form action="/search" className="relative ml-auto hidden w-full max-w-[340px] md:block" role="search">
-        <label className="sr-only" htmlFor="global-search">Search Orbit</label>
-        <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">⌕</span>
-        <input className="h-10 w-full rounded-full border border-border/80 bg-white/65 pl-9 pr-12 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:bg-white focus:ring-3 focus:ring-focus/15" id="global-search" name="q" placeholder="Search profiles, leads, people…" />
-        <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md border border-border bg-surface-subtle px-1.5 py-0.5 text-[10px] text-muted-foreground">⌘K</kbd>
-      </form>
-      <a aria-label="Notifications" className="relative grid size-9 place-items-center rounded-xl text-foreground transition hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-focus" href="/notifications">
-        <span aria-hidden="true">♢</span><span className="absolute right-2 top-2 size-2 rounded-full border-2 border-background bg-danger" />
-      </a>
-      <div className="relative">
-        <button aria-controls="user-menu" aria-expanded={menuOpen} aria-haspopup="menu" aria-label="Account menu" className="flex items-center gap-2.5 rounded-xl p-1.5 text-left outline-none transition hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-focus" onClick={() => menuOpen ? closeMenu(false) : openMenu("first")} onKeyDown={handleMenuTriggerKeyDown} ref={menuTriggerRef} type="button">
-          <span className="grid size-8 place-items-center rounded-lg bg-primary-soft text-xs font-bold text-primary">{initials}</span>
-          <span className="hidden min-w-0 sm:block"><span className="block max-w-36 truncate text-xs font-semibold text-foreground">{actor.displayName}</span><span className="block text-[11px] text-muted-foreground">{roleLabels[actor.role]}</span></span>
-          <span aria-hidden="true" className="hidden text-xs text-muted-foreground sm:inline">⌄</span>
+    <header className="command-header" data-dashboard={pathname === "/" ? "true" : "false"} data-testid="command-header">
+      <div className="command-header-leading">
+        <button aria-label="Toggle navigation" className="command-circle-control lg:hidden" onClick={onNavigationToggle} type="button">
+          <span aria-hidden="true" className="command-menu-icon"><i /><i /></span>
         </button>
-        {menuOpen ? (
-          <div aria-label="User menu" className="absolute right-0 top-12 w-48 rounded-xl border border-border bg-surface p-2 text-sm shadow-lg" id="user-menu" onKeyDown={handleMenuKeyDown} ref={menuRef} role="menu">
-            <p className="px-2 py-1 text-xs text-muted-foreground" role="presentation">UTC+05:00 · Karachi</p>
-            <a className="block rounded-lg px-2 py-2 font-medium text-foreground hover:bg-surface-subtle" href="/settings" role="menuitem" tabIndex={-1}>Account settings</a>
-            <button className="block w-full rounded-lg px-2 py-2 text-left font-medium text-foreground hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60" disabled={logoutPending} onClick={handleLogout} ref={signOutRef} role="menuitem" tabIndex={-1} type="button">{logoutPending ? "Signing out…" : "Sign out"}</button>
-            {logoutError ? <p className="px-2 py-1 text-xs text-danger" role="alert">{logoutError}</p> : null}
-          </div>
-        ) : null}
+        <button
+          aria-label={sidebarCollapsed ? "Expand primary navigation" : "Collapse primary navigation"}
+          className="command-circle-control hidden lg:grid"
+          onClick={onSidebarToggle}
+          type="button"
+        >
+          <span aria-hidden="true" className="command-menu-icon"><i /><i /></span>
+        </button>
+        <div className="command-brand" data-testid="command-brand">
+          <span aria-hidden="true" className="command-brand-mark">O</span>
+          <span className="min-w-0">
+            <strong>Orbit</strong>
+            <small>{pageLabel}</small>
+          </span>
+        </div>
+      </div>
+
+      <div className="command-header-utilities">
+        {actorQuickActions.length > 0 ? <div className="relative hidden sm:block">
+          <button aria-expanded={quickOpen} aria-haspopup="menu" aria-label="Quick add" className="command-circle-control command-quick-add" data-variant="quiet" onClick={toggleQuickMenu} title="Quick add" type="button"><span aria-hidden="true">＋</span></button>
+          {quickOpen ? <div aria-label="Quick add menu" className="absolute right-0 top-14 w-56 rounded-2xl border border-border bg-surface p-2 shadow-[0_18px_48px_rgba(17,24,39,0.16)]" role="menu">{actorQuickActions.map(([label, href]) => <a className="flex min-h-10 items-center rounded-xl px-3 text-sm font-semibold text-foreground hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" href={href} key={label} onClick={() => setQuickOpen(false)} role="menuitem">{label}</a>)}</div> : null}
+        </div> : null}
+
+        <div className="relative">
+          <button aria-controls="user-menu" aria-expanded={menuOpen} aria-haspopup="menu" aria-label="Account menu" className="command-account" onClick={toggleAccountMenu} onKeyDown={handleMenuTriggerKeyDown} ref={menuTriggerRef} type="button">
+            <span className="command-avatar">{initials}</span>
+            <span className="hidden min-w-0 sm:block"><strong>{actor.displayName}</strong><small>{roleLabels[actor.role]}</small></span>
+            <span aria-hidden="true" className="hidden text-xs text-muted-foreground sm:inline">⌄</span>
+          </button>
+          {menuOpen ? (
+            <div aria-label="User menu" className="absolute right-0 top-14 w-48 rounded-xl border border-border bg-surface p-2 text-sm shadow-lg" id="user-menu" onKeyDown={handleMenuKeyDown} ref={menuRef} role="menu">
+              <p className="px-2 py-1 text-xs text-muted-foreground" role="presentation">UTC+05:00 · Karachi</p>
+              <a className="block rounded-lg px-2 py-2 font-medium text-foreground hover:bg-surface-subtle" href="/settings" role="menuitem" tabIndex={-1}>Account settings</a>
+              <button className="block w-full rounded-lg px-2 py-2 text-left font-medium text-foreground hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60" disabled={logoutPending} onClick={handleLogout} ref={signOutRef} role="menuitem" tabIndex={-1} type="button">{logoutPending ? "Signing out…" : "Sign out"}</button>
+              {logoutError ? <p className="px-2 py-1 text-xs text-danger" role="alert">{logoutError}</p> : null}
+            </div>
+          ) : null}
+        </div>
+
+        <a aria-label="Notifications" className="command-notifications" href="/notifications">
+          <svg aria-hidden="true" fill="none" viewBox="0 0 24 24"><path d="M7.5 9.5a4.5 4.5 0 0 1 9 0c0 5 2 5.5 2 6.5h-13c0-1 2-1.5 2-6.5ZM10 19h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" /></svg>
+          <span />
+        </a>
+
+        <form action="/search" className="command-search hidden md:flex" role="search">
+          <label className="sr-only" htmlFor="global-search">Search Orbit</label>
+          <span aria-hidden="true" className="command-search-icon"><svg fill="none" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5" stroke="currentColor" strokeWidth="1.8" /><path d="m15 15 4 4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" /></svg></span>
+          <input id="global-search" name="q" placeholder="Search Orbit" />
+          <kbd>⌘K</kbd>
+        </form>
       </div>
     </header>
   );

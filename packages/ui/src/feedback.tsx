@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Button } from "./button";
+import { OrbitSpinner } from "./spinner";
 import { joinClasses } from "./styles";
 
 type FeedbackStateProps = {
@@ -94,14 +95,18 @@ export function UnauthorizedState({
 
 export function LoadingState({ label = "Loading" }: { label?: string }) {
   return (
-    <div aria-live="polite" aria-busy="true" className="grid gap-5">
-      <span className="sr-only">{label}</span>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((item) => (
-          <div className="h-32 animate-pulse rounded-2xl border border-border bg-surface motion-reduce:animate-none" key={item} />
-        ))}
+    <div aria-live="polite" aria-busy="true" className="fixed inset-0 z-[100] grid place-items-center bg-background/80 px-6 backdrop-blur-[6px]" data-orbit-page-loader="true" role="status">
+      <div className="relative isolate flex w-full max-w-sm flex-col items-center overflow-hidden rounded-[2rem] border border-[#efd4ca] bg-[radial-gradient(circle_at_50%_18%,#fff_0%,#fff8f4_48%,#fbe6de_100%)] px-8 py-10 text-center shadow-[0_28px_80px_rgba(94,48,34,0.16)]">
+        <span aria-hidden="true" className="absolute -left-16 -top-20 -z-10 size-52 rounded-full border-[30px] border-white/55" />
+        <span aria-hidden="true" className="absolute -bottom-24 -right-16 -z-10 size-56 rounded-full border-[34px] border-[#f6c8b8]/35" />
+        <span className="relative grid size-32 place-items-center" aria-hidden="true">
+          <span className="absolute inset-1 rounded-full bg-action/10 blur-xl" />
+          <OrbitSpinner className="text-action" size="xl" />
+          <span className="absolute inset-[38%] rounded-full bg-surface shadow-[0_6px_18px_rgba(117,48,29,0.18)]" />
+        </span>
+        <strong className="mt-5 text-base font-bold tracking-[-0.02em] text-foreground">{label}</strong>
+        <span className="mt-2 max-w-64 text-sm leading-6 text-muted-foreground">Aligning your workspace and latest activity.</span>
       </div>
-      <div className="h-80 animate-pulse rounded-2xl border border-border bg-surface motion-reduce:animate-none" />
     </div>
   );
 }

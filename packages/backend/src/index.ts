@@ -17,6 +17,7 @@ export * from "./identity/authorization.service";
 export * from "./identity/identity.service";
 export * from "./identity/password";
 export * from "./identity/session.service";
+export * from "./identity/jwt.service";
 export * from "./outbox/outbox.service";
 export * from "./outbox/outbox.types";
 export * from "./providers/email.port";

@@ -32,7 +32,7 @@ export function LoginForm() {
         <Input autoComplete="current-password" id="password" minLength={1} name="password" placeholder="Enter your password" required type="password" />
       </Field>
       {error ? <p className="rounded-xl border border-danger/20 bg-danger-soft px-3.5 py-3 text-sm font-medium text-danger" role="alert">{error}</p> : null}
-      <Button className="mt-1 w-full" disabled={pending} type="submit">
+      <Button className="mt-1 w-full" disabled={pending} loading={pending} type="submit">
         {pending ? "Signing in…" : "Sign in to Orbit"}
       </Button>
       <a className="text-center text-xs font-semibold text-primary hover:underline" href="/reset-password">Forgot your password?</a>

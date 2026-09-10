@@ -425,7 +425,7 @@ describe("CandidatesService", () => {
     await expect(service.listProfiles(closer, { limit: 50 })).resolves.toEqual({ items: [], nextCursor: null });
     await expect(service.getProfile(closer, assigned.id)).resolves.toEqual(expect.objectContaining({
       id: assigned.id,
-      candidate: { id: assigned.candidateId, firstName: "Ada", lastName: "Lovelace", preferredName: null },
+      candidate: { id: assigned.candidateId, firstName: "Ada", lastName: "Lovelace", preferredName: null, timezone: "UTC" },
     }));
   });
 

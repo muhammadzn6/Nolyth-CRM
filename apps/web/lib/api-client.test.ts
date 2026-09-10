@@ -64,6 +64,46 @@ const profile = {
   version: 1,
 };
 
+const lead = {
+  id: "60000000-0000-4000-8000-000000000001",
+  profileId: profile.id,
+  companyId: "61000000-0000-4000-8000-000000000001",
+  sourceId: "62000000-0000-4000-8000-000000000001",
+  createdById: actor.id,
+  currentOwnerId: actor.id,
+  responsibleCloserId: null,
+  archivedById: null,
+  closedById: null,
+  jobTitle: "Platform Engineer",
+  companyName: "Northstar Labs",
+  description: null,
+  rawUrl: "https://jobs.example/platform-engineer",
+  canonicalUrl: "https://jobs.example/platform-engineer",
+  canonicalHash: "jobs.example/platform-engineer",
+  location: "Remote",
+  workplaceType: "Remote",
+  employmentType: "Full-time",
+  contractType: null,
+  compensationMin: null,
+  compensationMax: null,
+  compensationCurrency: null,
+  compensationPeriod: null,
+  appliedDate: "2026-09-08",
+  status: "APPLIED" as const,
+  isImportant: false,
+  closureReason: null,
+  closureNotes: null,
+  closedAt: null,
+  placedAt: null,
+  startDate: null,
+  startedAt: null,
+  archivedAt: null,
+  archiveReason: null,
+  createdAt: "2026-09-08T08:00:00.000Z",
+  updatedAt: "2026-09-08T08:00:00.000Z",
+  version: 1,
+};
+
 const assignment = {
   id: "40000000-0000-4000-8000-000000000001",
   profileId: profile.id,
@@ -126,6 +166,11 @@ const closerDashboard = {
     applicationsHandled: 48,
     interviewsScheduled: 22,
     callsAttended: 14,
+    interviewRounds: 37,
+    attendedRounds: 29,
+    cancelledRounds: 3,
+    averageRoundsPerInterviewLead: 37 / 22,
+    roundAttendanceRate: 29 / 37,
     offers: 6,
     placements: 2,
   },
@@ -151,6 +196,7 @@ describe("API client boundary", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("parses the session actor from the shared contract envelope", async () => {
@@ -242,6 +288,50 @@ describe("API client boundary", () => {
       ApiClientError,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("updates an application through the typed PATCH boundary", async () => {
+    const updated = { ...lead, jobTitle: "Staff Platform Engineer", version: 2 };
+    const fetchMock = vi.fn().mockResolvedValue(success(updated));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiClient.updateLead(lead.id, { jobTitle: updated.jobTitle, expectedVersion: lead.version })).resolves.toEqual(updated);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.orbit.example/api/v1/leads/${lead.id}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ jobTitle: updated.jobTitle, expectedVersion: lead.version }),
+      }),
+    );
+  });
+
+  it("sends the official interview outcome, optional notes, and expected version", async () => {
+    const { candidateName: _candidateName, companyName: _companyName, jobTitle: _jobTitle, profileName: _profileName, ...round } = closerDashboard.nextMeeting;
+    const updated = { ...round, status: "PASSED" as const, officialResult: "PASSED", officialFeedback: "Strong technical round", version: 2 };
+    const fetchMock = vi.fn().mockResolvedValue(success(updated));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiClient.saveOfficialInterviewResult(round.id, "PASSED", "  Strong technical round  ", 1)).resolves.toEqual(updated);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.orbit.example/api/v1/interview-rounds/${round.id}/official-result`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ outcome: "PASSED", notes: "Strong technical round", expectedVersion: 1 }),
+      }),
+    );
+  });
+
+  it("logs expected client errors as warnings instead of console errors", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ success: false, error: { code: "NOT_FOUND", message: "Missing" }, meta: { requestId: "req_missing" } }, { status: 404 })));
+
+    await expect(apiClient.getLead(lead.id)).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+
+    expect(warn).toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
   });
 
   it("rejects missing API configuration instead of calling localhost", async () => {
@@ -550,6 +640,7 @@ describe("API client boundary", () => {
             firstName: candidate.firstName,
             lastName: candidate.lastName,
             preferredName: candidate.preferredName,
+            timezone: candidate.timezone,
           },
         }),
       );
@@ -561,7 +652,7 @@ describe("API client boundary", () => {
     });
     await expect(apiClient.getProfile(profile.id)).resolves.toMatchObject({
       id: profile.id,
-      candidate: { firstName: "Ada", lastName: "Lovelace" },
+      candidate: { firstName: "Ada", lastName: "Lovelace", timezone: "Europe/London" },
     });
   });
 

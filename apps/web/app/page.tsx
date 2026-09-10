@@ -27,6 +27,7 @@ import {
   getDashboard,
   listActivity,
   listLeads,
+  listProfiles,
   listUsers,
 } from "../lib/api-client";
 import type { PerformancePeriod } from "../components/performance/bd-team-kpis";
@@ -117,16 +118,20 @@ export default async function HomePage(props?: HomePageProps) {
   }
 
   if (actor.role === "BD") {
-    const [applicationsResult, calendarResult, performanceResult, workQueueResult] = await Promise.allSettled([
+    const [applicationsResult, calendarResult, performanceResult, workQueueResult, profilesResult, usersResult] = await Promise.allSettled([
       listLeads({ limit: 100 }, cookie),
       getCalendar({}, cookie),
       readPerformance(`/performance/me?${new URLSearchParams(range)}`, bdPerformanceResponseSchema, cookie),
       readPerformance("/performance/me/work-queue", bdWorkQueueSchema, cookie),
+      listProfiles({}, cookie),
+      listUsers(cookie),
     ]);
     const applications = applicationsResult.status === "fulfilled" ? applicationsResult.value.items : [];
     const calendar = calendarResult.status === "fulfilled" ? calendarResult.value : [];
     const performance = performanceResult.status === "fulfilled" ? performanceResult.value : undefined;
     const workQueue = workQueueResult.status === "fulfilled" ? workQueueResult.value : undefined;
+    const profiles = profilesResult.status === "fulfilled" ? profilesResult.value.items : [];
+    const closers = usersResult.status === "fulfilled" ? usersResult.value.filter((user) => user.role === "CLOSER" && user.isActive) : [];
     const todayRange = workQueue
       ? businessDayPerformanceRange(new Date(), workQueue.businessTimeZone)
       : performanceRange("day");
@@ -153,7 +158,7 @@ export default async function HomePage(props?: HomePageProps) {
       !workQueue ? "Work-queue totals are temporarily unavailable." : undefined,
       applicationsResult.status === "rejected" ? "Recent applications are temporarily unavailable." : undefined,
     ].filter((value): value is string => Boolean(value));
-    return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications} error={errors.join(" ") || undefined} interviews={calendar} performance={performance} performancePeriod={performancePeriod} todayPerformance={todayPerformance} workQueue={workQueue} />{drilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={drilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
+    return <AppShell actor={actor}><BdDashboard actor={actor} applications={applications} closers={closers} error={errors.join(" ") || undefined} interviews={calendar} performance={performance} performancePeriod={performancePeriod} profiles={profiles} todayPerformance={todayPerformance} workQueue={workQueue} />{drilldown && metric ? <div className="editorial-dashboard mx-auto mt-5 max-w-[1500px]"><ScoreDetails items={drilldown} metric={metric} scope="personal" /></div> : null}</AppShell>;
   }
 
   try {

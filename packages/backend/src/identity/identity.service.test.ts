@@ -11,6 +11,7 @@ type User = {
   passwordHash: string | null;
   role: "ADMIN" | "BD" | "CLOSER";
   isActive: boolean;
+  timezone: string;
   lastLoginAt: Date | null;
 };
 
@@ -118,6 +119,7 @@ describe("identity boundary", () => {
     passwordHash: null,
     role: "BD",
     isActive: true,
+    timezone: "America/New_York",
     lastLoginAt: null,
   };
   const inactiveUser: User = {
@@ -181,6 +183,7 @@ describe("identity boundary", () => {
       email: activeUser.email,
       role: activeUser.role,
       isActive: true,
+      timezone: "America/New_York",
     });
     expect(secondLogin.sessionToken).not.toBe(firstLogin.sessionToken);
     expect(persistence.sessions).toEqual([

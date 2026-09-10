@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import type { CandidateSummary, CreateCandidate, SessionUser, UpdateCandidate } from "@orbit/contracts";
+import type { CandidateStatus, CandidateSummary, CreateCandidate, SessionUser, UpdateCandidate } from "@orbit/contracts";
 import { Button, Card, EmptyState, ErrorState, Field, Input, LoadingState, UnauthorizedState } from "@orbit/ui";
 
 import { ApiClientError, createCandidate, listCandidates } from "../../lib/api-client";
@@ -25,14 +25,20 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<CandidateStatus | "">("");
+  const [appliedFilters, setAppliedFilters] = useState<{ search: string; status: CandidateStatus | "" }>({ search: "", status: "" });
   const canManage = actor.role === "ADMIN" && actor.isActive;
 
-  const load = useCallback(async (query: string) => {
+  const load = useCallback(async (query: string, candidateStatus: CandidateStatus | "" = "") => {
     if (!canManage) return;
     setLoading(true);
     setError(undefined);
     try {
-      const page = await listCandidates({ ...(query ? { search: query } : {}), limit: 50 });
+      const page = await listCandidates({
+        ...(query ? { search: query } : {}),
+        ...(candidateStatus ? { status: candidateStatus } : {}),
+        limit: 50,
+      });
       setCandidates(page.items);
     } catch (reason) {
       setError(message(reason, "Orbit could not load candidates. Try again."));
@@ -46,14 +52,25 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
     if (new URLSearchParams(window.location.search).get("new") === "candidate") setCreateOpen(true);
   }, [load]);
 
-  const activeCount = useMemo(
-    () => candidates?.filter((candidate) => candidate.status === "ACTIVE").length ?? 0,
-    [candidates],
-  );
+  const counts = useMemo(() => ({
+    active: candidates?.filter((candidate) => candidate.status === "ACTIVE").length ?? 0,
+    archived: candidates?.filter((candidate) => candidate.status === "ARCHIVED").length ?? 0,
+  }), [candidates]);
+  const filtersApplied = Boolean(appliedFilters.search || appliedFilters.status);
+  const canClearFilters = Boolean(search.trim() || status || filtersApplied);
 
-  async function handleSearch(event: FormEvent<HTMLFormElement>) {
+  async function handleFilter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await load(search.trim());
+    const query = search.trim();
+    setAppliedFilters({ search: query, status });
+    await load(query, status);
+  }
+
+  async function clearFilters() {
+    setSearch("");
+    setStatus("");
+    setAppliedFilters({ search: "", status: "" });
+    await load("", "");
   }
 
   async function handleCreate(input: CreateCandidate | UpdateCandidate): Promise<boolean> {
@@ -83,58 +100,69 @@ export function CandidateList({ actor }: { actor: SessionUser }) {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Talent records</p>
           <h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Candidates</h1>
-          <p className="mt-1.5 text-sm leading-6 text-muted-foreground">Create candidate records and organize each job search into a separate profile.</p>
         </div>
-        <div className="flex flex-wrap gap-2"><Button aria-label="Add candidate" onClick={() => setCreateOpen(true)}>Add candidate</Button><Button aria-label="Import candidates" onClick={() => setImportOpen(true)} variant="secondary">Import CSV</Button><CsvExportButton columns={[{ key: "firstName", label: "First name" }, { key: "lastName", label: "Last name" }, { key: "email", label: "Email" }, { key: "status", label: "Status" }, { key: "timezone", label: "Timezone" }]} filename="orbit-candidates.csv" rows={candidates ?? []} /><Button aria-label="Refresh candidates" disabled={loading} onClick={() => void load(search.trim())} variant="secondary">{loading ? "Refreshing…" : "Refresh"}</Button></div>
+        <div className="flex flex-wrap gap-2"><Button aria-label="Add candidate" onClick={() => setCreateOpen(true)}>Add candidate</Button><Button aria-label="Import candidates" onClick={() => setImportOpen(true)} variant="secondary">Import CSV</Button><CsvExportButton columns={[{ key: "firstName", label: "First name" }, { key: "lastName", label: "Last name" }, { key: "email", label: "Email" }, { key: "status", label: "Status" }, { key: "timezone", label: "Timezone" }]} filename="orbit-candidates.csv" rows={candidates ?? []} /><Button aria-label="Refresh candidates" disabled={loading} loading={loading} onClick={() => void load(appliedFilters.search, appliedFilters.status)} variant="secondary">{loading ? "Refreshing…" : "Refresh"}</Button></div>
       </div>
 
       <div aria-label="Candidate summary" className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y border-border/70 py-3 text-sm">
-        <span className="font-semibold text-foreground">{candidates?.length ?? "—"} shown</span>
-        <span className="text-muted-foreground"><span className="font-semibold text-success">{candidates ? activeCount : "—"}</span> active</span>
-        <span className="text-muted-foreground">Admin-managed records</span>
+        <span className="rounded-full bg-surface-subtle px-2.5 py-1 font-semibold text-foreground" title="Candidates in this view">{candidates?.length ?? "—"}</span>
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground" title="Active candidates"><span aria-hidden="true" className="size-1.5 rounded-full bg-success" /><span className="font-semibold text-success">{candidates ? counts.active : "—"}</span><span>active</span></span>
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground" title="Archived candidates"><span aria-hidden="true" className="size-1.5 rounded-full bg-muted-foreground" /><span className="font-semibold text-foreground">{candidates ? counts.archived : "—"}</span><span>archived</span></span>
       </div>
 
       <Dialog description="Create the person record first; job-search profiles stay separate." onOpenChange={setCreateOpen} open={createOpen} title="Add candidate">
         <CandidateForm onSubmit={handleCreate} pending={creating} surface={false} />
       </Dialog>
       <Dialog description="Upload a validated CSV without leaving the candidate directory." onOpenChange={setImportOpen} open={importOpen} title="Import candidates">
-        <BulkImportForm kind="candidate" onComplete={() => { setImportOpen(false); void load(search.trim()); }} surface={false} />
+        <BulkImportForm kind="candidate" onComplete={() => { setImportOpen(false); void load(appliedFilters.search, appliedFilters.status); }} surface={false} />
       </Dialog>
 
       {notice ? <p className="rounded-xl border border-success/20 bg-success-soft px-4 py-3 text-sm font-semibold text-success" role="status">{notice}</p> : null}
 
       <Card className="p-4 sm:p-5">
-        <form aria-label="Search candidates" className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={handleSearch}>
-          <Field className="flex-1" htmlFor="candidate-search" label="Search candidates">
+        <form aria-label="Filter candidates" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_13rem_auto] md:items-end" onSubmit={handleFilter}>
+          <Field htmlFor="candidate-search" label="Search candidates">
             <Input id="candidate-search" onChange={(event) => setSearch(event.target.value)} placeholder="Name or email" value={search} />
           </Field>
-          <Button disabled={loading} type="submit" variant="secondary">Search</Button>
+          <Field htmlFor="candidate-status" label="Status">
+            <select
+              className="h-11 w-full rounded-xl border border-border bg-surface px-3.5 text-sm text-foreground outline-none transition hover:border-border-strong focus:border-primary focus:ring-3 focus:ring-focus/15"
+              id="candidate-status"
+              onChange={(event) => setStatus(event.target.value as CandidateStatus | "")}
+              value={status}
+            >
+              <option value="">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="ARCHIVED">Archived</option>
+            </select>
+          </Field>
+          <div className="flex gap-2">
+            <Button className="flex-1 md:flex-none" disabled={loading} type="submit" variant="secondary">Apply</Button>
+            {canClearFilters ? <Button onClick={() => void clearFilters()} variant="ghost">Clear</Button> : null}
+          </div>
         </form>
       </Card>
 
       {loading && candidates === null ? <LoadingState label="Loading candidates" /> : null}
-      {error ? <ErrorState actionLabel="Retry" description={error} onAction={() => void load(search.trim())} title="Candidates unavailable" /> : null}
-      {!loading && !error && candidates?.length === 0 ? <EmptyState description="Use Add candidate or change your search." title="No candidates found" /> : null}
+      {error ? <ErrorState actionLabel="Retry" description={error} onAction={() => void load(appliedFilters.search, appliedFilters.status)} title="Candidates unavailable" /> : null}
+      {!loading && !error && candidates?.length === 0 && filtersApplied ? <EmptyState description="Try another name, email, or status." title="No candidates match these filters" /> : null}
+      {!loading && !error && candidates?.length === 0 && !filtersApplied ? <EmptyState description="Use Add candidate to create the first person record." title="No candidates yet" /> : null}
 
       {!error && candidates && candidates.length > 0 ? (
-        <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table aria-label="Candidate records" className="w-full min-w-[680px] text-left text-sm">
-              <thead className="border-b border-border/80 bg-surface-subtle text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                <tr><th className="px-5 py-3.5">Candidate</th><th className="px-5 py-3.5">Location</th><th className="px-5 py-3.5">Timezone</th><th className="px-5 py-3.5">Status</th><th className="px-5 py-3.5" /></tr>
-              </thead>
-              <tbody className="divide-y divide-border/70">
-                {candidates.map((candidate) => (
-                  <tr className="group transition-colors hover:bg-surface-subtle" key={candidate.id}>
-                    <td className="px-5 py-4"><Link className="font-semibold text-foreground outline-none group-hover:text-primary focus-visible:text-primary" href={`/candidates/${candidate.id}`}>{candidate.firstName} {candidate.lastName}</Link><p className="mt-1 text-xs text-muted-foreground">{candidate.email ?? "No email recorded"}</p></td>
-                    <td className="px-5 py-4 text-muted-foreground">{candidate.location ?? "—"}</td>
-                    <td className="px-5 py-4 text-muted-foreground">{candidate.timezone}</td>
-                    <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${candidate.status === "ACTIVE" ? "bg-success-soft text-success" : "bg-warning-soft text-warning-foreground"}`}>{candidate.status === "ACTIVE" ? "Active" : "Archived"}</span></td>
-                    <td className="px-5 py-4 text-right"><Link aria-label={`Open ${candidate.firstName} ${candidate.lastName}`} className="font-semibold text-primary hover:underline" href={`/candidates/${candidate.id}`}>Open →</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <Card aria-label="Candidate records" className="overflow-hidden p-0">
+          <div className="hidden border-b border-border/80 bg-surface-subtle px-5 py-3.5 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid md:grid-cols-[minmax(240px,1.4fr)_minmax(160px,0.8fr)_minmax(180px,0.9fr)_auto_4rem] md:gap-5">
+            <span>Candidate</span><span>Location</span><span>Timezone</span><span>Status</span><span />
+          </div>
+          <div className="data-scroll-region max-h-[calc(100vh-23rem)] min-h-[22rem] divide-y divide-border/70 overflow-y-auto">
+            {candidates.map((candidate) => (
+              <article className="group grid gap-4 px-5 py-4 transition-colors hover:bg-surface-subtle md:grid-cols-[minmax(240px,1.4fr)_minmax(160px,0.8fr)_minmax(180px,0.9fr)_auto_4rem] md:items-center md:gap-5" key={candidate.id}>
+                <div className="min-w-0"><Link className="font-semibold text-foreground outline-none group-hover:text-primary focus-visible:text-primary" href={`/candidates/${candidate.id}`}>{candidate.firstName} {candidate.lastName}</Link><p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground" title={candidate.email ?? "No email recorded"}><span aria-hidden="true">@</span>{candidate.email ?? "No email recorded"}</p></div>
+                <div title="Location"><span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground md:hidden">Location</span><p className="flex items-center gap-1.5 text-sm text-foreground"><span aria-hidden="true" className="text-primary">⌖</span>{candidate.location ?? "Not recorded"}</p></div>
+                <div title="Timezone"><span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground md:hidden">Timezone</span><p className="flex items-center gap-1.5 text-sm text-foreground"><span aria-hidden="true" className="text-primary">◷</span>{candidate.timezone}</p></div>
+                <div title={candidate.status === "ACTIVE" ? "Active" : "Archived"}><span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground md:hidden">Status</span><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${candidate.status === "ACTIVE" ? "bg-success-soft text-success" : "bg-surface-subtle text-muted-foreground"}`}><span aria-hidden="true">{candidate.status === "ACTIVE" ? "✓" : "—"}</span>{candidate.status === "ACTIVE" ? "Active" : "Archived"}</span></div>
+                <Link aria-label={`Open ${candidate.firstName} ${candidate.lastName}`} className="font-semibold text-primary hover:underline md:text-right" href={`/candidates/${candidate.id}`}>Open<span aria-hidden="true"> →</span></Link>
+              </article>
+            ))}
           </div>
         </Card>
       ) : null}

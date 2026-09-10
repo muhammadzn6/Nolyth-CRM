@@ -2,6 +2,7 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Dialog } from "./dialog";
@@ -34,5 +35,11 @@ describe("Dialog", () => {
 
     act(() => dialog?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps the server and initial client tree empty until mounted", () => {
+    expect(renderToString(
+      <Dialog onOpenChange={() => undefined} open title="Create application">Body</Dialog>,
+    )).toBe("");
   });
 });

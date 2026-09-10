@@ -609,6 +609,7 @@ export const performanceDrilldownQuerySchema = z
 
 export const adminBdPerformanceResponseSchema = z.strictObject({
   period: z.strictObject({ from: dateTimeSchema, to: dateTimeSchema }),
+  businessTimeZone: timeZoneSchema,
   team: performanceKpiSchema,
   leaderboard: z.array(performanceLeaderboardRowSchema),
   buildingBaseline: z.array(performanceLeaderboardRowSchema),

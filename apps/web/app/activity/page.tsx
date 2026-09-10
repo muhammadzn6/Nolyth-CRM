@@ -1,23 +1,35 @@
 import type { Metadata } from "next";
 import { Fragment } from "react";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { Card, EmptyState, ErrorState } from "@orbit/ui";
+import { Button, Card, EmptyState, ErrorState, Field, Input } from "@orbit/ui";
 import { AppShell } from "../../components/layout/app-shell";
 import { ApiClientError, getCurrentActor, listActivity } from "../../lib/api-client";
+
+function activityGlyph(entityType: string): string {
+  const value = entityType.toLowerCase();
+  if (value.includes("interview")) return "◷";
+  if (value.includes("task")) return "✓";
+  if (value.includes("communication")) return "↗";
+  if (value.includes("profile") || value.includes("candidate")) return "◎";
+  return "•";
+}
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Activity" };
 
-export default async function ActivityRoute({ searchParams }: { searchParams?: Promise<{ companyId?: string }> }) {
+export default async function ActivityRoute({ searchParams }: { searchParams?: Promise<{ companyId?: string; search?: string }> }) {
   const cookie = (await headers()).get("cookie") ?? undefined;
   const actor = await getCurrentActor(cookie);
   if (!actor) redirect("/login");
-  const companyId = (await searchParams)?.companyId;
+  const params = await searchParams;
+  const companyId = params?.companyId;
+  const search = params?.search?.trim() ?? "";
   let events;
-  try { events = await listActivity({ companyId, limit: 40 }, cookie); }
+  try { events = await listActivity({ companyId, ...(search ? { search } : {}), limit: 40 }, cookie); }
   catch (reason) { return <AppShell actor={actor}><ErrorState description={reason instanceof ApiClientError ? reason.message : "Orbit could not load activity."} title="Activity unavailable" /></AppShell>; }
   const day = (value: string) => new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(value));
-  return <AppShell actor={actor}><div className="mx-auto grid max-w-[1200px] gap-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Audit trail</p><h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Activity</h1><p className="mt-1.5 text-sm text-muted-foreground">A chronological record of changes across the workspace.</p></div><span className="w-fit rounded-full bg-surface px-3 py-2 text-xs font-semibold text-muted-foreground shadow-sm">{events.length} recent events</span></div>{events.length === 0 ? <EmptyState description="New workspace actions will appear here." title="No activity yet" /> : <Card className="overflow-hidden p-0"><div className="border-b border-border bg-surface-subtle px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Latest first</div><section aria-label="Workspace activity" className="data-scroll-region max-h-[calc(100vh-15rem)] min-h-[28rem] overflow-y-auto px-5 py-2">{events.map((event, index) => <Fragment key={event.id}>{index === 0 || day(events[index - 1]!.occurredAt) !== day(event.occurredAt) ? <h2 className="sticky top-0 z-10 -mx-5 border-y border-border bg-surface/95 px-5 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">{day(event.occurredAt)}</h2> : null}<article className="grid grid-cols-[1rem_minmax(0,1fr)] gap-3 border-b border-border py-4 last:border-0"><span className="mt-1.5 size-2 rounded-full bg-primary ring-4 ring-primary-soft" /><div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-5"><div><p className="text-sm font-semibold capitalize text-foreground">{event.action.replaceAll("_", " ").replaceAll(".", " · ")}</p><p className="mt-1 text-xs capitalize text-muted-foreground">{event.entityType.replaceAll("_", " ").toLowerCase()}{event.actorNameSnapshot ? ` · by ${event.actorNameSnapshot}` : ""}</p></div><time className="shrink-0 text-xs text-muted-foreground">{new Intl.DateTimeFormat("en-US", { timeStyle: "short" }).format(new Date(event.occurredAt))}</time></div></article></Fragment>)}</section></Card>}</div></AppShell>;
+  return <AppShell actor={actor}><div className="mx-auto grid max-w-[1200px] gap-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Audit trail</p><h1 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">Activity</h1><p className="sr-only">A chronological record of changes across the workspace.</p></div><span className="w-fit rounded-full bg-surface px-3 py-2 text-xs font-semibold text-muted-foreground shadow-sm" title="Recent workspace events">{events.length} events</span></div><Card className="p-4 sm:p-5"><form action="/activity" aria-label="Search activity" className="flex flex-col gap-3 sm:flex-row sm:items-end" method="get"><Field className="min-w-0 flex-1" htmlFor="activity-search" label="Find activity"><Input defaultValue={search} id="activity-search" name="search" placeholder="Search action, record, or teammate" type="search" /></Field><div className="flex gap-2"><Button type="submit" variant="secondary">Search</Button>{search ? <Link className="inline-flex h-10 items-center justify-center rounded-xl px-3 text-sm font-semibold text-muted-foreground hover:bg-surface-subtle hover:text-foreground" href="/activity">Clear</Link> : null}</div></form></Card>{events.length === 0 ? <EmptyState description={search ? "Try another action, record, or teammate." : "New workspace actions will appear here."} title={search ? "No activity matches this search" : "No activity yet"} /> : <Card className="overflow-hidden p-0"><div className="border-b border-border bg-surface-subtle px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Latest first</div><section aria-label="Workspace activity" className="data-scroll-region max-h-[calc(100vh-15rem)] min-h-[28rem] overflow-y-auto px-5 py-2">{events.map((event, index) => <Fragment key={event.id}>{index === 0 || day(events[index - 1]!.occurredAt) !== day(event.occurredAt) ? <h2 className="sticky top-0 z-10 -mx-5 border-y border-border bg-surface/95 px-5 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">{day(event.occurredAt)}</h2> : null}<article className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3 border-b border-border py-4 last:border-0"><span aria-hidden="true" className="mt-0.5 flex size-6 items-center justify-center rounded-full bg-primary-soft text-xs font-bold text-primary" title={event.entityType.replaceAll("_", " ")}>{activityGlyph(event.entityType)}</span><div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-5"><div><p className="text-sm font-semibold capitalize text-foreground">{event.action.replaceAll("_", " ").replaceAll(".", " · ")}</p><p className="mt-1 text-xs capitalize text-muted-foreground" title={event.actorNameSnapshot ? `Changed by ${event.actorNameSnapshot}` : undefined}>{event.entityType.replaceAll("_", " ").toLowerCase()}{event.actorNameSnapshot ? ` · ${event.actorNameSnapshot}` : ""}</p></div><time className="shrink-0 text-xs text-muted-foreground" dateTime={event.occurredAt} title={new Date(event.occurredAt).toLocaleString()}>{new Intl.DateTimeFormat("en-US", { timeStyle: "short" }).format(new Date(event.occurredAt))}</time></div></article></Fragment>)}</section></Card>}</div></AppShell>;
 }

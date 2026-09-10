@@ -291,6 +291,7 @@ beforeEach(async () => {
   await database.candidate.deleteMany();
   await database.authToken.deleteMany();
   await database.userSession.deleteMany();
+  await database.performanceRuleSet.deleteMany();
   await database.user.deleteMany();
 });
 
@@ -536,7 +537,7 @@ describe("Orbit database foundation", () => {
     expect(seededAdmin.passwordChangedAt).toBeInstanceOf(Date);
   });
 
-  it("allows archived duplicate URLs but rejects an additional active canonical URL", async () => {
+  it("allows duplicate canonical URLs so application intake can preserve traceability", async () => {
     const creator = await createUser("creator@orbit.test");
     const profile = await createProfile(creator.id);
     const [company, source] = await Promise.all([
@@ -581,8 +582,9 @@ describe("Orbit database foundation", () => {
     });
 
     expect(activeLead).toMatchObject({ canonicalUrl: duplicateUrl, source: "manual" });
-    await expect(database.jobLead.create({ data: sharedLead })).rejects.toMatchObject({
-      code: "P2002",
+    await expect(database.jobLead.create({ data: sharedLead })).resolves.toMatchObject({
+      canonicalUrl: duplicateUrl,
+      profileId: profile.id,
     });
   });
 

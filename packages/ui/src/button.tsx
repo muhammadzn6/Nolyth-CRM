@@ -1,11 +1,13 @@
 import type { ComponentProps } from "react";
 
+import { OrbitSpinner } from "./spinner";
 import { joinClasses } from "./styles";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md" | "icon";
 
 export type ButtonProps = ComponentProps<"button"> & {
+  loading?: boolean;
   variant?: ButtonVariant;
   size?: ButtonSize;
 };
@@ -26,7 +28,10 @@ const sizes: Record<ButtonSize, string> = {
 };
 
 export function Button({
+  children,
   className,
+  disabled,
+  loading = false,
   variant = "primary",
   size = "md",
   type = "button",
@@ -34,14 +39,19 @@ export function Button({
 }: ButtonProps) {
   return (
     <button
+      aria-busy={loading || undefined}
       className={joinClasses(
         "inline-flex shrink-0 items-center justify-center font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70 motion-reduce:transition-none",
         variants[variant],
         sizes[size],
         className,
       )}
+      disabled={disabled || loading}
       type={type}
       {...props}
-    />
+    >
+      {loading ? <OrbitSpinner size="sm" /> : null}
+      {children}
+    </button>
   );
 }

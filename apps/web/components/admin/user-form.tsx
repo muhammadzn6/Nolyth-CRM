@@ -121,7 +121,7 @@ export function UserForm({
         />
       </Field>
       <div className="flex justify-end sm:col-span-2">
-        <Button disabled={pending} type="submit">
+        <Button disabled={pending} loading={pending} type="submit">
           {pending ? "Saving…" : "Save"}
         </Button>
       </div>

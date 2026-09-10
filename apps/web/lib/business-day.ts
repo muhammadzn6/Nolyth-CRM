@@ -1,3 +1,5 @@
+export const defaultBusinessTimeZone = "America/New_York";
+
 function zonedParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -11,6 +13,27 @@ function zonedParts(date: Date, timeZone: string) {
   }).formatToParts(date);
   const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value);
   return { year: value("year"), month: value("month"), day: value("day"), hour: value("hour"), minute: value("minute"), second: value("second") };
+}
+
+export function businessDateDisplay(now: Date, timeZone: string) {
+  const businessDate = zonedParts(now, timeZone);
+  return {
+    day: String(businessDate.day).padStart(2, "0"),
+    label: new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone,
+    }).format(now),
+    week: Math.ceil(businessDate.day / 7),
+    year: businessDate.year,
+  };
+}
+
+export function calendarDateForTimeZone(now: Date, timeZone: string) {
+  const businessDate = zonedParts(now, timeZone);
+  return new Date(businessDate.year, businessDate.month - 1, businessDate.day, 12);
 }
 
 export function businessDayPerformanceRange(now: Date, timeZone: string) {

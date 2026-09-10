@@ -81,6 +81,7 @@ describe("shared API contracts", () => {
       email: "ada@example.com",
       role: "ADMIN",
       isActive: true,
-    }).role).toBe("ADMIN");
+      timezone: "America/New_York",
+    })).toMatchObject({ role: "ADMIN", timezone: "America/New_York" });
   });
 });

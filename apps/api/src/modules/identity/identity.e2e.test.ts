@@ -151,6 +151,7 @@ describe("identity endpoints", () => {
         email: "active@example.com",
         role: "BD",
         isActive: true,
+        timezone: "UTC",
       },
       meta: { requestId: expect.any(String) },
     });

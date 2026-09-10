@@ -13,6 +13,7 @@ export type LoginResult = {
   user: SessionUser;
   sessionToken: string;
   expiresAt: Date;
+  accessToken?: string;
 };
 
 export class IdentityService {
@@ -42,6 +43,10 @@ export class IdentityService {
 
   async logout(requestContext: SessionRequest): Promise<void> {
     await this.sessions.revoke(requestContext);
+  }
+
+  async refreshAccessToken(requestContext: SessionRequest) {
+    return this.sessions.refreshAccessToken(requestContext);
   }
 
   async changePassword(actor: SessionUser, input: ChangePasswordRequest): Promise<void> {

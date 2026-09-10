@@ -20,6 +20,6 @@ export default defineConfig({
     testTimeout: 30000,
     setupFiles: [path.resolve(rootDir, "vitest.setup.ts")],
     include: ["**/*.{test,spec}.ts", "**/*.{test,spec}.tsx"],
-    exclude: ["**/node_modules/**", ".next", "**/e2e/**"],
+    exclude: ["**/node_modules/**", "**/.worktrees/**", ".next", "**/e2e/**"],
   },
 });

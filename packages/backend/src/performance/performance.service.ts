@@ -81,7 +81,7 @@ type CalendarRule = {
 };
 
 const fallbackRule: CalendarRule = {
-  businessCalendarTimeZone: "UTC",
+  businessCalendarTimeZone: "America/New_York",
   workingDays: [1, 2, 3, 4, 5],
   workdayStartHour: 9,
   workdayEndHour: 17,
@@ -186,7 +186,10 @@ export class PerformanceService {
     this.authorization.assertRole(actor, ["ADMIN"]);
     await this.evaluateOverdueSlas();
     const period = this.parsePeriod(query);
-    const rows = await this.performanceRows(period);
+    const [rows, calendarRule] = await Promise.all([
+      this.performanceRows(period),
+      this.activeCalendarRule(this.now()),
+    ]);
     const selected = period.bdId ? rows.filter((row) => row.bdId === period.bdId) : rows;
     const ranked = rankLeaderboard(selected.map((row) => ({
       bdId: row.bdId,
@@ -201,6 +204,7 @@ export class PerformanceService {
     const completed = selected.map((row) => ({ ...row, rank: byId.get(row.bdId)?.rank ?? null }));
     return {
       period: { from: period.from, to: period.to },
+      businessTimeZone: calendarRule.businessCalendarTimeZone,
       team: this.aggregateKpis(completed.map((row) => row.performance)),
       quality: this.aggregateQuality(completed.map((row) => row.quality)),
       leaderboard: completed.filter((row) => row.eligibilitySection === "OFFICIAL").map((row) => this.leaderboardRow(row)),
@@ -1755,7 +1759,7 @@ export class PerformanceService {
   }
 
   private async activeCalendarRule(at: Date, database: Pick<PerformanceDatabase, "performanceRuleSet"> = this.database): Promise<CalendarRule> {
-    const row = await database.performanceRuleSet.findFirst?.({
+    const row = await database.performanceRuleSet?.findFirst?.({
       where: { effectiveFrom: { lte: at }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }] },
       orderBy: { effectiveFrom: "desc" },
     });

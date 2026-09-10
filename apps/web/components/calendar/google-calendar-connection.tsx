@@ -51,7 +51,7 @@ export function GoogleCalendarConnection({ companyId, profileId, initialConnecti
       {connected ? <p className="mt-4 text-sm text-foreground">{connection.email} · {connection.calendarName ?? "Primary"}</p> : <p className="mt-4 text-sm leading-6 text-muted-foreground">An Admin can connect the candidate’s Google account. BD and assigned Closers use the calendar through Orbit.</p>}
       {error ? <p className="mt-4 rounded-xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm font-semibold text-danger" role="alert">{error}</p> : null}
       {canManage ? <div className="mt-5 flex flex-wrap gap-3">
-        {connected ? <Button disabled={pending} onClick={() => void disconnect()} variant="secondary">{pending ? "Disconnecting…" : "Disconnect Google Calendar"}</Button> : <Button disabled={pending} onClick={() => void connect()}>{pending ? "Opening Google…" : "Connect Google Calendar"}</Button>}
+        {connected ? <Button disabled={pending} loading={pending} onClick={() => void disconnect()} variant="secondary">{pending ? "Disconnecting…" : "Disconnect Google Calendar"}</Button> : <Button disabled={pending} loading={pending} onClick={() => void connect()}>{pending ? "Opening Google…" : "Connect Google Calendar"}</Button>}
       </div> : <p className="mt-5 text-xs font-semibold text-muted-foreground">Calendar connections are managed by Admins.</p>}
     </Card>
   );

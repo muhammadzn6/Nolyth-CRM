@@ -15,13 +15,11 @@ test.describe("admin MVP surfaces", () => {
     await signIn(page);
   });
 
-  test("exposes employer CRUD and administration", async ({ page }) => {
+  test("keeps legacy employer bookmarks inside the application workflow", async ({ page }) => {
     await page.goto("/admin/clients");
-    await expect(page.getByRole("heading", { name: "Employers" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "New employer" })).toBeVisible();
-    await page.getByRole("link", { name: "New employer" }).click();
-    await expect(page.getByRole("heading", { name: "New employer" })).toBeVisible();
-    await expect(page.getByRole("form", { name: "Create employer" })).toBeVisible();
+    await expect(page).toHaveURL("/leads");
+    await expect(page.getByRole("heading", { name: "Applications", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Employers" })).toHaveCount(0);
   });
 
   test("exposes import, collaboration, and profile tab surfaces", async ({ page }) => {
@@ -43,7 +41,6 @@ test.describe("admin MVP surfaces", () => {
       ["/profiles", "Profiles"],
       ["/leads", "Applications"],
       ["/tasks", "Tasks"],
-      ["/admin/clients", "Employers"],
       ["/analytics", "Analytics"],
       ["/activity", "Activity"],
       ["/admin/users", "Users and invitations"],
@@ -56,7 +53,7 @@ test.describe("admin MVP surfaces", () => {
       await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     }
 
-    await page.goto("/calendar");
+    await page.goto("/?calendarView=day");
     await expect(page).toHaveURL(/\/?\?calendarView=day$/);
     await expect(page.getByRole("heading", { name: /Good morning,/ })).toBeVisible();
   });
@@ -74,23 +71,25 @@ test.describe("admin MVP surfaces", () => {
     }
 
     await page.goto("/leads");
-    const leadLink = page.locator('a[href^="/leads/"]').first();
+    const leadLink = page.getByRole("table", { name: "Application records" }).getByRole("link").first();
     await expect(leadLink).toBeVisible();
     await leadLink.click();
-    await expect(page.getByRole("link", { name: /Communications/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Comments/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Offers/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Activity →", exact: true })).toBeVisible();
+    const leadWorkspace = page.getByRole("navigation", { name: "Lead workspace" });
+    await expect(leadWorkspace.getByRole("link", { name: "Communications", exact: true })).toBeVisible();
+    await expect(leadWorkspace.getByRole("link", { name: "Comments", exact: true })).toBeVisible();
+    await expect(leadWorkspace.getByRole("link", { name: "Offers", exact: true })).toBeVisible();
+    await expect(leadWorkspace.getByRole("link", { name: "Activity", exact: true })).toBeVisible();
   });
 
-  test("assigns an eligible Closer from an application", async ({ page }) => {
+  test("exposes eligible Closer assignment from an application", async ({ page }) => {
     await page.goto("/leads/70000000-0000-4000-8000-000000000002");
-    await expect(page.getByRole("heading", { name: "Interview ownership" })).toBeVisible();
-    const selector = page.getByLabel("Application Closer");
+    await page.getByRole("button", { name: /^(Change|Assign) closer$/i }).click();
+    const dialog = page.getByRole("dialog", { name: /(Change|Assign) responsible Closer/ });
+    await expect(dialog).toBeVisible();
+    const selector = dialog.getByLabel("Responsible Closer", { exact: true });
     await expect(selector).toBeVisible();
     await expect(selector.locator("option")).toHaveCount(2);
-    await selector.selectOption("10000000-0000-4000-8000-000000000002");
-    await page.getByRole("button", { name: "Assign Closer" }).click();
-    await expect(page.getByRole("status")).toHaveText("Closer assigned to this application.");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
   });
 });

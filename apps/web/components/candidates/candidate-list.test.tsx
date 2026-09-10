@@ -57,8 +57,13 @@ const candidate: CandidateSummary = {
 };
 
 function change(element: HTMLInputElement, value: string) {
-  element.value = value;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(element, value);
   element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function select(element: HTMLSelectElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(element, value);
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
@@ -92,7 +97,11 @@ describe("CandidateList", () => {
 
   it("shows searchable candidate links and creates a candidate", async () => {
     listCandidatesMock.mockResolvedValueOnce({ items: [candidate], nextCursor: null });
-    createCandidateMock.mockResolvedValueOnce(candidate);
+    createCandidateMock.mockResolvedValueOnce({
+      ...candidate,
+      id: "20000000-0000-4000-8000-000000000002",
+      email: "new-candidate@orbit.test",
+    });
     await render();
 
     expect(container.querySelector(`a[href="/candidates/${candidate.id}"]`)?.textContent).toContain(
@@ -121,13 +130,83 @@ describe("CandidateList", () => {
     expect(container.textContent).toContain("Candidate created");
   });
 
+  it("filters candidates by search and status and can clear both filters", async () => {
+    listCandidatesMock.mockResolvedValue({ items: [candidate], nextCursor: null });
+    await render();
+
+    await act(async () => {
+      change(container.querySelector<HTMLInputElement>("#candidate-search")!, "  Ada  ");
+      select(container.querySelector<HTMLSelectElement>("#candidate-status")!, "ARCHIVED");
+    });
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('form[aria-label="Filter candidates"]')?.requestSubmit();
+    });
+
+    expect(listCandidatesMock).toHaveBeenLastCalledWith({
+      search: "Ada",
+      status: "ARCHIVED",
+      limit: 50,
+    });
+    expect(container.textContent).toContain("Clear");
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Clear")
+        ?.click();
+    });
+
+    expect(listCandidatesMock).toHaveBeenLastCalledWith({ limit: 50 });
+    expect(container.querySelector<HTMLInputElement>("#candidate-search")?.value).toBe("");
+    expect(container.querySelector<HTMLSelectElement>("#candidate-status")?.value).toBe("");
+  });
+
+  it("renders candidate records as responsive structured rows", async () => {
+    listCandidatesMock.mockResolvedValueOnce({ items: [candidate], nextCursor: null });
+    await render();
+
+    const records = container.querySelector('[aria-label="Candidate records"]');
+    expect(records?.querySelector("table")).toBeNull();
+    expect(records?.querySelectorAll("article")).toHaveLength(1);
+    expect(records?.textContent).toContain("Location");
+    expect(records?.textContent).toContain("Timezone");
+    expect(records?.textContent).toContain("Status");
+  });
+
+  it("shows a filter-aware empty state without treating it as an empty directory", async () => {
+    listCandidatesMock
+      .mockResolvedValueOnce({ items: [candidate], nextCursor: null })
+      .mockResolvedValueOnce({ items: [], nextCursor: null })
+      .mockResolvedValueOnce({ items: [], nextCursor: null });
+    await render();
+
+    await act(async () => {
+      change(container.querySelector<HTMLInputElement>("#candidate-search")!, "Missing");
+    });
+    await act(async () => {
+      container.querySelector<HTMLFormElement>('form[aria-label="Filter candidates"]')?.requestSubmit();
+    });
+
+    expect(container.textContent).toContain("No candidates match these filters");
+    expect(container.textContent).not.toContain("Use Add candidate");
+
+    await act(async () => {
+      change(container.querySelector<HTMLInputElement>("#candidate-search")!, "");
+    });
+    expect(container.textContent).toContain("No candidates match these filters");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Refresh candidates"]')?.click();
+    });
+    expect(listCandidatesMock).toHaveBeenLastCalledWith({ search: "Missing", limit: 50 });
+  });
+
   it("renders empty and retryable error states", async () => {
     listCandidatesMock
       .mockResolvedValueOnce({ items: [], nextCursor: null })
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce({ items: [candidate], nextCursor: null });
     await render();
-    expect(container.textContent).toContain("No candidates found");
+    expect(container.textContent).toContain("No candidates yet");
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Refresh candidates"]')?.click();

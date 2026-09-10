@@ -293,6 +293,42 @@ describe("performance contracts", () => {
     }).success).toBe(false);
   });
 
+  it("includes the authoritative business timezone in Admin performance responses", () => {
+    const kpis = {
+      qualifiedApplications: 0,
+      targetApplications: 0,
+      rawTargetAttainmentPercent: 0,
+      effectiveTargetAttainmentPercent: 0,
+      recruiterResponses: 0,
+      interviewsScheduled: 0,
+      interviewsNeedingScheduling: 0,
+      followUpSlaCompliancePercent: null,
+      maturedOutcomeScorePercent: null,
+      balancedScore: null,
+      scoreCoverage: "INSUFFICIENT_DATA",
+      scoreCoveragePercent: 0,
+    };
+    const quality = {
+      recordHealthRate: null,
+      adminAuditPassRate: null,
+      correctionRate: null,
+      confirmedDuplicateRate: null,
+      pendingOverrideRate: null,
+      rejectedOverrideRate: null,
+      duplicateRate: null,
+    };
+
+    expect(schema("adminBdPerformanceResponseSchema").parse({
+      period: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T00:00:00.000Z" },
+      businessTimeZone: "America/New_York",
+      team: kpis,
+      leaderboard: [],
+      buildingBaseline: [],
+      excluded: [],
+      quality,
+    })).toMatchObject({ businessTimeZone: "America/New_York" });
+  });
+
   it("rejects drill-down statuses that do not belong to the selected metric", () => {
     const drilldown = schema("performanceDrilldownQuerySchema");
     const base = {

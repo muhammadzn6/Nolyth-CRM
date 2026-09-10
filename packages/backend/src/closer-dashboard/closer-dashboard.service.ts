@@ -13,8 +13,10 @@ import type {
 import { AuthorizationError } from "../errors/app-error";
 import type { Actor } from "../identity/session.service";
 import type { LeadsDatabase } from "../leads/leads.service";
+import { closerLeadWhere } from "../leads/lead-access";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { GoogleCalendarService } from "../calendar/google-calendar.service";
+import { summarizeInterviewRounds } from "../analytics/analytics-metrics";
 
 const MEETING_LIMIT = 5;
 const TASK_LIMIT = 5;
@@ -168,16 +170,19 @@ function lifetimeFunnel(leads: readonly Record<string, unknown>[]): CloserDashbo
   const placements = new Set<string>();
   const offerStatuses = new Set(["OFFER_RECEIVED", "OFFER_ACCEPTED", "PLACED", "STARTED"]);
   const placementStatuses = new Set(["PLACED", "STARTED"]);
+  const allRounds: Record<string, unknown>[] = [];
 
   for (const lead of leads) {
     const id = String(lead.id);
     applicationsHandled.add(id);
 
     const interviews = Array.isArray(lead.interviews) ? lead.interviews.map(record) : [];
-    if (interviews.length === 0) continue;
+    allRounds.push(...interviews.map((round) => ({ ...round, leadId: id })));
+    const activeInterviews = interviews.filter((round) => String(round.status) !== "CANCELLED");
+    if (activeInterviews.length === 0) continue;
     interviewsScheduled.add(id);
 
-    if (!interviews.some((round) => round.attendance === "ATTENDED")) continue;
+    if (!activeInterviews.some((round) => round.attendance === "ATTENDED")) continue;
     callsAttended.add(id);
 
     const statuses = [lead.status, ...(Array.isArray(lead.statusTransitions) ? lead.statusTransitions.map(record).map((transition) => transition.toStatus) : [])];
@@ -187,10 +192,17 @@ function lifetimeFunnel(leads: readonly Record<string, unknown>[]): CloserDashbo
     if (hasPlacement) placements.add(id);
   }
 
+  const roundMetrics = summarizeInterviewRounds(allRounds);
+
   return {
     applicationsHandled: applicationsHandled.size,
     interviewsScheduled: interviewsScheduled.size,
     callsAttended: callsAttended.size,
+    interviewRounds: roundMetrics.interviewRounds,
+    attendedRounds: roundMetrics.attendedRounds,
+    cancelledRounds: roundMetrics.cancelledRounds,
+    averageRoundsPerInterviewLead: roundMetrics.averageRoundsPerInterviewLead,
+    roundAttendanceRate: roundMetrics.roundAttendanceRate,
     offers: offers.size,
     placements: placements.size,
   };
@@ -267,14 +279,11 @@ export class CloserDashboardService {
       select: { timezone: true },
     });
     const timezone = typeof closer?.timezone === "string" ? closer.timezone : "UTC";
-    // The dashboard calendar is anchored to Pakistan time for every role.
-    // Keep operational day counts and external-event windows aligned with it;
-    // `timezone` remains the closer's preference for activity timestamps.
-    const calendarTimezone = "Asia/Karachi";
+    const calendarTimezone = timezone;
     const { start: startOfToday, end: endOfToday } = zonedDayBounds(now, calendarTimezone);
     const [assignedLeads, lifetimeLeads] = await Promise.all([
       this.database.jobLead.findMany({
-        where: { responsibleCloserId: actor.id, status: { notIn: ["CLOSED", "STARTED"] } },
+        where: { ...closerLeadWhere(actor.id), status: { notIn: ["CLOSED", "STARTED"] } },
         select: {
           id: true,
           profileId: true,
@@ -283,7 +292,7 @@ export class CloserDashboardService {
           companyId: true,
           status: true,
           interviews: {
-            where: { status: "SCHEDULED", startsAt: { gte: now } },
+            where: { status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, startsAt: { gt: now } },
             orderBy: { startsAt: "asc" },
             take: 1,
             select: { startsAt: true },
@@ -304,7 +313,7 @@ export class CloserDashboardService {
           placedAt: true,
           startDate: true,
           startedAt: true,
-          interviews: { where: { closerId: actor.id }, select: { closerId: true, attendance: true } },
+          interviews: { where: { closerId: actor.id }, select: { closerId: true, status: true, attendance: true } },
           offers: { select: { id: true } },
           statusTransitions: { select: { toStatus: true } },
         },
@@ -329,7 +338,7 @@ export class CloserDashboardService {
       : Promise.resolve([] as CalendarConnection[]);
     const [nextMeeting, todayMeetings, needsFeedback, openTasks, conflicts, notifications, recentActivity, statuses, externalMeetings] = await Promise.all([
       this.database.interviewRound.findFirst({
-        where: { closerId: actor.id, status: "SCHEDULED", startsAt: { gte: now } },
+        where: { closerId: actor.id, status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, startsAt: { gt: now } },
         orderBy: { startsAt: "asc" },
         include: {
           lead: {
@@ -347,7 +356,7 @@ export class CloserDashboardService {
         },
       }),
       this.database.interviewRound.findMany({
-        where: { closerId: actor.id, status: "SCHEDULED", startsAt: { gte: startOfToday, lt: endOfToday } },
+        where: { closerId: actor.id, status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, startsAt: { gte: startOfToday, lt: endOfToday } },
         orderBy: { startsAt: "asc" },
         take: MEETING_LIMIT,
       }),

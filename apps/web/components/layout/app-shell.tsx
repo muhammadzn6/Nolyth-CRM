@@ -36,7 +36,12 @@ export function AppShell({ actor, children }: { actor: SessionUser; children: Re
         role={actor.role}
       />
       <div className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "lg:pl-[96px]" : "lg:pl-[248px]"}`}>
-        <AppHeader actor={actor} onNavigationToggle={() => setMobileNavigationOpen((value) => !value)} />
+        <AppHeader
+          actor={actor}
+          onNavigationToggle={() => setMobileNavigationOpen((value) => !value)}
+          onSidebarToggle={() => setSidebarCollapsed((value) => !value)}
+          sidebarCollapsed={sidebarCollapsed}
+        />
         <main className="px-4 pb-8 pt-5 md:px-7 lg:px-9 lg:pb-10 lg:pt-7">{children}</main>
       </div>
     </div>

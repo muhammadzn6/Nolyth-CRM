@@ -1,8 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AdminBdPerformanceResponse, SessionUser } from "@orbit/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DashboardOverview } from "../dashboard/dashboard-overview";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const actor: SessionUser = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -14,6 +16,7 @@ const actor: SessionUser = {
 
 const performance: AdminBdPerformanceResponse = {
   period: { from: "2026-08-06T00:00:00.000Z", to: "2026-09-06T00:00:00.000Z" },
+  businessTimeZone: "America/New_York",
   team: {
     qualifiedApplications: 72,
     targetApplications: 70,
@@ -43,6 +46,19 @@ const performance: AdminBdPerformanceResponse = {
 };
 
 describe("Admin BD performance composition", () => {
+  it("uses the configured business timezone for the Admin date and calendar", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-09T02:30:00.000Z"));
+
+    try {
+      const html = renderToStaticMarkup(<DashboardOverview actor={actor} adminPerformance={performance} performancePeriod="30d" />);
+      expect(html).toContain("Tue, Sep 8, 2026");
+      expect(html).not.toContain("Wed, Sep 9, 2026");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("composes the server-owned performance section for Admin only", () => {
     const adminHtml = renderToStaticMarkup(<DashboardOverview actor={actor} adminPerformance={performance} performancePeriod="30d" />);
     const bdHtml = renderToStaticMarkup(<DashboardOverview actor={{ ...actor, role: "BD" }} adminPerformance={performance} performancePeriod="30d" />);

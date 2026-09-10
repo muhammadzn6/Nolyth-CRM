@@ -8,10 +8,11 @@ import type {
   InterviewSummary,
   SessionUser,
 } from "@orbit/contracts";
-import { Button, Card, CardDescription, CardTitle } from "@orbit/ui";
-import { GoogleCalendarConnection } from "../calendar/google-calendar-connection";
+import { Button, Card, CardTitle } from "@orbit/ui";
+import { businessDateDisplay } from "../../lib/business-day";
 import { CalendarWorkspace } from "../calendar/calendar-workspace";
 import { CloserLifetimeFunnel } from "./closer-lifetime-funnel";
+import styles from "./closer-dashboard.module.css";
 
 type CloserDashboardProps = {
   actor: SessionUser;
@@ -30,6 +31,7 @@ function titleCase(value: string) {
 
 function activityLabel(value: string): string {
   return value
+    .toLowerCase()
     .replaceAll("_", " ")
     .replaceAll(".", " · ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -71,27 +73,23 @@ function calendarState(connection: CalendarConnection) {
     return {
       title: "Connected",
       description: connection.calendarName ?? connection.email ?? "Candidate calendars are connected.",
-      tone: "text-success",
     };
   }
   if (connection.status === "SYNCING") {
     return {
       title: "Syncing",
       description: "Candidate calendars are syncing your Orbit meetings.",
-      tone: "text-info",
     };
   }
   if (connection.status === "EXPIRED") {
     return {
       title: "Reconnect required",
       description: "A candidate calendar permission has expired. Ask an Admin to reconnect it.",
-      tone: "text-warning-foreground",
     };
   }
   return {
     title: "Not connected",
     description: "No assigned candidate calendar is connected yet. Ask an Admin to connect it.",
-    tone: "text-muted-foreground",
   };
 }
 
@@ -99,15 +97,42 @@ function EmptyState({ children }: { children: string }) {
   return <p className="py-5 text-sm text-muted-foreground">{children}</p>;
 }
 
-function CloserPulse({ data }: { data: CloserDashboardData }) {
+function dashboardDateKey(value: Date | string, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: timezone,
+  }).formatToParts(typeof value === "string" ? new Date(value) : value);
+  const part = (type: "year" | "month" | "day") => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function addDaysToDateKey(value: string, days: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year!, month! - 1, day! + days)).toISOString().slice(0, 10);
+}
+
+type UpcomingInterview = { startsAt: string; status?: InterviewSummary["status"] };
+
+function CloserPulse({ data, upcomingInterviews }: { data: CloserDashboardData; upcomingInterviews: UpcomingInterview[] }) {
+  const now = new Date();
+  const today = dashboardDateKey(now, data.timezone);
+  const finalDay = addDaysToDateKey(today, 6);
+  const nextSevenDays = upcomingInterviews.filter((interview) => {
+    if (interview.status && !["SCHEDULED", "RESCHEDULE_REQUIRED"].includes(interview.status)) return false;
+    const startsAtDate = new Date(interview.startsAt);
+    const dateKey = dashboardDateKey(startsAtDate, data.timezone);
+    return startsAtDate >= now && dateKey >= today && dateKey <= finalDay;
+  }).length;
   const items = [
-    ["Today", data.todayMeetings.length, "bg-primary-soft", "text-primary", "#primary-calendar"],
-    ["This week", data.assignedApplications.length, "bg-info-soft", "text-info", "/leads"],
-    ["Feedback due", data.needsFeedback.length, "bg-warning-soft", "text-warning-foreground", "#feedback"],
-    ["Conflicts", data.conflicts.length, "bg-danger-soft", "text-danger", "#actions"],
+    ["Rounds today", data.todayMeetings.length, "#primary-calendar"],
+    ["Rounds · 7 days", nextSevenDays, "#primary-calendar"],
+    ["Feedback due", data.needsFeedback.length, "#attention"],
+    ["Conflicts", data.conflicts.length, "#attention"],
   ] as const;
-  return <div aria-label="Closer summary" className="editorial-pulse-grid">
-    {items.map(([label, value, iconTone, valueTone, href]) => <a aria-label={`${label}: ${value}`} className="editorial-pulse-card" href={href} key={label}><span className={`editorial-pulse-icon ${iconTone} ${valueTone}`}>{label === "Conflicts" ? "!" : label === "Feedback due" ? "□" : "✓"}</span><span className="editorial-pulse-copy"><small>{label}</small><strong className={valueTone}>{value}</strong></span><span className="editorial-pulse-badge">{value > 0 ? "View" : "Clear"}</span></a>)}
+  return <div aria-label="Closer summary" className={styles.summary}>
+    {items.map(([label, value, href]) => <a aria-label={`${label}: ${value}`} href={href} key={label}><span>{label}</span><strong>{value}</strong></a>)}
   </div>;
 }
 
@@ -125,9 +150,8 @@ function Agenda({ meetings, externalMeetings }: { meetings: InterviewSummary[]; 
       <header className="flex items-start justify-between gap-4">
         <div>
           <CardTitle>Today’s agenda</CardTitle>
-          <CardDescription className="mt-1">Your scheduled interviews, in order.</CardDescription>
         </div>
-        <a className="text-xs font-semibold text-primary hover:text-primary-hover" href="#primary-calendar">View calendar</a>
+        <a aria-label="View calendar" className="text-lg font-bold leading-none text-primary hover:text-primary-hover" href="#primary-calendar" title="View calendar">→</a>
       </header>
       {items.length === 0 ? <EmptyState>No meetings on your agenda today.</EmptyState> : (
         <ol className="mt-5 divide-y divide-border">
@@ -148,49 +172,52 @@ function Agenda({ meetings, externalMeetings }: { meetings: InterviewSummary[]; 
 
 function NextMeetingBriefing({ meeting }: { meeting: CloserDashboardMeeting | null }) {
   return (
-    <Card className="closer-briefing-card editorial-surface-feature p-5 sm:p-6">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Up next</p>
-      <CardTitle className="mt-2">Next meeting briefing</CardTitle>
+    <section aria-label="Next interview briefing" className={styles.briefing}>
+      <header className={styles.sectionHeader}>
+        <div><p className={styles.eyebrow}>Up next</p><h2>Next interview</h2></div>
+        {meeting ? <span className={styles.statusPill}>{titleCase(meeting.status)}</span> : null}
+      </header>
       {meeting ? (
-        <div className="mt-5 space-y-4">
-          <div>
-            <p className="text-base font-semibold text-foreground">{interviewLabel(meeting)}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{interviewDate(meeting)} · {interviewTime(meeting)} · {meeting.timezone}</p>
+        <div className={styles.briefingBody}>
+          <div className={styles.briefingLead}>
+            <p>{meeting.jobTitle}</p>
+            <span>{meeting.candidateName} · {meeting.companyName}</span>
           </div>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Candidate</dt><dd className="mt-1 text-foreground">{meeting.candidateName}</dd></div>
-            <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Profile</dt><dd className="mt-1 text-foreground">{meeting.profileName}</dd></div>
-            <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Opportunity</dt><dd className="mt-1 text-foreground">{meeting.jobTitle} at {meeting.companyName}</dd></div>
-            <div><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Interviewer</dt><dd className="mt-1 text-foreground">{meeting.interviewer ?? "Not specified"}</dd></div>
-            <div className="sm:col-span-2"><dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preparation</dt><dd className="mt-1 leading-6 text-foreground">{meeting.preparationNotes ?? "No preparation notes added."}</dd></div>
+          <p className={styles.meetingTime}>{interviewDate(meeting)} · {interviewTime(meeting)} · {meeting.timezone}</p>
+          <dl className={styles.briefingDetails}>
+            <div><dt>Round</dt><dd>{interviewLabel(meeting)}</dd></div>
+            <div><dt>Interviewer</dt><dd>{meeting.interviewer ?? "Not specified"}</dd></div>
+            <div><dt>Profile</dt><dd>{meeting.profileName}</dd></div>
+            <div><dt>Preparation</dt><dd>{meeting.preparationNotes ?? "No preparation notes added."}</dd></div>
           </dl>
-          {meeting.meetingLink ? <a className="inline-flex text-sm font-semibold text-primary hover:text-primary-hover" href={meeting.meetingLink}>Join meeting</a> : null}
+          <div className={styles.briefingActions}>
+            <a href={`/leads/${meeting.leadId}`}>Open application</a>
+            {meeting.meetingLink ? <a className={styles.primaryAction} href={meeting.meetingLink}>Join meeting</a> : null}
+          </div>
         </div>
       ) : <EmptyState>No upcoming meeting is scheduled.</EmptyState>}
-    </Card>
+    </section>
   );
 }
 
 function AssignedApplications({ applications }: { applications: CloserDashboardData["assignedApplications"] }) {
   return (
-    <Card aria-label="Assigned applications" className="editorial-surface-lines overflow-hidden p-5 sm:p-6">
-      <header>
-        <CardTitle>Assigned applications</CardTitle>
-        <CardDescription className="mt-1">Candidates and opportunities assigned to you.</CardDescription>
+    <Card aria-label="Active interview pipeline" className={`${styles.supportCard} ${styles.pipelineCard}`}>
+      <header className={styles.supportHeader}>
+        <div><p className={styles.eyebrow}>Active work</p><CardTitle>Active interview pipeline</CardTitle></div>
+        <a href="/leads">View all →</a>
       </header>
       {applications.length === 0 ? <EmptyState>No active applications are assigned to you.</EmptyState> : (
-        <ul className="mt-5 max-h-72 divide-y divide-border overflow-y-auto pr-1">
+        <ul className={styles.scrollList}>
           {applications.map((application) => (
-            <li className="py-4 first:pt-0 last:pb-0" key={application.id}>
-              <a className="block rounded-lg transition hover:bg-surface-subtle" href={`/leads/${application.id}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{application.candidateName}</p>
-                    <p className="mt-1 text-sm text-foreground">{application.jobTitle} at {application.companyName}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{application.profileName} · {titleCase(application.status)}</p>
-                  </div>
-                  {application.nextInterviewAt ? <time className="shrink-0 text-xs font-semibold text-primary">Next interview</time> : null}
+            <li key={application.id}>
+              <a href={`/leads/${application.id}`}>
+                <div>
+                  <p>{application.jobTitle}</p>
+                  <span>{application.candidateName} · {application.companyName}</span>
+                  <small>{application.profileName}</small>
                 </div>
+                <span className={styles.pipelineMeta}><b>{titleCase(application.status)}</b>{application.nextInterviewAt ? <time>{dashboardTimestamp(application.nextInterviewAt, "America/New_York")}</time> : <small>No interview scheduled</small>}</span>
               </a>
             </li>
           ))}
@@ -200,36 +227,37 @@ function AssignedApplications({ applications }: { applications: CloserDashboardD
   );
 }
 
-function FeedbackQueue({ meetings }: { meetings: InterviewSummary[] }) {
+function NeedsAttention({ data }: { data: CloserDashboardData }) {
+  const count = data.needsFeedback.length + data.openTasks.length + data.conflicts.length;
   return (
-    <Card className="closer-feedback-card editorial-surface-soft p-5 sm:p-6">
-      <header className="flex items-start justify-between gap-4"><div><CardTitle>Feedback to record</CardTitle><CardDescription className="mt-1">Close the loop on completed interviews.</CardDescription></div><a className="text-xs font-semibold text-primary hover:text-primary-hover" href="#primary-calendar">View schedule</a></header>
-      {meetings.length === 0 ? <EmptyState>No feedback is waiting.</EmptyState> : <ol className="mt-5 space-y-3">{meetings.map((meeting) => <li className="rounded-xl border border-border p-4" key={meeting.id}><p className="text-sm font-semibold text-foreground">{interviewLabel(meeting)}</p><p className="mt-1 text-xs text-muted-foreground">{meeting.interviewer ?? "Interview feedback"} · ended {interviewDate(meeting)} · {meeting.timezone}</p><a className="mt-3 inline-flex text-xs font-semibold text-primary hover:text-primary-hover" href={`/leads/${meeting.leadId}/interviews?edit=${meeting.id}`}>Record feedback</a></li>)}</ol>}
-    </Card>
-  );
-}
-
-function ActionQueue({ data }: { data: CloserDashboardData }) {
-  return (
-    <Card className="editorial-attention-card editorial-surface-alert p-5 sm:p-6">
-      <header><CardTitle>Action queue</CardTitle><CardDescription className="mt-1">Tasks and scheduling issues needing attention.</CardDescription></header>
-      {data.openTasks.length === 0 && data.conflicts.length === 0 ? <EmptyState>No open tasks.</EmptyState> : <div className="mt-5 space-y-3">{data.conflicts.map((meeting) => <a className="block rounded-xl border border-danger/30 bg-danger-soft p-4" href="#primary-calendar" key={meeting.id}><p className="text-sm font-semibold text-danger">Reschedule required</p><p className="mt-1 text-xs text-foreground">{interviewLabel(meeting)} · {interviewTime(meeting)} · {meeting.timezone}</p></a>)}{data.openTasks.map((task) => <a className="block rounded-xl border border-border p-4 transition hover:border-border-strong hover:bg-surface-subtle" href="/tasks" key={task.id}><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-foreground">{task.title}</p><span className="shrink-0 text-xs font-semibold text-muted-foreground">{titleCase(task.priority)}</span></div><p className="mt-1 text-xs text-muted-foreground">Due {dashboardTimestamp(task.dueAt, data.timezone)}</p></a>)}</div>}
-    </Card>
+    <section aria-label="Needs attention" className={`${styles.attention} ${count ? styles.attentionActive : ""}`} id="attention">
+      <header className={styles.sectionHeader}><div><p className={styles.eyebrow}>Work queue</p><h2>Needs attention</h2></div><span className={styles.attentionCount}>{count}</span></header>
+      {count === 0 ? <div className={styles.clearState}><span>✓</span><p><strong>You’re clear for now</strong><small>No feedback, tasks, or conflicts need action.</small></p></div> : <div className={styles.attentionList}>
+        {data.conflicts.map((meeting) => <a href="#primary-calendar" key={meeting.id}><span className={styles.dangerDot} /><p><strong>Reschedule required</strong><small>{interviewLabel(meeting)} · {interviewTime(meeting)}</small></p><b title="Open conflict" aria-label="Open conflict">→</b></a>)}
+        {data.needsFeedback.map((meeting) => <a href={`/leads/${meeting.leadId}/interviews?edit=${meeting.id}`} key={meeting.id}><span className={styles.warningDot} /><p><strong>Record interview feedback</strong><small>{interviewLabel(meeting)} · {meeting.interviewer ?? "Interviewer"}</small></p><b title="Record feedback" aria-label="Record feedback">→</b></a>)}
+        {data.openTasks.map((task) => <a href="/tasks" key={task.id}><span className={styles.neutralDot} /><p><strong>{task.title}</strong><small>Due {dashboardTimestamp(task.dueAt, data.timezone)}</small></p><b title={`Priority: ${titleCase(task.priority)}`} aria-label={`Priority: ${titleCase(task.priority)}`}>{titleCase(task.priority)}</b></a>)}
+      </div>}
+    </section>
   );
 }
 
 function Updates({ data }: { data: CloserDashboardData }) {
+  const items = [
+    ...data.notifications.map((notification) => ({ id: `notification-${notification.id}`, title: notification.title, description: notification.message, occurredAt: notification.createdAt, href: "/notifications" })),
+    ...data.recentActivity.map((activity) => ({ id: `activity-${activity.id}`, title: activityLabel(activity.action), description: activity.actorNameSnapshot ?? "Orbit", occurredAt: activity.occurredAt, href: "/activity" })),
+  ].sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime());
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <Card className="editorial-surface-grid p-5 sm:p-6"><header className="flex items-start justify-between gap-4"><div><CardTitle>Recent activity</CardTitle><CardDescription className="mt-1">Changes in your assigned work.</CardDescription></div><a className="text-xs font-semibold text-primary hover:text-primary-hover" href="/activity">View all</a></header>{data.recentActivity.length === 0 ? <EmptyState>No recent activity.</EmptyState> : <ol className="mt-5 divide-y divide-border">{data.recentActivity.slice(0, 5).map((activity) => <li className="py-3 first:pt-0 last:pb-0" key={activity.id}><p className="text-sm font-semibold text-foreground">{activityLabel(activity.action)}</p><p className="mt-1 text-xs text-muted-foreground">{activity.actorNameSnapshot ?? "Orbit"} · {dashboardTimestamp(activity.occurredAt, data.timezone)}</p></li>)}</ol>}</Card>
-      <Card className="editorial-surface-soft p-5 sm:p-6"><header className="flex items-start justify-between gap-4"><div><CardTitle>Notifications</CardTitle><CardDescription className="mt-1">Latest reminders and updates.</CardDescription></div><a className="text-xs font-semibold text-primary hover:text-primary-hover" href="/notifications">View all</a></header>{data.notifications.length === 0 ? <EmptyState>No notifications right now.</EmptyState> : <ol className="mt-5 divide-y divide-border">{data.notifications.slice(0, 4).map((notification) => <li className="py-3 first:pt-0 last:pb-0" key={notification.id}><p className="text-sm font-semibold text-foreground">{notification.title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{notification.message}</p></li>)}</ol>}</Card>
-    </div>
+    <Card aria-label="Recent updates" className={`${styles.supportCard} ${styles.updatesCard}`}>
+      <header className={styles.supportHeader}><div><p className={styles.eyebrow}>Activity</p><CardTitle>Recent updates</CardTitle></div><nav aria-label="Recent update views" className={styles.updateViews}><a href="/activity">Activity</a><span>/</span><a href="/notifications">Alerts</a></nav></header>
+      {items.length === 0 ? <EmptyState>No recent updates.</EmptyState> : <ol className={styles.updateList}>{items.slice(0, 8).map((item) => <li key={item.id}><a href={item.href}><span className={styles.updateDot} /><p><strong>{item.title}</strong><small>{item.description}</small></p><time>{dashboardTimestamp(item.occurredAt, data.timezone)}</time></a></li>)}</ol>}
+    </Card>
   );
 }
 
-function CalendarConnectionCard({ connection, timezone }: { connection: CalendarConnection; timezone: string }) {
+function CalendarStatus({ connection, timezone }: { connection: CalendarConnection; timezone: string }) {
   const state = calendarState(connection);
-  return <Card className="editorial-surface-grid p-5 sm:p-6"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Candidate calendars</p><CardTitle className="mt-2">Google Calendar</CardTitle><p className={`mt-4 text-sm font-semibold ${state.tone}`}>{state.title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{state.description}</p>{connection.lastSyncedAt ? <p className="mt-3 text-xs text-muted-foreground">Last synced {dashboardTimestamp(connection.lastSyncedAt, timezone)}</p> : null}<a className="mt-4 inline-flex text-xs font-semibold text-primary hover:text-primary-hover" href="/settings">Calendar settings →</a></Card>;
+  const syncedAt = connection.lastSyncedAt ? `Synced ${dashboardTimestamp(connection.lastSyncedAt, timezone)}` : null;
+  return <a aria-label={`Calendar: ${state.title}. ${state.description}${syncedAt ? `. ${syncedAt}` : ""}`} className={styles.calendarStatus} href="/settings" title={state.description}><span className={connection.status === "CONNECTED" ? styles.connectedDot : styles.disconnectedDot} /><span>Calendar · <strong>{state.title}</strong>{syncedAt ? <small>{syncedAt}</small> : null}</span><b>Settings →</b></a>;
 }
 
 export function CloserDashboard({ actor, data, calendarInterviews, error }: CloserDashboardProps) {
@@ -249,22 +277,38 @@ export function CloserDashboard({ actor, data, calendarInterviews, error }: Clos
       applicationsHandled: 0,
       interviewsScheduled: 0,
       callsAttended: 0,
+      interviewRounds: 0,
+      attendedRounds: 0,
+      cancelledRounds: 0,
+      averageRoundsPerInterviewLead: null,
+      roundAttendanceRate: null,
       offers: 0,
       placements: 0,
     },
     calendarConnection: { connected: false, email: null, calendarName: null, lastSyncedAt: null, status: "DISCONNECTED" as const },
   };
+  const today = new Date();
+  const businessDate = businessDateDisplay(today, dashboard.timezone);
+  const assignedInterviews = dashboard.assignedApplications.flatMap((application) => application.nextInterviewAt ? [{ startsAt: application.nextInterviewAt }] : []);
+  const upcomingInterviews = calendarInterviews
+    ? calendarInterviews.map((interview) => ({ startsAt: interview.startsAt, status: interview.status }))
+    : assignedInterviews.length > 0
+      ? assignedInterviews
+      : dashboard.todayMeetings.map((interview) => ({ startsAt: interview.startsAt, status: interview.status }));
 
   return (
-    <div className="editorial-dashboard mx-auto max-w-[1500px]">
-      <div className="editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(new Date())}</span><span><strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "long" }).format(new Date())}</strong><small>Week {Math.ceil(new Date().getDate() / 7)} · {new Date().getFullYear()}</small></span><Button aria-label="Refresh dashboard" onClick={() => window.location.reload()} variant="secondary">Refresh</Button></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Closer command center</p><h1>Good morning, {firstName}</h1><p>Your calls, preparation, and feedback at a glance.</p></div></div>
+    <div className={`editorial-dashboard mx-auto max-w-[1500px] ${styles.dashboard}`}>
+      <div aria-label="Closer dashboard context" className="editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{businessDate.day}</span><span><strong>{businessDate.label}</strong><small>Week {businessDate.week} · {businessDate.year}</small></span><Button aria-label="Refresh dashboard" onClick={() => window.location.reload()} variant="secondary">Refresh</Button></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Closer command center</p><h1>Good morning, {firstName}</h1><p>Your calls, preparation, and feedback at a glance.</p></div></div>
       {error ? <p className="mt-4 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground" role="status">{error}</p> : null}
-      <section aria-label="Primary calendar" className="mt-5" id="primary-calendar"><CalendarWorkspace actor={actor} interviews={calendarInterviews ?? dashboard.todayMeetings} externalMeetings={dashboard.externalMeetings} embedded /></section>
-      <section className="mt-5"><CloserPulse data={dashboard} /></section>
-      <section className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.85fr)]" id="actions"><NextMeetingBriefing meeting={dashboard.nextMeeting} /><ActionQueue data={dashboard} /></section>
-      <section className="mt-5"><AssignedApplications applications={dashboard.assignedApplications} /></section>
-      <section className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]" id="feedback"><FeedbackQueue meetings={dashboard.needsFeedback} /><CalendarConnectionCard connection={dashboard.calendarConnection} timezone={dashboard.timezone} /></section>
-      <section className="mt-5"><Updates data={dashboard} /></section>
+      <section aria-label="Closer operational workspace" className={styles.workbench}>
+        <section aria-label="Primary calendar" className={styles.calendarPanel} id="primary-calendar"><CalendarWorkspace actor={actor} businessTimeZone={dashboard.timezone} interviews={calendarInterviews ?? dashboard.todayMeetings} externalMeetings={dashboard.externalMeetings} embedded /></section>
+        <aside aria-label="Closer control rail" className={styles.controlRail}>
+          <div className={styles.summaryRegion}><CloserPulse data={dashboard} upcomingInterviews={upcomingInterviews} /><CalendarStatus connection={dashboard.calendarConnection} timezone={dashboard.timezone} /></div>
+          <NextMeetingBriefing meeting={dashboard.nextMeeting} />
+          <NeedsAttention data={dashboard} />
+        </aside>
+      </section>
+      <section className={styles.supportGrid}><AssignedApplications applications={dashboard.assignedApplications} /><Updates data={dashboard} /></section>
       <section className="mt-5"><CloserLifetimeFunnel totals={dashboard.lifetimeFunnel} /></section>
     </div>
   );

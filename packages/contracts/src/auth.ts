@@ -23,6 +23,7 @@ export const sessionUserSchema = z.strictObject({
   email: z.email(),
   role: userRoleSchema,
   isActive: z.boolean(),
+  timezone: z.string().trim().min(1).optional(),
 });
 
 export type LoginRequest = z.infer<typeof loginRequestSchema>;

@@ -188,22 +188,33 @@ describe("AppHeader user menu", () => {
     expect(replaceMock).toHaveBeenCalledWith("/login");
   });
 
-  it("keeps the current page identity visible in the command header", () => {
-    expect(container.querySelector('[data-testid="command-page-identity"]')?.textContent).toContain("Dashboard");
+  it("combines the product and current page into one clear identity block", () => {
+    const identity = container.querySelector('[data-testid="command-brand"]');
+
+    expect(identity?.textContent).toContain("Orbit");
+    expect(identity?.textContent).toContain("Dashboard");
+    expect(container.querySelector('[data-testid="command-page-identity"]')).toBeNull();
   });
 
-  it("uses the warm action accent for the primary creation control", () => {
+  it("keeps quick add quiet so the dashboard action remains the primary accent", () => {
     const quickAdd = container.querySelector<HTMLButtonElement>('button[aria-label="Quick add"]');
 
-    expect(quickAdd?.className).toContain("bg-action");
-    expect(quickAdd?.className).not.toContain("bg-primary");
+    expect(quickAdd?.dataset.variant).toBe("quiet");
+    expect(quickAdd?.className).not.toContain("bg-action");
   });
 
-  it.each([
-    ["ADMIN", ["Add candidate", "Add profile", "Invite user", "Add interview"]],
-    ["BD", ["Add application", "Log recruiter response", "Log communication"]],
-    ["CLOSER", ["Add interview outcome", "Add feedback", "Add task"]],
-  ] as const)("shows role-scoped quick actions for %s", (role, labels) => {
+  it("orders quick add, account identity, notifications, and search as one utility cluster", () => {
+    const quickAdd = container.querySelector('button[aria-label="Quick add"]');
+    const account = container.querySelector('button[aria-label="Account menu"]');
+    const notifications = container.querySelector('a[aria-label="Notifications"]');
+    const search = container.querySelector('form[role="search"]');
+
+    expect(quickAdd?.compareDocumentPosition(account!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(account?.compareDocumentPosition(notifications!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(notifications?.compareDocumentPosition(search!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it.each([["ADMIN", ["Add candidate", "Invite user"]]] as const)("shows only context-free creation actions for %s", (role, labels) => {
     act(() => root.render(<AppHeader actor={{ ...actor, role }} />));
     const quickAdd = container.querySelector<HTMLButtonElement>('button[aria-label="Quick add"]');
     expect(quickAdd).not.toBeNull();
@@ -211,6 +222,34 @@ describe("AppHeader user menu", () => {
     act(() => quickAdd?.click());
 
     const menu = container.querySelector('[aria-label="Quick add menu"]');
+    expect(menu?.querySelectorAll('[role="menuitem"]')).toHaveLength(labels.length);
     for (const label of labels) expect(menu?.textContent).toContain(label);
+  });
+
+  it("does not show duplicate quick add for BD", () => {
+    act(() => root.render(<AppHeader actor={{ ...actor, role: "BD" }} />));
+    expect(container.querySelector('button[aria-label="Quick add"]')).toBeNull();
+  });
+
+  it("does not show a misleading global creation menu for Closers", () => {
+    act(() => root.render(<AppHeader actor={{ ...actor, role: "CLOSER" }} />));
+
+    expect(container.querySelector('button[aria-label="Quick add"]')).toBeNull();
+  });
+
+  it("keeps only one header menu open at a time", () => {
+    const quickAdd = container.querySelector<HTMLButtonElement>('button[aria-label="Quick add"]');
+    const account = container.querySelector<HTMLButtonElement>('button[aria-label="Account menu"]');
+
+    act(() => quickAdd?.click());
+    expect(container.querySelector('[aria-label="Quick add menu"]')).not.toBeNull();
+
+    act(() => account?.click());
+    expect(container.querySelector('[aria-label="Quick add menu"]')).toBeNull();
+    expect(container.querySelector('[aria-label="User menu"]')).not.toBeNull();
+
+    act(() => quickAdd?.click());
+    expect(container.querySelector('[aria-label="User menu"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Quick add menu"]')).not.toBeNull();
   });
 });

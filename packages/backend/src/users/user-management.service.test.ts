@@ -695,6 +695,7 @@ describe("invitation acceptance boundary", () => {
       email: invitedUser.email,
       role: invitedUser.role,
       isActive: true,
+      timezone: "UTC",
     });
     expect(persistence.authTokens[0]?.consumedAt).toEqual(FIXED_NOW);
     expect(persistence.users[0]?.passwordHash).toMatch(/^\$argon2id\$/);

@@ -134,10 +134,10 @@ function createPersistence({
 } = {}) {
   const interviewRound = {
     findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
-      const status = where.status as string | undefined;
-      const startsAt = where.startsAt as { gte?: Date } | undefined;
+      const statusFilter = where.status as string | { in: string[] } | undefined;
+      const startsAt = where.startsAt as { gt?: Date } | undefined;
       return interviews
-        .filter((item) => item.closerId === where.closerId && (!status || item.status === status) && (!startsAt?.gte || (item.startsAt as Date) >= startsAt.gte))
+        .filter((item) => item.closerId === where.closerId && (!statusFilter || (typeof statusFilter === "string" ? item.status === status : statusFilter.in.includes(String(item.status)))) && (!startsAt?.gt || (item.startsAt as Date) > startsAt.gt))
         .sort((left, right) => Number(left.startsAt) - Number(right.startsAt))[0] ?? null;
     }),
     findMany: vi.fn(async ({ where, orderBy, take }: { where: Record<string, unknown>; orderBy?: Record<string, "asc" | "desc">; take?: number }) => {
@@ -181,9 +181,10 @@ function createPersistence({
     notification: notificationStore,
     user: userStore,
     jobLead: {
-      findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
-        if (Array.isArray(where.OR)) {
-          const closerId = String((where.OR[0] as Record<string, unknown>).responsibleCloserId);
+      findMany: vi.fn(async ({ where, select }: { where: Record<string, unknown>; select: Record<string, unknown> }) => {
+        if ("statusTransitions" in select) {
+          const roleScope = where.OR as Array<Record<string, unknown>>;
+          const closerId = String(roleScope[0]?.responsibleCloserId);
           return lifetimeLeads
             .filter((lead) => lead.responsibleCloserId === closerId || (lead.interviews as Array<Record<string, unknown>>).some((round) => round.closerId === closerId))
             .map((lead) => ({
@@ -242,7 +243,7 @@ describe("CloserDashboardService", () => {
   });
 
   it("returns only the active closer's meetings, tasks, and notifications", async () => {
-    const { service } = createService({
+    const { service, database } = createService({
       interviews: [
         interview(),
         interview({ id: "20000000-0000-4000-8000-000000000002", closerId: otherCloserId, startsAt: new Date("2026-09-03T13:00:00.000Z") }),
@@ -267,6 +268,61 @@ describe("CloserDashboardService", () => {
     expect(dashboard.conflicts.map((item) => item.id)).toEqual(["20000000-0000-4000-8000-000000000003"]);
     expect(dashboard.openTasks.map((item) => item.id)).toEqual(["40000000-0000-4000-8000-000000000001"]);
     expect(dashboard.notifications.map((item) => item.id)).toEqual(["60000000-0000-4000-8000-000000000001"]);
+    expect(database.jobLead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({
+        interviews: expect.objectContaining({
+          where: { status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, startsAt: { gt: NOW } },
+        }),
+      }),
+    }));
+  });
+
+  it("includes future reschedule-required rounds in the upcoming meeting surfaces", async () => {
+    const rescheduleRequired = interview({
+      id: "20000000-0000-4000-8000-000000000010",
+      status: "RESCHEDULE_REQUIRED",
+      startsAt: new Date("2026-09-03T13:00:00.000Z"),
+    });
+    const { service, database } = createService({ interviews: [rescheduleRequired] });
+
+    const dashboard = await service.get(closer);
+
+    expect(dashboard.nextMeeting?.id).toBe(rescheduleRequired.id);
+    expect(dashboard.todayMeetings.map((item) => item.id)).toEqual([rescheduleRequired.id]);
+    expect(database.interviewRound.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { closerId: closer.id, status: { in: ["SCHEDULED", "RESCHEDULE_REQUIRED"] }, startsAt: { gt: NOW } },
+    }));
+  });
+
+  it("shows applications where the closer owns an interview round even when another closer owns the application", async () => {
+    const { service, database } = createService();
+    const assignedByRound = {
+      id: "30000000-0000-4000-8000-000000000071",
+      profileId: "50000000-0000-4000-8000-000000000071",
+      jobTitle: "Journey QA Engineer",
+      companyName: "Flow Audit Systems",
+      companyId: "70000000-0000-4000-8000-000000000071",
+      status: "INTERVIEWING",
+      responsibleCloserId: otherCloserId,
+      interviews: [{ startsAt: new Date("2026-09-10T14:00:00.000Z"), closerId: closer.id }],
+      profile: { name: "Journey QA", candidate: { firstName: "Avery", lastName: "Chen", preferredName: null } },
+    };
+    database.jobLead.findMany.mockImplementation(async ({ where, select }: { where: Record<string, unknown>; select: Record<string, unknown> }) => {
+      if ("statusTransitions" in select) return [];
+      return Array.isArray(where.OR) ? [assignedByRound] : [];
+    });
+
+    const dashboard = await service.get(closer);
+
+    expect(dashboard.assignedApplications).toMatchObject([{ id: assignedByRound.id }]);
+    expect(database.jobLead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: [
+          { responsibleCloserId: closer.id },
+          { interviews: { some: { closerId: closer.id } } },
+        ],
+      }),
+    }));
   });
 
   it("aggregates all-time distinct applications credited to the closer", async () => {
@@ -276,14 +332,15 @@ describe("CloserDashboardService", () => {
         lifetimeLead({
           id: "30000000-0000-4000-8000-000000000102",
           responsibleCloserId: otherCloserId,
-          interviews: [{ closerId: closer.id, attendance: "UNKNOWN" }],
+          interviews: [{ closerId: closer.id, status: "SCHEDULED", attendance: "UNKNOWN" }],
         }),
         lifetimeLead({
           id: "30000000-0000-4000-8000-000000000103",
           interviews: [
-            { closerId: closer.id, attendance: "ATTENDED" },
-            { closerId: closer.id, attendance: "ATTENDED" },
-            { closerId: otherCloserId, attendance: "ATTENDED" },
+            { closerId: closer.id, status: "COMPLETED", attendance: "ATTENDED" },
+            { closerId: closer.id, status: "WAITING_FEEDBACK", attendance: "ATTENDED" },
+            { closerId: closer.id, status: "CANCELLED", attendance: "ATTENDED" },
+            { closerId: otherCloserId, status: "COMPLETED", attendance: "ATTENDED" },
           ],
           offers: [{ id: "70000000-0000-4000-8000-000000000001" }],
         }),
@@ -291,12 +348,12 @@ describe("CloserDashboardService", () => {
           id: "30000000-0000-4000-8000-000000000104",
           responsibleCloserId: otherCloserId,
           status: "CLOSED",
-          interviews: [{ closerId: closer.id, attendance: "ATTENDED" }],
+          interviews: [{ closerId: closer.id, status: "COMPLETED", attendance: "ATTENDED" }],
           statusTransitions: [{ toStatus: "PLACED" }],
         }),
         lifetimeLead({
           id: "30000000-0000-4000-8000-000000000105",
-          interviews: [{ closerId: closer.id, attendance: "MISSED" }],
+          interviews: [{ closerId: closer.id, status: "COMPLETED", attendance: "MISSED" }],
           offers: [{ id: "70000000-0000-4000-8000-000000000002" }],
           placedAt: NOW,
           status: "PLACED",
@@ -306,7 +363,7 @@ describe("CloserDashboardService", () => {
           responsibleCloserId: otherCloserId,
           status: "PLACED",
           placedAt: NOW,
-          interviews: [{ closerId: otherCloserId, attendance: "ATTENDED" }],
+          interviews: [{ closerId: otherCloserId, status: "COMPLETED", attendance: "ATTENDED" }],
           offers: [{ id: "70000000-0000-4000-8000-000000000003" }],
         }),
       ],
@@ -318,6 +375,11 @@ describe("CloserDashboardService", () => {
       applicationsHandled: 5,
       interviewsScheduled: 4,
       callsAttended: 2,
+      interviewRounds: 5,
+      attendedRounds: 3,
+      cancelledRounds: 1,
+      averageRoundsPerInterviewLead: 1.25,
+      roundAttendanceRate: 0.6,
       offers: 2,
       placements: 1,
     });
@@ -336,7 +398,7 @@ describe("CloserDashboardService", () => {
   it("counts an attended timestamp-only placement as an offer", async () => {
     const { service } = createService({
       lifetimeLeads: [lifetimeLead({
-        interviews: [{ closerId: closer.id, attendance: "ATTENDED" }],
+        interviews: [{ closerId: closer.id, status: "COMPLETED", attendance: "ATTENDED" }],
         placedAt: NOW,
       })],
     });
@@ -347,6 +409,11 @@ describe("CloserDashboardService", () => {
       applicationsHandled: 1,
       interviewsScheduled: 1,
       callsAttended: 1,
+      interviewRounds: 1,
+      attendedRounds: 1,
+      cancelledRounds: 0,
+      averageRoundsPerInterviewLead: 1,
+      roundAttendanceRate: 1,
       offers: 1,
       placements: 1,
     });
@@ -368,6 +435,20 @@ describe("CloserDashboardService", () => {
     const dashboard = await service.get(closer);
 
     expect(dashboard.todayMeetings.map((item) => item.id)).toEqual(["20000000-0000-4000-8000-000000000010"]);
+  });
+
+  it("does not anchor a US closer's agenda to the Pakistan calendar day", async () => {
+    const { service } = createService({
+      timezone: "America/New_York",
+      interviews: [
+        interview({ id: "20000000-0000-4000-8000-000000000020", startsAt: new Date("2026-09-03T14:00:00.000Z") }),
+        interview({ id: "20000000-0000-4000-8000-000000000021", startsAt: new Date("2026-09-03T02:00:00.000Z") }),
+      ],
+    });
+
+    const dashboard = await service.get(closer);
+
+    expect(dashboard.todayMeetings.map((item) => item.id)).toEqual(["20000000-0000-4000-8000-000000000020"]);
   });
 
   it("keeps started interviews in the today count for the closer's local day", async () => {
@@ -417,6 +498,11 @@ describe("CloserDashboardService", () => {
         applicationsHandled: 0,
         interviewsScheduled: 0,
         callsAttended: 0,
+        interviewRounds: 0,
+        attendedRounds: 0,
+        cancelledRounds: 0,
+        averageRoundsPerInterviewLead: null,
+        roundAttendanceRate: null,
         offers: 0,
         placements: 0,
       },

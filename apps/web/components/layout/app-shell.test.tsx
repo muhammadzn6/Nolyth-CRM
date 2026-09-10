@@ -94,6 +94,17 @@ describe("AppShell", () => {
     expect(html).toContain("Administrator");
     expect(html).toContain('aria-label="Primary navigation"');
   });
+
+  it("does not duplicate the creation action inside the sidebar", () => {
+    const html = renderToStaticMarkup(
+      <AppShell actor={actors.ADMIN}>
+        <p>Dashboard content</p>
+      </AppShell>,
+    );
+
+    expect(html).not.toContain('aria-label="Add candidate"');
+    expect(html).toContain('aria-label="Quick add"');
+  });
 });
 
 describe("foundation screens", () => {
@@ -143,6 +154,7 @@ describe("foundation screens", () => {
   it("renders the dashboard calendar and a recent activity feed", () => {
     const html = renderToStaticMarkup(<DashboardOverview actor={actors.ADMIN} />);
 
+    expect(html).toContain('aria-label="Admin dashboard context"');
     expect(html).toContain("Agenda");
     expect(html).toContain("Open calendar display settings");
     expect(html).toContain("Recent activity");

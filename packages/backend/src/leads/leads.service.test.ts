@@ -20,6 +20,99 @@ const bd = {
 };
 
 describe("LeadsService authorization", () => {
+  it("hydrates the identities required by the lead workspace", async () => {
+    const lead = {
+      id: "30000000-0000-4000-8000-000000000010",
+      profileId: "50000000-0000-4000-8000-000000000010",
+      companyId: "60000000-0000-4000-8000-000000000010",
+      sourceId: "70000000-0000-4000-8000-000000000010",
+      createdById: bd.id,
+      currentOwnerId: bd.id,
+      responsibleCloserId: closer.id,
+      archivedById: null,
+      closedById: null,
+      jobTitle: "Platform Engineer",
+      companyName: "Northstar Labs",
+      description: null,
+      rawUrl: "https://jobs.example.test/42",
+      canonicalUrl: "https://jobs.example.test/42",
+      canonicalHash: "jobs.example.test/42",
+      location: null,
+      workplaceType: null,
+      employmentType: null,
+      contractType: null,
+      compensationMin: null,
+      compensationMax: null,
+      compensationCurrency: null,
+      compensationPeriod: null,
+      appliedDate: new Date("2026-09-05T00:00:00.000Z"),
+      status: "INTERVIEWING",
+      isImportant: false,
+      closureReason: null,
+      closureNotes: null,
+      closedAt: null,
+      placedAt: null,
+      startDate: null,
+      startedAt: null,
+      archivedAt: null,
+      archiveReason: null,
+      createdAt: new Date("2026-09-05T12:00:00.000Z"),
+      updatedAt: new Date("2026-09-08T12:00:00.000Z"),
+      version: 2,
+    };
+    const hydrated = {
+      ...lead,
+      company: {
+        id: lead.companyId,
+        canonicalName: "Northstar Labs",
+        website: "https://northstar.example",
+        domain: "northstar.example",
+        industry: null,
+        location: null,
+        createdAt: new Date("2026-09-01T12:00:00.000Z"),
+        updatedAt: new Date("2026-09-01T12:00:00.000Z"),
+        version: 1,
+      },
+      profile: {
+        id: lead.profileId,
+        name: "Avery Chen — Platform Engineer",
+        candidate: {
+          id: "80000000-0000-4000-8000-000000000010",
+          firstName: "Avery",
+          lastName: "Chen",
+          preferredName: null,
+        },
+      },
+      sourceRef: { id: lead.sourceId, name: "LinkedIn" },
+      currentOwner: bd,
+      responsibleCloser: closer,
+      contacts: [],
+    };
+    const findUnique = vi.fn().mockResolvedValueOnce(lead).mockResolvedValueOnce(hydrated);
+    const authorization = { assertProfileAccess: vi.fn().mockResolvedValue(undefined) };
+    const service = new LeadsService({ jobLead: { findUnique } } as never, authorization as never);
+
+    const result = await service.get(bd, lead.id);
+
+    expect(findUnique).toHaveBeenNthCalledWith(2, {
+      where: { id: lead.id },
+      include: {
+        company: true,
+        contacts: { include: { contact: true } },
+        currentOwner: true,
+        profile: { include: { candidate: true } },
+        responsibleCloser: true,
+        sourceRef: true,
+      },
+    });
+    expect(result).toMatchObject({
+      profile: { name: "Avery Chen — Platform Engineer", candidate: { firstName: "Avery", lastName: "Chen" } },
+      sourceRef: { name: "LinkedIn" },
+      currentOwner: { displayName: "BD User" },
+      responsibleCloser: { displayName: "Closer User" },
+    });
+  });
+
   it("lets a BD drill into historically reached stages for applications they submitted", async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const service = new LeadsService({ jobLead: { findMany } } as never, { assertProfileAccess: vi.fn() } as never);
@@ -69,6 +162,9 @@ describe("LeadsService authorization", () => {
       jobLead: {
         findUnique: vi.fn().mockResolvedValue(lead),
       },
+      interviewRound: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
     };
     const authorization = {
       assertProfileAccess: vi.fn().mockResolvedValue(undefined),
@@ -78,6 +174,84 @@ describe("LeadsService authorization", () => {
     await expect(service.get(closer, lead.id)).rejects.toEqual(new AuthorizationError());
     expect(authorization.assertProfileAccess).toHaveBeenCalledWith(closer, lead.profileId);
     expect(database.jobLead.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a closer list an application when they are assigned to one of its interview rounds", async () => {
+    const lead = {
+      id: "30000000-0000-4000-8000-000000000011",
+      profileId: "50000000-0000-4000-8000-000000000011",
+      companyId: "60000000-0000-4000-8000-000000000011",
+      sourceId: "70000000-0000-4000-8000-000000000011",
+      createdById: bd.id,
+      currentOwnerId: bd.id,
+      responsibleCloserId: null,
+      jobTitle: "Journey QA Engineer",
+      rawUrl: "https://jobs.example.test/qa-11",
+      appliedDate: new Date("2026-09-08T00:00:00.000Z"),
+      status: "INTERVIEWING",
+      isImportant: false,
+      createdAt: new Date("2026-09-08T10:00:00.000Z"),
+      updatedAt: new Date("2026-09-08T10:00:00.000Z"),
+      version: 1,
+    };
+    const findMany = vi.fn().mockResolvedValue([lead]);
+    const service = new LeadsService({ jobLead: { findMany } } as never, { assertProfileAccess: vi.fn() } as never);
+
+    const result = await service.list(closer, { archived: false, limit: 50 });
+
+    expect(result.items.map((item) => item.id)).toEqual([lead.id]);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        AND: [{
+          OR: [
+            { responsibleCloserId: closer.id },
+            { interviews: { some: { closerId: closer.id } } },
+          ],
+        }],
+      }),
+    }));
+  });
+
+  it("lets a closer open an application when they are assigned to one of its interview rounds", async () => {
+    const lead = {
+      id: "30000000-0000-4000-8000-000000000012",
+      profileId: "50000000-0000-4000-8000-000000000012",
+      companyId: "60000000-0000-4000-8000-000000000012",
+      sourceId: "70000000-0000-4000-8000-000000000012",
+      createdById: bd.id,
+      currentOwnerId: bd.id,
+      responsibleCloserId: null,
+      jobTitle: "Platform Engineer",
+      companyName: "Northstar Labs",
+      rawUrl: "https://jobs.example.test/12",
+      appliedDate: new Date("2026-09-08T00:00:00.000Z"),
+      status: "INTERVIEWING",
+      isImportant: false,
+      createdAt: new Date("2026-09-08T10:00:00.000Z"),
+      updatedAt: new Date("2026-09-08T10:00:00.000Z"),
+      version: 1,
+    };
+    const hydrated = {
+      ...lead,
+      company: { id: lead.companyId, canonicalName: lead.companyName, createdAt: lead.createdAt, updatedAt: lead.updatedAt, version: 1 },
+      profile: { id: lead.profileId, name: "Avery profile", candidate: { id: "80000000-0000-4000-8000-000000000012", firstName: "Avery", lastName: "Chen", preferredName: null } },
+      sourceRef: { id: lead.sourceId, name: "LinkedIn" },
+      currentOwner: bd,
+      responsibleCloser: null,
+      contacts: [],
+    };
+    const database = {
+      jobLead: { findUnique: vi.fn().mockResolvedValueOnce(lead).mockResolvedValueOnce(hydrated) },
+      interviewRound: { findFirst: vi.fn().mockResolvedValue({ id: "20000000-0000-4000-8000-000000000012" }) },
+    };
+    const authorization = { assertProfileAccess: vi.fn().mockResolvedValue(undefined) };
+    const service = new LeadsService(database as never, authorization as never);
+
+    await expect(service.get(closer, lead.id)).resolves.toMatchObject({ id: lead.id, responsibleCloserId: null });
+    expect(database.interviewRound.findFirst).toHaveBeenCalledWith({
+      where: { leadId: lead.id, closerId: closer.id },
+      select: { id: true },
+    });
   });
 
   it("does not create a duplicate assignment when the Closer is already responsible", async () => {

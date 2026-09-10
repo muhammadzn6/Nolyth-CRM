@@ -264,7 +264,7 @@ describe("PerformanceController", () => {
 
   it("validates every performance endpoint response against its shared contract", async () => {
     const service = {
-      getAdminBdPerformance: vi.fn().mockResolvedValue({ period, team: performance, leaderboard: [leaderboardRow], buildingBaseline: [], excluded: [], quality }),
+      getAdminBdPerformance: vi.fn().mockResolvedValue({ period, businessTimeZone: "America/New_York", team: performance, leaderboard: [leaderboardRow], buildingBaseline: [], excluded: [], quality }),
       getBdPerformance: vi.fn().mockResolvedValue({ period, currentDailyTarget: 70, nextTargetChangeEffectiveAt: null, performance, rank: 1, peerLeaderboard: [{ bdId: admin.id, bdName: admin.displayName, rank: 1, qualifiedApplications: 4, recordHealthRate: 100, adminAuditPassRate: null, duplicateRate: 0 }], quality, eligibility: { eligible: false, eligibilityProgress: 40, ineligibilityReason: "INSUFFICIENT_ELIGIBLE_WORKING_DAYS", estimatedEligibilityDate: "2026-09-15T09:00:00.000Z", eligibilitySection: "BUILDING_BASELINE", warnings: ["LOW_APPLICATION_SAMPLE"] } }),
       getAdminPerformanceDrilldown: vi.fn().mockResolvedValue([{ kind: "FOLLOW_UP", followUp }]),
       getMyPerformanceDrilldown: vi.fn().mockResolvedValue([{ kind: "FOLLOW_UP", followUp }]),
@@ -278,7 +278,7 @@ describe("PerformanceController", () => {
     };
     const controller = new PerformanceController(service as unknown as PerformanceService);
 
-    await expect(controller.admin(period, request())).resolves.toEqual({ period, team: performance, leaderboard: [leaderboardRow], buildingBaseline: [], excluded: [], quality });
+    await expect(controller.admin(period, request())).resolves.toEqual({ period, businessTimeZone: "America/New_York", team: performance, leaderboard: [leaderboardRow], buildingBaseline: [], excluded: [], quality });
     await expect(controller.mine(period, request(bd))).resolves.toMatchObject({ currentDailyTarget: 70, peerLeaderboard: [expect.objectContaining({ bdId: admin.id })] });
     await expect(controller.drilldown({ ...period, metric: "FOLLOW_UP_SLA" }, request())).resolves.toEqual([{ kind: "FOLLOW_UP", followUp }]);
     await expect(controller.myDrilldown({ ...period, metric: "FOLLOW_UP_SLA" }, request(bd))).resolves.toEqual([{ kind: "FOLLOW_UP", followUp }]);
@@ -364,7 +364,7 @@ describe("PerformanceController", () => {
 
   it("rejects contract-breaking fields from every performance response endpoint", async () => {
     const service = {
-      getAdminBdPerformance: vi.fn().mockResolvedValue({ period, team: performance, leaderboard: [leaderboardRow], buildingBaseline: [], excluded: [], quality, internalTeamNote: "private" }),
+      getAdminBdPerformance: vi.fn().mockResolvedValue({ period, businessTimeZone: "America/New_York", team: performance, leaderboard: [leaderboardRow], buildingBaseline: [], excluded: [], quality, internalTeamNote: "private" }),
       getBdPerformance: vi.fn().mockResolvedValue({ period, currentDailyTarget: 70, nextTargetChangeEffectiveAt: null, performance, rank: 1, peerLeaderboard: [], quality, internalRankFormula: "private" }),
       getAdminPerformanceDrilldown: vi.fn().mockResolvedValue([{ kind: "FOLLOW_UP", followUp: { ...followUp, internalOwnerEmail: "private@orbit.test" } }]),
       getPerformanceRules: vi.fn().mockResolvedValue({ ...rule, internalAuditTrail: [] }),

@@ -8,6 +8,7 @@ import { Button, Card, Field, Input } from "@orbit/ui";
 type ProfileFormProps = {
   initial?: ProfileSummary;
   candidateId?: string;
+  embedded?: boolean;
   pending: boolean;
   onSubmit: (input: CreateProfile | UpdateProfile) => Promise<boolean>;
 };
@@ -27,7 +28,7 @@ function list(data: FormData, name: string): string[] {
     .filter(Boolean);
 }
 
-export function ProfileForm({ candidateId, initial, pending, onSubmit }: ProfileFormProps) {
+export function ProfileForm({ candidateId, embedded = false, initial, pending, onSubmit }: ProfileFormProps) {
   const prefix = initial ? `profile-${initial.id}` : "profile";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -56,14 +57,14 @@ export function ProfileForm({ candidateId, initial, pending, onSubmit }: Profile
     }
   }
 
-  return (
-    <Card className="p-5 sm:p-6">
-      <header>
+  const form = (
+    <>
+      {!embedded ? <header>
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{initial ? "Search profile" : "New search"}</p>
         <h2 className="mt-2 text-lg font-bold tracking-[-0.02em] text-foreground">{initial ? "Edit profile" : "Create profile"}</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">Keep target roles, locations, work style, and compensation scoped to this search.</p>
-      </header>
-      <form aria-label={initial ? `Edit ${initial.name}` : "Create profile"} className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleSubmit}>
+      </header> : null}
+      <form aria-label={initial ? `Edit ${initial.name}` : "Create profile"} className={`${embedded ? "" : "mt-5 "}grid gap-4 md:grid-cols-2 xl:grid-cols-4`} onSubmit={handleSubmit}>
         {!initial ? <input name="candidateId" type="hidden" value={candidateId ?? ""} /> : null}
         <Field className="md:col-span-2" htmlFor={`${prefix}-name`} label="Profile name">
           <Input defaultValue={initial?.name} disabled={pending} id={`${prefix}-name`} name="name" placeholder="Platform engineering" required />
@@ -97,8 +98,16 @@ export function ProfileForm({ candidateId, initial, pending, onSubmit }: Profile
         <Field htmlFor={`${prefix}-contractPreferences`} label="Contract preferences" hint="Comma separated">
           <Input defaultValue={initial?.contractPreferences.join(", ")} disabled={pending} id={`${prefix}-contractPreferences`} name="contractPreferences" placeholder="Permanent" />
         </Field>
-        <div className="self-end"><Button className="w-full" disabled={pending} type="submit">{pending ? "Saving…" : initial ? "Save profile" : "Create profile"}</Button></div>
+        <div className="self-end"><Button className="w-full" disabled={pending} loading={pending} type="submit">{pending ? "Saving…" : initial ? "Save profile" : "Create profile"}</Button></div>
       </form>
+    </>
+  );
+
+  if (embedded) return form;
+
+  return (
+    <Card className="p-5 sm:p-6">
+      {form}
     </Card>
   );
 }

@@ -1,10 +1,12 @@
-import type { BdPerformanceResponse, BdWorkQueue, InterviewSummary, LeadSummary, SessionUser } from "@orbit/contracts";
+import type { BdPerformanceResponse, BdWorkQueue, InterviewSummary, LeadSummary, ProfileSummary, SessionUser, UserSummary } from "@orbit/contracts";
 import { Card } from "@orbit/ui";
 
+import { businessDateDisplay, defaultBusinessTimeZone } from "../../lib/business-day";
 import { BdPeerRanking } from "../performance/bd-peer-ranking";
 import { BdPersonalQuality } from "../performance/bd-personal-quality";
 import { BdCalendarPreview } from "./bd-calendar-preview";
 import { buildBdDailyActivitySummary } from "./bd-dashboard-kpis";
+import { BdDashboardQuickActions } from "./bd-dashboard-quick-actions";
 
 type PerformancePeriod = "day" | "7d" | "30d";
 
@@ -16,6 +18,8 @@ type BdDashboardProps = {
   performancePeriod?: PerformancePeriod;
   todayPerformance?: BdPerformanceResponse;
   workQueue?: BdWorkQueue;
+  profiles?: ProfileSummary[];
+  closers?: UserSummary[];
   error?: string;
 };
 
@@ -124,15 +128,15 @@ function OperationalPulse({ applications, todayPerformance, workQueue }: { appli
   const responseCount = workQueue?.recruiterResponses ?? 0;
   const responseItems = applications.filter((application) => application.status === "RESPONSE_RECEIVED").slice(0, 3);
   const queueItems = [
-    { label: "Calendar entries needed", value: todayPerformance?.performance.interviewsNeedingScheduling ?? 0, href: "/tasks", color: stageColors[2] },
-    { label: "Follow-ups due", value: workQueue?.openFollowUps ?? 0, href: "/tasks", color: stageColors[3] },
+    { label: "Calendar entries needed", value: todayPerformance?.performance.interviewsNeedingScheduling ?? 0, href: "/tasks" },
+    { label: "Follow-ups due", value: workQueue?.openFollowUps ?? 0, href: "/tasks" },
   ].filter((item) => item.value > 0);
   const hasWork = responseCount > 0 || queueItems.length > 0;
 
-  return <Card aria-label="BD operational pulse" className="editorial-insight-card editorial-surface-alert bd-primary-surface bd-pulse-panel p-4 sm:p-5"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Operational pulse</p><h2>What needs attention</h2></div><a href="/tasks">Open queue →</a></header><div className="bd-pulse-scroll">
+  return <Card aria-label="BD operational pulse" className="editorial-insight-card editorial-surface-alert bd-primary-surface bd-pulse-panel bd-pulse-panel-orange p-4 sm:p-5"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Operational pulse</p><h2>What needs attention</h2></div><a href="/tasks">Open queue →</a></header><div className="bd-pulse-scroll">
     {!hasWork ? <p className="bd-queue-clear"><span>✓</span>Queue clear</p> : null}
-    {responseCount > 0 ? <div className="bd-attention-group"><div className="bd-attention-heading"><span>Responses to review</span><strong>{count(responseCount)}</strong></div>{responseItems.map((application) => <a className="bd-attention-row" href={`/leads/${application.id}`} key={application.id}><span className="bd-pulse-checkbox" aria-hidden="true" style={{ borderColor: stageColors[0] }} /><span><strong>{application.jobTitle}</strong><small>{application.companyName ?? "Company not recorded"}</small></span><b>Open →</b></a>)}{responseCount > responseItems.length ? <a className="bd-attention-more" href="/leads?status=RESPONSE_RECEIVED">+{responseCount - responseItems.length} more responses</a> : null}</div> : null}
-    {queueItems.map((item) => <a className="bd-attention-row" href={item.href} key={item.label}><span className="bd-pulse-checkbox" aria-hidden="true" style={{ borderColor: item.color }} /><span><strong>{item.label}</strong></span><b>{count(item.value)}</b></a>)}
+    {responseCount > 0 ? <div className="bd-attention-group"><div className="bd-attention-heading"><span>Responses to review</span><strong>{count(responseCount)}</strong></div>{responseItems.map((application) => <a className="bd-attention-row" href={`/leads/${application.id}`} key={application.id}><span className="bd-pulse-checkbox" aria-hidden="true" /><span><strong>{application.jobTitle}</strong><small>{application.companyName ?? "Company not recorded"}</small></span><b>Open →</b></a>)}{responseCount > responseItems.length ? <a className="bd-attention-more" href="/leads?status=RESPONSE_RECEIVED">+{responseCount - responseItems.length} more responses</a> : null}</div> : null}
+    {queueItems.map((item) => <a className="bd-attention-row" href={item.href} key={item.label}><span className="bd-pulse-checkbox" aria-hidden="true" /><span><strong>{item.label}</strong></span><b>{count(item.value)}</b></a>)}
   </div></Card>;
 }
 
@@ -170,22 +174,26 @@ function FunnelAndTrend({ workQueue }: { workQueue?: BdWorkQueue }) {
   const largestValue = Math.max(1, ...values);
   const heights = values.map((value) => placementStageThickness(value, largestValue));
   const xPositions = journeyStages.map((_, index) => 50 + index * (900 / (journeyStages.length - 1)));
+  const finalVisibleStage = values.reduce((lastVisible, value, index) => value > 0 ? index : lastVisible, 0);
+  const streamHeights = heights.slice(0, finalVisibleStage + 1);
+  const streamXPositions = xPositions.slice(0, finalVisibleStage + 1);
   const flowLabel = `Placement flow: ${journeyStages.map(([label, value]) => `${label} ${count(value)}`).join(", ")}`;
   const conversion = (from?: number, to?: number) => from ? `${Math.round(((to ?? 0) / from) * 100)}%` : "—";
-  return <Card aria-label="BD lifetime placement funnel" className="editorial-insight-card editorial-surface-lines p-5 sm:p-6"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Lifetime view</p><h2>Placement journey</h2></div><div className="bd-lifetime-meta"><a aria-label={`${count(totals?.activeJobs)} active jobs now`} className="bd-lifetime-active" href="/leads?pipelineStage=ACTIVE"><strong>{count(totals?.activeJobs)}</strong> active now</a><span className="bd-scope-pill">All time</span></div></header><div className="bd-lifetime-flow-scroll"><div className="bd-lifetime-flow" data-testid="bd-lifetime-flow"><svg aria-label={flowLabel} preserveAspectRatio="none" role="img" viewBox="0 0 1000 260"><title>Lifetime placement journey</title><desc>Stream thickness is proportional to lifetime stage totals. Non-zero stages retain a three-pixel minimum; zero stages have no strand.</desc>{[0, 1, 2, 3].map((band) => <path className={`bd-lifetime-flow-band bd-lifetime-flow-band-${band + 1}`} d={placementBandPath(heights, xPositions, band)} key={band} />)}{xPositions.map((x) => <line className="bd-lifetime-flow-checkpoint" key={x} x1={x} x2={x} y1="28" y2="232" />)}</svg><div className="bd-lifetime-flow-labels">{journeyStages.map(([label, value, href], index) => <a className={`bd-lifetime-flow-label ${index % 2 ? "is-bottom" : "is-top"}`} href={href} key={label} style={{ left: `${xPositions[index] / 10}%` }}><span>{label}</span><strong>{count(value)}</strong></a>)}</div></div></div><div className="bd-funnel-conversions"><span>Applied → interview <strong>{conversion(totals?.jobsApplied, totals?.interviews)}</strong></span><span>Interview → offer <strong>{conversion(totals?.interviews, totals?.offers)}</strong></span><span>Offer → placement <strong>{conversion(totals?.offers, totals?.placements)}</strong></span></div></Card>;
+  return <Card aria-label="BD lifetime placement funnel" className="editorial-insight-card editorial-surface-lines p-5 sm:p-6"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Lifetime view</p><h2>Placement journey</h2></div><div className="bd-lifetime-meta"><a aria-label={`${count(totals?.activeJobs)} active jobs now`} className="bd-lifetime-active" href="/leads?pipelineStage=ACTIVE"><strong>{count(totals?.activeJobs)}</strong> active now</a><span className="bd-scope-pill">All time</span></div></header><div className="bd-lifetime-flow-scroll"><div className="bd-lifetime-flow" data-testid="bd-lifetime-flow"><svg aria-label={flowLabel} preserveAspectRatio="none" role="img" viewBox="0 0 1000 260"><title>Lifetime placement journey</title><desc>Stream thickness is proportional to lifetime stage totals. Non-zero stages retain a three-pixel minimum; zero stages have no strand.</desc>{[0, 1, 2, 3].map((band) => <path className={`bd-lifetime-flow-band bd-lifetime-flow-band-${band + 1}`} d={placementBandPath(streamHeights, streamXPositions, band)} key={band} />)}{streamXPositions.map((x) => <line className="bd-lifetime-flow-checkpoint" key={x} x1={x} x2={x} y1="28" y2="232" />)}</svg><div className="bd-lifetime-flow-labels">{journeyStages.map(([label, value, href], index) => <a className={`bd-lifetime-flow-label ${index % 2 ? "is-bottom" : "is-top"}`} href={href} key={label} style={{ left: `${xPositions[index] / 10}%` }}><span>{label}</span><strong>{count(value)}</strong></a>)}</div></div></div><div className="bd-funnel-conversions"><span>Applied → interview <strong>{conversion(totals?.jobsApplied, totals?.interviews)}</strong></span><span>Interview → offer <strong>{conversion(totals?.interviews, totals?.offers)}</strong></span><span>Offer → placement <strong>{conversion(totals?.offers, totals?.placements)}</strong></span></div></Card>;
 }
 
 function RecentApplications({ applications }: { applications: LeadSummary[] }) {
   const visibleApplications = applications.slice(0, 6);
-  return <Card aria-label="BD recent applications" className="editorial-insight-card editorial-surface-soft bd-fixed-dashboard-card bd-secondary-surface p-5 sm:p-6"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Intake history</p><h2>Recent applications</h2></div><a href="/leads">View all →</a></header><div className="bd-card-scroll">{visibleApplications.map((application) => <a className="bd-recent-row" href={`/leads/${application.id}`} key={application.id}><span><strong>{application.jobTitle}</strong><small>{application.companyName ?? "Company not recorded"} · {platformName(application.rawUrl)} · {application.appliedDate}</small></span><b>{application.status.replaceAll("_", " ")}</b></a>)}{visibleApplications.length === 0 ? <p className="bd-empty-state">Your application entries will appear here.</p> : null}</div></Card>;
+  return <Card aria-label="BD recent applications" className="editorial-insight-card editorial-surface-soft bd-fixed-dashboard-card bd-secondary-surface p-5 sm:p-6"><header className="bd-card-header"><div><p className="bd-card-eyebrow">Intake history</p><h2>Recent applications</h2></div><a href="/leads">View all →</a></header><div className="bd-card-scroll">{visibleApplications.map((application) => <a className="bd-recent-row" href={`/leads/${application.id}`} key={application.id}><span className="min-w-0"><strong className="block truncate">{application.jobTitle}</strong><small className="flex items-center gap-1.5 truncate" title={`${application.companyName ?? "Company not recorded"} · ${platformName(application.rawUrl)} · ${application.appliedDate}`}><span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-primary" />{application.companyName ?? "Company not recorded"} · {platformName(application.rawUrl)} · {application.appliedDate}</small></span><b title={application.status.replaceAll("_", " ")}>{application.status.replaceAll("_", " ")}</b></a>)}{visibleApplications.length === 0 ? <p className="bd-empty-state">Your application entries will appear here.</p> : null}</div></Card>;
 }
 
-export function BdDashboard({ actor, applications, interviews, performance, performancePeriod = "30d", todayPerformance, workQueue, error }: BdDashboardProps) {
+export function BdDashboard({ actor, applications, closers = [], interviews, performance, performancePeriod = "30d", todayPerformance, workQueue, profiles = [], error }: BdDashboardProps) {
   const now = new Date();
+  const businessDate = businessDateDisplay(now, workQueue?.businessTimeZone ?? defaultBusinessTimeZone);
   const dailyTarget = todayPerformance?.currentDailyTarget ?? performance?.currentDailyTarget;
   const periodLabel = periodLabels[performancePeriod];
   return <div aria-label="BD application workspace" className="bd-dashboard-shell editorial-dashboard mx-auto max-w-[1500px]">
-    <div className="bd-dashboard-hero-band editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{new Intl.DateTimeFormat("en-US", { day: "2-digit" }).format(now)}</span><span><strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(now)}</strong><small>Daily target · {count(dailyTarget)}</small></span><a aria-label="Add application" className="editorial-add-button" href="/leads?new=application">+ Add application <span aria-hidden="true">›</span></a></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">BD application desk</p><h1>Good morning, {firstName(actor.displayName)}</h1><p>Capture applications. Act on recruiter responses.</p></div></div>
+    <div aria-label="BD dashboard context" className="bd-dashboard-hero-band editorial-hero"><div className="editorial-date-rail"><span className="editorial-date-number">{businessDate.day}</span><span><strong>{businessDate.label}</strong><small>Daily target · {count(dailyTarget)}</small></span><BdDashboardQuickActions actorId={actor.id} applications={applications} closers={closers} profiles={profiles} timezone={workQueue?.businessTimeZone} /></div><div className="editorial-greeting"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">BD application desk</p><h1>Good morning, {firstName(actor.displayName)}</h1><p>Capture applications. Act on recruiter responses.</p></div></div>
     {error ? <p className="mt-4 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning-foreground" role="status">{error}</p> : null}
     <section className="bd-flow-section bd-flow-section-primary mt-5"><div className="bd-activity-layout"><DailyTracker dailyTarget={dailyTarget} interviewsScheduled={todayPerformance?.performance.interviewsScheduled} qualifiedToday={todayPerformance?.performance.qualifiedApplications} recruiterResponses={todayPerformance?.performance.recruiterResponses} workQueue={workQueue} /><div className="bd-activity-rail"><CadencePanel dailyTarget={dailyTarget} workQueue={workQueue} /><OperationalPulse applications={applications} todayPerformance={todayPerformance} workQueue={workQueue} /></div></div></section>
     <section className="mt-5 grid gap-5 xl:grid-cols-2"><BdCalendarPreview interviews={interviews} /><RecentApplications applications={applications} /></section>

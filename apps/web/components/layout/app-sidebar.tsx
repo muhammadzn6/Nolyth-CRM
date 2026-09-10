@@ -57,13 +57,10 @@ export function AppSidebar({
       className={`fixed inset-y-3 left-3 z-40 flex rounded-[1.75rem] border border-white/80 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf7_100%)] text-foreground shadow-[0_20px_55px_rgba(35,42,58,0.09)] transition-[width,transform] duration-200 motion-reduce:transition-none lg:inset-y-20 lg:left-3 lg:translate-x-0 ${collapsed ? "w-[72px]" : "w-[224px]"} ${mobileOpen ? "translate-x-0" : "-translate-x-[120%]"}`}
       >
         <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-14 items-center justify-center px-3">
-          <Link aria-label={role === "ADMIN" ? "Add candidate" : role === "BD" ? "Add application" : "Add interview outcome"} className={`grid size-10 place-items-center rounded-full bg-action text-xl leading-none text-white shadow-[0_8px_18px_rgba(235,101,72,0.22)] transition hover:-translate-y-0.5 hover:bg-action-hover focus-visible:ring-2 focus-visible:ring-focus motion-reduce:transform-none ${collapsed ? "" : "mr-auto"}`} href={role === "ADMIN" ? "/candidates?new=candidate" : role === "BD" ? "/leads?new=application" : "/leads"}>
-            <span aria-hidden="true">+</span>
-          </Link>
+        <div className="flex h-14 items-center justify-end px-3 lg:h-3 lg:px-0">
           <Button
             aria-label="Close navigation"
-              className="ml-auto text-muted-foreground hover:bg-surface-subtle hover:text-foreground lg:hidden"
+            className="text-muted-foreground hover:bg-surface-subtle hover:text-foreground lg:hidden"
             onClick={() => onMobileOpenChange(false)}
             size="icon"
             variant="ghost"
